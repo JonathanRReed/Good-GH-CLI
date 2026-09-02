@@ -8,7 +8,7 @@ import {
   stashPop,
   stashPush,
 } from "../services/git.ts";
-import { header, p, pc, promptInput, searchablePicker } from "../utils/ui.ts";
+import { header, p, pc, promptInput, searchablePicker, selectMenu } from "../utils/ui.ts";
 
 function displayColoredDiff(rawDiff: string): void {
   const lines = rawDiff.split("\n");
@@ -85,7 +85,12 @@ export function registerStashCommand(program: Command): void {
       const status = await getStatus();
       const list = await stashList();
 
-      const choice = await p.select({
+      if (!status.hasChanges && list.length === 0) {
+        p.log.info(pc.dim("Working tree is clean and no stashes found."));
+        return;
+      }
+
+      const choice = await selectMenu({
         message: "What would you like to do?",
         options: [
           ...(status.hasChanges
@@ -119,7 +124,7 @@ export function registerStashCommand(program: Command): void {
         ],
       });
 
-      if (p.isCancel(choice)) {
+      if (choice === null) {
         p.cancel("Cancelled.");
         return;
       }
@@ -174,7 +179,7 @@ export function registerStashCommand(program: Command): void {
           p.log.info("Empty stash diff.");
         }
 
-        const stashAction = await p.select({
+        const stashAction = await selectMenu({
           message: `Action for ${pickStash}:`,
           options: [
             { value: "pop", label: "Apply & Pop this stash" },
@@ -183,12 +188,22 @@ export function registerStashCommand(program: Command): void {
           ],
         });
 
+        if (stashAction === null || stashAction === "back") return;
+
         if (stashAction === "pop") {
-          await stashPop(pickStash as string);
-          p.log.success(pc.green(`Popped ${pickStash}.`));
+          try {
+            await stashPop(pickStash as string);
+            p.log.success(pc.green(`Popped ${pickStash}.`));
+          } catch (err) {
+            p.log.error(`Failed to pop ${pickStash}: ${String(err)}`);
+          }
         } else if (stashAction === "drop") {
-          await stashDrop(pickStash as string);
-          p.log.success(pc.green(`Dropped ${pickStash}.`));
+          try {
+            await stashDrop(pickStash as string);
+            p.log.success(pc.green(`Dropped ${pickStash}.`));
+          } catch (err) {
+            p.log.error(`Failed to drop ${pickStash}: ${String(err)}`);
+          }
         }
       } else if (choice === "drop") {
         const pickDrop = await searchablePicker({
@@ -203,8 +218,12 @@ export function registerStashCommand(program: Command): void {
 
         if (!pickDrop) return;
 
-        await stashDrop(pickDrop as string);
-        p.log.success(pc.green(`Dropped ${pickDrop}.`));
+        try {
+          await stashDrop(pickDrop as string);
+          p.log.success(pc.green(`Dropped ${pickDrop}.`));
+        } catch (err) {
+          p.log.error(`Failed to drop ${pickDrop}: ${String(err)}`);
+        }
       }
     });
 
@@ -212,15 +231,33 @@ export function registerStashCommand(program: Command): void {
     .command("pop [ref]")
     .description("Pop a stash")
     .action(async (ref?: string) => {
-      await stashPop(ref);
-      p.log.success(pc.green("Stash popped."));
+      header("Pop Stash");
+      if (!(await isGitRepo())) {
+        p.log.error("Not a git repository.");
+        return;
+      }
+      try {
+        await stashPop(ref);
+        p.log.success(pc.green(ref ? `Stash ${ref} popped.` : "Latest stash popped."));
+      } catch (err) {
+        p.log.error(`Failed to pop stash: ${String(err)}`);
+      }
     });
 
   stash
     .command("drop <ref>")
     .description("Drop a stash")
     .action(async (ref: string) => {
-      await stashDrop(ref);
-      p.log.success(pc.green(`Dropped ${ref}.`));
+      header("Drop Stash");
+      if (!(await isGitRepo())) {
+        p.log.error("Not a git repository.");
+        return;
+      }
+      try {
+        await stashDrop(ref);
+        p.log.success(pc.green(`Dropped ${ref}.`));
+      } catch (err) {
+        p.log.error(`Failed to drop stash: ${String(err)}`);
+      }
     });
 }

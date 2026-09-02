@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { getConfig, saveConfig, getConfigPath, type GoodGhConfig, type AIProvider } from "../services/config.ts";
-import { header, p, pc } from "../utils/ui.ts";
+import { header, p, pc, selectMenu } from "../utils/ui.ts";
 
 export function registerConfigCommand(program: Command): void {
   const configCmd = program
@@ -68,7 +68,7 @@ export function registerConfigCommand(program: Command): void {
     header("Interactive Configuration");
     const current = getConfig();
 
-    const provider = await p.select({
+    const provider = await selectMenu({
       message: "Select default AI Provider:",
       options: [
         { value: "codex" as const, label: "Codex (Luna / ChatGPT)", hint: "Fast & high quality (gpt-5.6-luna)" },
@@ -77,12 +77,12 @@ export function registerConfigCommand(program: Command): void {
       initialValue: current.ai_provider || "codex",
     });
 
-    if (p.isCancel(provider)) {
+    if (provider === null) {
       p.cancel("Configuration unchanged.");
       return;
     }
 
-    const commitStyle = await p.select({
+    const commitStyle = await selectMenu({
       message: "Select default commit message style:",
       options: [
         { value: "auto", label: "Auto-detect", hint: "Matches existing repository conventions" },
@@ -93,7 +93,7 @@ export function registerConfigCommand(program: Command): void {
       initialValue: current.commit_style || "auto",
     });
 
-    if (p.isCancel(commitStyle)) {
+    if (commitStyle === null) {
       p.cancel("Configuration unchanged.");
       return;
     }

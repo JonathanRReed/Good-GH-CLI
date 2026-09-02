@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { discardFiles, getStatus, isGitRepo } from "../services/git.ts";
-import { header, p, pc } from "../utils/ui.ts";
+import { confirmPrompt, header, multiSelectMenu, p, pc } from "../utils/ui.ts";
 
 export function registerDiscardCommand(program: Command): void {
   program
@@ -39,30 +39,30 @@ export function registerDiscardCommand(program: Command): void {
           return;
         }
       } else {
-        const selected = await p.multiselect({
+        const selected = await multiSelectMenu({
           message: "Select file(s) to permanently discard changes from:",
           options: allDirty.map((f) => ({
             value: f.path,
             label: `${f.path} ${pc.dim(`(${f.status}${f.staged ? ", staged" : ""})`)}`,
           })),
           required: true,
-          maxItems: 8,
+          pageSize: 8,
         });
 
-        if (p.isCancel(selected)) {
+        if (selected === null) {
           p.cancel("Discard cancelled.");
           return;
         }
 
-        toDiscard = allDirty.filter((f) => (selected as string[]).includes(f.path));
+        toDiscard = allDirty.filter((f) => selected.includes(f.path));
       }
 
-      const confirm = await p.confirm({
+      const confirm = await confirmPrompt({
         message: `Permanently discard changes to ${pc.bold(pc.red(String(toDiscard.length)))} file(s)? This cannot be undone!`,
         initialValue: false,
       });
 
-      if (!confirm || p.isCancel(confirm)) {
+      if (!confirm) {
         p.cancel("Discard cancelled.");
         return;
       }

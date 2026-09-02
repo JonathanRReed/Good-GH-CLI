@@ -12,7 +12,7 @@ import {
   type RepositoryItem,
 } from "../services/github.ts";
 import { getConfig, type CloneMode } from "../services/config.ts";
-import { header, p, pc, promptInput, searchablePicker, type PickerItem } from "../utils/ui.ts";
+import { header, p, pc, promptInput, searchablePicker, selectMenu, type PickerItem } from "../utils/ui.ts";
 
 function expandPath(pathStr: string): string {
   if (pathStr.startsWith("~/") || pathStr === "~") {
@@ -22,7 +22,8 @@ function expandPath(pathStr: string): string {
 }
 
 function extractRepoName(urlOrShorthand: string): string {
-  const parts = urlOrShorthand.replace(/\.git$/, "").split(/[/:]/);
+  const clean = urlOrShorthand.trim().replace(/\/+$/, "").replace(/\.git$/, "");
+  const parts = clean.split(/[/:]/);
   return parts[parts.length - 1] || "project";
 }
 
@@ -34,11 +35,12 @@ export function registerCloneCommand(program: Command): void {
     .option("--fast, --blobless", "Use fast blobless clone (--filter=blob:none)")
     .option("--shallow", "Use shallow clone with depth 1 (--depth 1)")
     .option("-d, --dir <directory>", "Target directory for the cloned repository")
-    .action(async (repoArg?: string, options?: { fast?: boolean; shallow?: boolean; dir?: string }) => {
+    .action(async (repoArg?: string, options?: { fast?: boolean; blobless?: boolean; shallow?: boolean; dir?: string }) => {
       header("Clone & Add Project");
 
       let selectedRepo = repoArg;
-      let cloneMode: CloneMode = options?.fast ? "blobless" : options?.shallow ? "shallow" : "standard";
+      const isFast = Boolean(options?.fast || options?.blobless);
+      let cloneMode: CloneMode = isFast ? "blobless" : options?.shallow ? "shallow" : "standard";
 
       // If a single-word keyword or shorthand was provided as argument, search user's repos and GitHub
       if (selectedRepo && !selectedRepo.includes("/") && !selectedRepo.includes(":") && !selectedRepo.startsWith("http")) {
@@ -156,17 +158,13 @@ export function registerCloneCommand(program: Command): void {
         selectedRepo = pick;
       }
 
-      if (!selectedRepo) {
-        p.cancel("No repository specified.");
-        return;
-      }
-
       const ghAuth = await getGitHubAuthStatus();
       const repoUrl = normalizeCloneUrl(selectedRepo, ghAuth.protocol || "https");
       const defaultRepoName = extractRepoName(selectedRepo);
 
       // Destination directory resolution
       let targetDir = options?.dir;
+
       if (!targetDir) {
         const config = getConfig();
         const baseCloneDir = config.default_clone_dir && config.default_clone_dir !== "."
@@ -175,7 +173,7 @@ export function registerCloneCommand(program: Command): void {
 
         const defaultPath = join(baseCloneDir, defaultRepoName);
 
-        const dirChoice = await p.select({
+        const dirChoice = await selectMenu({
           message: "Where would you like to clone this project?",
           options: [
             {
@@ -191,7 +189,7 @@ export function registerCloneCommand(program: Command): void {
           ],
         });
 
-        if (p.isCancel(dirChoice)) {
+        if (dirChoice === null) {
           p.cancel("Clone cancelled.");
           return;
         }
@@ -221,7 +219,7 @@ export function registerCloneCommand(program: Command): void {
 
       // Clone mode selection if not specified via flags
       if (!options?.fast && !options?.shallow) {
-        const modePick = await p.select({
+        const modePick = await selectMenu({
           message: "Select clone mode:",
           options: [
             {
@@ -240,10 +238,9 @@ export function registerCloneCommand(program: Command): void {
               hint: "Latest commit only; minimal footprint",
             },
           ],
-          initialValue: "standard",
         });
 
-        if (p.isCancel(modePick)) {
+        if (modePick === null) {
           p.cancel("Clone cancelled.");
           return;
         }

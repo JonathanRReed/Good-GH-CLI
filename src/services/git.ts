@@ -7,6 +7,7 @@ import type { CloneMode } from "./config.ts";
 export interface GitStatusResult {
   isRepo: boolean;
   branch: string;
+  isDetached?: boolean;
   staged: ChangedFile[];
   unstaged: ChangedFile[];
   untracked: ChangedFile[];
@@ -119,6 +120,41 @@ export async function getCurrentBranch(cwd = process.cwd()): Promise<string> {
   }
 }
 
+export async function isDetachedHead(cwd = process.cwd()): Promise<boolean> {
+  try {
+    await execa("git", ["symbolic-ref", "-q", "HEAD"], { cwd });
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+export async function getCommitCount(cwd = process.cwd()): Promise<number> {
+  try {
+    const { stdout } = await execa("git", ["rev-list", "--count", "HEAD"], { cwd });
+    return parseInt(stdout.trim(), 10) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+export async function getRemotes(cwd = process.cwd()): Promise<string[]> {
+  try {
+    const { stdout } = await execa("git", ["remote"], { cwd });
+    return stdout
+      .split("\n")
+      .map((r) => r.trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+export async function hasRemote(name = "origin", cwd = process.cwd()): Promise<boolean> {
+  const remotes = await getRemotes(cwd);
+  return remotes.includes(name);
+}
+
 export async function listBranches(cwd = process.cwd()): Promise<BranchInfo[]> {
   try {
     const { stdout } = await execa(
@@ -206,9 +242,11 @@ export async function fetchPullRequestBranch(
   localBranch: string,
   cwd = process.cwd(),
 ): Promise<void> {
+  const remotes = await getRemotes(cwd);
+  const remote = remotes.includes("origin") ? "origin" : remotes[0] || "origin";
   await execa(
     "git",
-    ["fetch", "--quiet", "--no-tags", "origin", `+refs/pull/${prNumber}/head:refs/heads/${localBranch}`],
+    ["fetch", "--quiet", "--no-tags", remote, `+refs/pull/${prNumber}/head:refs/heads/${localBranch}`],
     { cwd },
   );
 }
@@ -241,6 +279,7 @@ export async function getStatus(cwd = process.cwd()): Promise<GitStatusResult> {
     return {
       isRepo: false,
       branch: "",
+      isDetached: false,
       staged: [],
       unstaged: [],
       untracked: [],
@@ -249,6 +288,7 @@ export async function getStatus(cwd = process.cwd()): Promise<GitStatusResult> {
     };
   }
 
+  const isDetached = await isDetachedHead(cwd);
   const branch = await getCurrentBranch(cwd);
   const { stdout } = await execa(
     "git",
@@ -317,6 +357,7 @@ export async function getStatus(cwd = process.cwd()): Promise<GitStatusResult> {
   return {
     isRepo: true,
     branch,
+    isDetached,
     staged,
     unstaged,
     untracked,
@@ -554,6 +595,11 @@ export async function squashCommits(
   if (count <= 1) {
     throw new Error("Squash count must be at least 2.");
   }
+  const total = await getCommitCount(cwd);
+  if (total < count) {
+    throw new Error(`Cannot squash ${count} commits: only ${total} commit(s) available.`);
+  }
+
   const { stdout } = await execa("git", ["log", `-n`, count.toString(), "--pretty=format:%s"], { cwd });
   const previousMessages = stdout.split("\n").filter(Boolean);
 
@@ -567,9 +613,13 @@ export async function commit(
   body?: string,
   optionsOrCwd: CommitOptions | string = {},
 ): Promise<string> {
+  if (!subject || subject.trim().length === 0) {
+    throw new Error("Commit message cannot be empty.");
+  }
+
   const options = typeof optionsOrCwd === "string" ? { cwd: optionsOrCwd } : optionsOrCwd || {};
   const cwd = options.cwd || process.cwd();
-  const args = ["commit", "-m", subject];
+  const args = ["commit", "-m", subject.trim()];
   if (body && body.trim().length > 0) {
     args.push("-m", body.trim());
   }
@@ -587,12 +637,19 @@ export async function commit(
 }
 
 export async function undoCommit(cwd = process.cwd()): Promise<void> {
-  await execGitWithRetry(["reset", "--soft", "HEAD~1"], { cwd });
+  const count = await getCommitCount(cwd);
+  if (count <= 1) {
+    // Only root commit exists. Soft reset to unborn state using update-ref
+    await execGitWithRetry(["update-ref", "-d", "HEAD"], { cwd });
+  } else {
+    await execGitWithRetry(["reset", "--soft", "HEAD~1"], { cwd });
+  }
 }
 
-export async function getRemoteTrackingBranch(cwd = process.cwd()): Promise<string | null> {
+export async function getRemoteTrackingBranch(cwd = process.cwd(), branch?: string): Promise<string | null> {
   try {
-    const { stdout } = await execa("git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], { cwd });
+    const ref = branch ? `${branch}@{u}` : "@{u}";
+    const { stdout } = await execa("git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", ref], { cwd });
     return stdout.trim() || null;
   } catch {
     return null;
@@ -607,7 +664,17 @@ export async function push(
   options: { remote?: string; branch?: string; setUpstream?: boolean; noVerify?: boolean; cwd?: string } = {},
 ): Promise<void> {
   const cwd = options.cwd || process.cwd();
-  const remote = options.remote || "origin";
+
+  if (await isDetachedHead(cwd)) {
+    throw new Error("Cannot push from a detached HEAD state. Please create or checkout a branch first.");
+  }
+
+  const remotes = await getRemotes(cwd);
+  if (remotes.length === 0) {
+    throw new Error("No git remotes configured. Please add a remote (e.g. `git remote add origin <url>`) before pushing.");
+  }
+
+  const remote = options.remote || (remotes.includes("origin") ? "origin" : remotes[0]);
   const branch = options.branch || (await getCurrentBranch(cwd));
 
   const args = ["push"];
@@ -617,8 +684,8 @@ export async function push(
   if (options.setUpstream) {
     args.push("-u", remote, branch);
   } else {
-    // Check if tracking branch exists
-    const tracking = await getRemoteTrackingBranch(cwd);
+    // Check if tracking branch exists for this branch
+    const tracking = await getRemoteTrackingBranch(cwd, branch);
     if (!tracking) {
       args.push("-u", remote, branch);
     }

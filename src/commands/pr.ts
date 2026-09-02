@@ -8,7 +8,7 @@ import {
 } from "../services/github.ts";
 import { fetchPullRequestBranch, isGitRepo, worktreeAdd } from "../services/git.ts";
 import { resolveAIProvider } from "../services/ai/index.ts";
-import { header, p, pc, searchablePicker } from "../utils/ui.ts";
+import { header, p, pc, searchablePicker, selectMenu } from "../utils/ui.ts";
 
 function displayColoredDiff(rawDiff: string): void {
   const lines = rawDiff.split("\n");
@@ -59,7 +59,11 @@ export function registerPrCommand(program: Command): void {
         }
 
         if (options?.web) {
-          await viewPullRequestInBrowser(num);
+          try {
+            await viewPullRequestInBrowser(num);
+          } catch (err) {
+            p.log.error(`Failed to open PR #${num} in browser: ${String(err)}`);
+          }
           return;
         }
 
@@ -121,7 +125,7 @@ export function registerPrCommand(program: Command): void {
       const selectedPr = prs.find((pr) => pr.number === selectedPrNum);
       if (!selectedPr) return;
 
-      const action = await p.select({
+      const action = await selectMenu({
         message: `Action for PR #${selectedPr.number} (${selectedPr.title}):`,
         options: [
           { value: "checkout", label: "Checkout locally", hint: `switch to branch ${selectedPr.headRefName}` },
@@ -133,7 +137,7 @@ export function registerPrCommand(program: Command): void {
         ],
       });
 
-      if (p.isCancel(action) || action === "cancel") return;
+      if (action === null || action === "cancel") return;
 
       if (action === "worktree") {
         const branchName = `pr-${selectedPr.number}`;
@@ -160,7 +164,11 @@ export function registerPrCommand(program: Command): void {
           p.log.error(String(err));
         }
       } else if (action === "web") {
-        await viewPullRequestInBrowser(selectedPr.number);
+        try {
+          await viewPullRequestInBrowser(selectedPr.number);
+        } catch (err) {
+          p.log.error(`Failed to open PR #${selectedPr.number} in browser: ${String(err)}`);
+        }
       } else if (action === "diff") {
         const diff = await getPullRequestDiff(selectedPr.number);
         if (diff) {

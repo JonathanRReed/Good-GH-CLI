@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import {
   commit,
+  getCommitCount,
   getStagedDiff,
   getStatus,
   hasCommits,
@@ -8,7 +9,7 @@ import {
   squashCommits,
 } from "../services/git.ts";
 import { generateCommitWithFallback } from "../services/ai/index.ts";
-import { header, p, pc, promptInput } from "../utils/ui.ts";
+import { header, p, pc, promptInput, selectMenu } from "../utils/ui.ts";
 
 export function registerSquashCommand(program: Command): void {
   program
@@ -28,14 +29,29 @@ export function registerSquashCommand(program: Command): void {
         return;
       }
 
+      const status = await getStatus();
+      if (status.hasChanges) {
+        p.log.error("Working tree has uncommitted changes.");
+        p.log.info("Please commit, stash, or discard your changes before squashing commits.");
+        p.cancel("Squash aborted to protect uncommitted changes.");
+        return;
+      }
+
+      const totalCommits = await getCommitCount();
+      if (totalCommits < 2) {
+        p.log.warn(`Repository only has ${totalCommits} commit(s). At least 2 commits are required to squash.`);
+        return;
+      }
+
       let count = countArg ? parseInt(countArg, 10) : 0;
       if (!count || isNaN(count)) {
         const input = await promptInput({
-          message: "How many commits would you like to squash into one?",
+          message: `How many commits would you like to squash into one? (2 - ${totalCommits})`,
           defaultValue: "2",
           validate: (val) => {
             const n = parseInt(val, 10);
             if (isNaN(n) || n < 2) return "Must be at least 2 commits";
+            if (n > totalCommits) return `Cannot exceed total repository commits (${totalCommits})`;
             return undefined;
           },
         });
@@ -46,6 +62,11 @@ export function registerSquashCommand(program: Command): void {
         }
 
         count = parseInt(input, 10);
+      }
+
+      if (count > totalCommits) {
+        p.log.error(`Cannot squash ${count} commits: repository only has ${totalCommits} commit(s).`);
+        return;
       }
 
       const s = p.spinner();
@@ -71,7 +92,7 @@ export function registerSquashCommand(program: Command): void {
       let commitBody = "";
 
       if (!commitSubject) {
-        const aiChoice = await p.select({
+        const aiChoice = await selectMenu({
           message: "How would you like to formulate the new consolidated commit message?",
           options: [
             { value: "ai", label: "Generate with AI", hint: "synthesizes squashed changes into a clean message" },
@@ -80,7 +101,7 @@ export function registerSquashCommand(program: Command): void {
           ],
         });
 
-        if (p.isCancel(aiChoice)) {
+        if (aiChoice === null) {
           p.cancel("All changes remain staged. You can commit anytime with `ggh commit`.");
           return;
         }
@@ -122,7 +143,7 @@ export function registerSquashCommand(program: Command): void {
         }
       }
 
-      if (!commitSubject) return;
+      if (!commitSubject || commitSubject.trim().length === 0) return;
 
       const cSpinner = p.spinner();
       cSpinner.start("Finalizing squashed commit...");

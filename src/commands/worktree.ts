@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
   getCurrentBranch,
   getRepoRoot,
@@ -9,7 +9,7 @@ import {
   worktreeRemove,
 } from "../services/git.ts";
 import { resolveAIProvider } from "../services/ai/index.ts";
-import { header, p, pc, promptInput, searchablePicker } from "../utils/ui.ts";
+import { confirmPrompt, header, p, pc, promptInput, searchablePicker } from "../utils/ui.ts";
 
 export function registerWorktreeCommand(program: Command): void {
   const wt = program
@@ -130,8 +130,9 @@ export function registerWorktreeCommand(program: Command): void {
         return;
       }
 
+      const repoRoot = await getRepoRoot();
       const list = await worktreeList();
-      const nonMainList = list.filter((w) => !w.isBare && w.path !== process.cwd());
+      const nonMainList = list.filter((w) => !w.isBare && resolve(w.path) !== resolve(repoRoot));
 
       if (nonMainList.length === 0) {
         p.log.warn("No removable secondary worktrees found.");
@@ -139,7 +140,19 @@ export function registerWorktreeCommand(program: Command): void {
       }
 
       let selectedPath = target;
-      if (!selectedPath) {
+      if (selectedPath) {
+        const targetPath = selectedPath;
+        const match = list.find(
+          (w) => w.branch === targetPath || w.path === targetPath || resolve(w.path) === resolve(targetPath),
+        );
+        if (match) {
+          selectedPath = match.path;
+        }
+        if (resolve(selectedPath) === resolve(repoRoot)) {
+          p.log.error("Cannot remove the main repository working tree.");
+          return;
+        }
+      } else {
         const pick = await searchablePicker({
           title: "Select worktree to remove:",
           items: nonMainList.map((w) => ({
@@ -168,12 +181,12 @@ export function registerWorktreeCommand(program: Command): void {
         s.stop(pc.yellow("Worktree removal blocked."));
         const errStr = String(err);
         if (errStr.includes("contains modified or untracked files") || errStr.includes("use --force")) {
-          const confirmForce = await p.confirm({
+          const confirmForce = await confirmPrompt({
             message: "Worktree contains untracked build files or local edits. Force remove?",
             initialValue: true,
           });
 
-          if (confirmForce && !p.isCancel(confirmForce)) {
+          if (confirmForce) {
             const forceSpinner = p.spinner();
             forceSpinner.start("Force removing worktree...");
             try {

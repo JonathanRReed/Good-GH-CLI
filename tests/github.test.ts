@@ -25,7 +25,24 @@ describe("github service", () => {
     expect(parseGitHubRepositoryNameWithOwnerFromRemoteUrl("git@github.com:pingdotgg/t3code.git")).toBe("pingdotgg/t3code");
     expect(parseGitHubRepositoryNameWithOwnerFromRemoteUrl("https://github.com/facebook/react.git")).toBe("facebook/react");
     expect(parseGitHubRepositoryNameWithOwnerFromRemoteUrl("ssh://git@github.com/vercel/next.js.git")).toBe("vercel/next.js");
+    expect(parseGitHubRepositoryNameWithOwnerFromRemoteUrl("ssh://git@github.com:22/vercel/next.js.git")).toBe("vercel/next.js");
+    expect(parseGitHubRepositoryNameWithOwnerFromRemoteUrl("http://github.com/facebook/react.git")).toBe("facebook/react");
     expect(parseGitHubRepositoryNameWithOwnerFromRemoteUrl("git://github.com/torvalds/linux")).toBe("torvalds/linux");
     expect(parseGitHubRepositoryNameWithOwnerFromRemoteUrl("invalid-url")).toBe(null);
+  });
+
+  it("handles edge cases in normalizeCloneUrl (trailing slash, existing .git, empty)", () => {
+    expect(normalizeCloneUrl("facebook/react/", "https")).toBe("https://github.com/facebook/react.git");
+    expect(normalizeCloneUrl("facebook/react.git", "https")).toBe("https://github.com/facebook/react.git");
+    expect(normalizeCloneUrl("  facebook/react.git  ", "ssh")).toBe("git@github.com:facebook/react.git");
+    expect(normalizeCloneUrl("facebook/react/", "ssh")).toBe("git@github.com:facebook/react.git");
+    expect(normalizeCloneUrl("")).toBe("");
+    expect(normalizeCloneUrl("   ")).toBe("");
+  });
+
+  it("searchRepositories returns empty array on empty or whitespace query without calling gh", async () => {
+    const { searchRepositories } = await import("../src/services/github.ts");
+    expect(await searchRepositories("")).toEqual([]);
+    expect(await searchRepositories("   ")).toEqual([]);
   });
 });

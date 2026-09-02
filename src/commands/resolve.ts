@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { getStatus, isGitRepo, resolveConflict } from "../services/git.ts";
-import { header, p, pc } from "../utils/ui.ts";
+import { header, p, pc, selectMenu } from "../utils/ui.ts";
 
 export function registerResolveCommand(program: Command): void {
   program
@@ -23,7 +23,7 @@ export function registerResolveCommand(program: Command): void {
       p.log.step(`Found ${pc.bold(pc.yellow(String(status.conflicts.length)))} conflicted file(s).`);
 
       for (const conflict of status.conflicts) {
-        const choice = await p.select({
+        const choice = await selectMenu({
           message: `Resolve conflict in: ${pc.bold(pc.cyan(conflict.path))}`,
           options: [
             {
@@ -48,20 +48,24 @@ export function registerResolveCommand(program: Command): void {
           ],
         });
 
-        if (p.isCancel(choice)) {
+        if (choice === null) {
           p.cancel("Conflict resolution paused.");
           return;
         }
 
-        if (choice === "ours") {
-          await resolveConflict(conflict.path, "ours");
-          p.log.success(`Accepted ours for ${pc.cyan(conflict.path)}.`);
-        } else if (choice === "theirs") {
-          await resolveConflict(conflict.path, "theirs");
-          p.log.success(`Accepted theirs for ${pc.cyan(conflict.path)}.`);
-        } else if (choice === "mark") {
-          await resolveConflict(conflict.path, "mark");
-          p.log.success(`Marked ${pc.cyan(conflict.path)} as resolved.`);
+        try {
+          if (choice === "ours") {
+            await resolveConflict(conflict.path, "ours");
+            p.log.success(`Accepted ours for ${pc.cyan(conflict.path)}.`);
+          } else if (choice === "theirs") {
+            await resolveConflict(conflict.path, "theirs");
+            p.log.success(`Accepted theirs for ${pc.cyan(conflict.path)}.`);
+          } else if (choice === "mark") {
+            await resolveConflict(conflict.path, "mark");
+            p.log.success(`Marked ${pc.cyan(conflict.path)} as resolved.`);
+          }
+        } catch (err) {
+          p.log.error(`Failed to resolve ${pc.bold(conflict.path)}: ${String(err)}`);
         }
       }
 

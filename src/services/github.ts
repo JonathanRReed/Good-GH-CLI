@@ -20,16 +20,25 @@ export interface RepositoryItem {
 export async function getGitHubAuthStatus(): Promise<GitHubAccount> {
   try {
     const { stdout } = await execa("gh", ["auth", "status", "--json", "hosts"]);
-    const parsed = JSON.parse(stdout);
-    const githubHosts = parsed?.hosts?.["github.com"];
-    if (Array.isArray(githubHosts) && githubHosts.length > 0) {
-      const activeAccount = githubHosts.find((acc: { active?: boolean }) => acc.active) || githubHosts[0];
-      return {
-        authenticated: activeAccount.state === "success",
-        login: activeAccount.login,
-        host: activeAccount.host || "github.com",
-        protocol: activeAccount.gitProtocol === "ssh" ? "ssh" : "https",
-      };
+    if (stdout && stdout.trim()) {
+      const parsed = JSON.parse(stdout);
+      const hostsObj = parsed?.hosts;
+      if (hostsObj && typeof hostsObj === "object") {
+        const hostKeys = Object.keys(hostsObj);
+        const hostKey = hostsObj["github.com"] ? "github.com" : hostKeys[0];
+        const accounts = hostKey ? hostsObj[hostKey] : undefined;
+        const accountList = Array.isArray(accounts) ? accounts : accounts ? [accounts] : [];
+        if (accountList.length > 0) {
+          const activeAccount = accountList.find((acc: { active?: boolean }) => acc.active) || accountList[0];
+          const isAuthenticated = activeAccount.state === "success" || activeAccount.active === true;
+          return {
+            authenticated: isAuthenticated,
+            login: activeAccount.login,
+            host: activeAccount.host || hostKey || "github.com",
+            protocol: activeAccount.gitProtocol === "ssh" ? "ssh" : "https",
+          };
+        }
+      }
     }
   } catch {
     // Fallback: check basic gh auth token
@@ -90,11 +99,14 @@ export async function listStarredRepositories(limit = 30): Promise<RepositoryIte
  * Searches repositories on GitHub with live query.
  */
 export async function searchRepositories(query: string, limit = 20): Promise<RepositoryItem[]> {
+  const trimmedQuery = query?.trim() ?? "";
+  if (!trimmedQuery) return [];
+
   try {
     const { stdout } = await execa("gh", [
       "search",
       "repos",
-      query,
+      trimmedQuery,
       "--limit",
       limit.toString(),
       "--json",
@@ -110,7 +122,7 @@ export async function searchRepositories(query: string, limit = 20): Promise<Rep
     try {
       const { stdout } = await execa("gh", [
         "api",
-        `search/repositories?q=${encodeURIComponent(query)}&per_page=${limit}`,
+        `search/repositories?q=${encodeURIComponent(trimmedQuery)}&per_page=${limit}`,
         "--jq",
         "[.items[] | { nameWithOwner: .full_name, description: .description, isPrivate: .private }]",
       ]);
@@ -125,19 +137,27 @@ export async function searchRepositories(query: string, limit = 20): Promise<Rep
  * Normalizes input (e.g. 'owner/repo', 'repo', full URL) into a cloneable URL.
  */
 export function normalizeCloneUrl(input: string, preferredProtocol: "https" | "ssh" = "https"): string {
-  const trimmed = input.trim();
+  const trimmed = input?.trim() ?? "";
+  if (!trimmed) return "";
 
-  // Already a full git or HTTP URL
-  if (trimmed.startsWith("git@") || trimmed.startsWith("https://") || trimmed.startsWith("http://")) {
+  // Already a full git or HTTP/SSH URL
+  if (
+    trimmed.startsWith("git@") ||
+    trimmed.startsWith("https://") ||
+    trimmed.startsWith("http://") ||
+    trimmed.startsWith("ssh://") ||
+    trimmed.startsWith("git://")
+  ) {
     return trimmed;
   }
 
-  // Handle owner/repo shorthand
+  // Handle owner/repo shorthand (e.g. 'owner/repo', 'owner/repo.git', 'owner/repo/')
   if (trimmed.includes("/")) {
+    const clean = trimmed.replace(/\/+$/, "").replace(/\.git$/, "");
     if (preferredProtocol === "ssh") {
-      return `git@github.com:${trimmed}.git`;
+      return `git@github.com:${clean}.git`;
     }
-    return `https://github.com/${trimmed}.git`;
+    return `https://github.com/${clean}.git`;
   }
 
   return trimmed;
@@ -247,6 +267,17 @@ export async function createRelease(
 
 export async function getCommitsSinceTag(tag?: string, cwd = process.cwd()): Promise<string[]> {
   try {
+    if (tag) {
+      try {
+        const { stdout: hasTag } = await execa("git", ["tag", "-l", tag], { cwd });
+        if (!hasTag.trim()) {
+          // Tag not found locally; try to fetch tags from remote
+          await execa("git", ["fetch", "--tags", "--quiet"], { cwd });
+        }
+      } catch {
+        // Ignore tag fetch failure
+      }
+    }
     const revRange = tag ? `${tag}..HEAD` : "HEAD";
     const { stdout } = await execa(
       "git",
@@ -255,7 +286,17 @@ export async function getCommitsSinceTag(tag?: string, cwd = process.cwd()): Pro
     );
     return stdout.split("\n").filter(Boolean);
   } catch {
-    return [];
+    // If tag..HEAD failed (e.g. tag deleted or unborn revision), fallback to recent HEAD
+    try {
+      const { stdout } = await execa(
+        "git",
+        ["log", "HEAD", "--pretty=format:%h %s", "-n", "50"],
+        { cwd },
+      );
+      return stdout.split("\n").filter(Boolean);
+    } catch {
+      return [];
+    }
   }
 }
 
@@ -267,7 +308,7 @@ export function parseGitHubRepositoryNameWithOwnerFromRemoteUrl(url: string | nu
   if (trimmed.length === 0) return null;
 
   const match =
-    /^(?:git@github\.com:|ssh:\/\/git@github\.com\/|https:\/\/github\.com\/|git:\/\/github\.com\/)([^/\s]+\/[^/\s]+?)(?:\.git)?\/?$/i.exec(
+    /^(?:git@github\.com:|ssh:\/\/git@github\.com(?::\d+)?\/|https?:\/\/github\.com\/|git:\/\/github\.com\/)([^/\s]+\/[^/\s]+?)(?:\.git)?\/?$/i.exec(
       trimmed,
     );
   const repositoryNameWithOwner = match?.[1]?.trim() ?? "";
@@ -285,7 +326,12 @@ export async function getActivePullRequest(
   cwd = process.cwd(),
 ): Promise<ActivePullRequestInfo | null> {
   try {
-    const { stdout } = await execa("gh", ["pr", "view", "--json", "number,title,state,url"], { cwd });
+    const { stdout } = await execa(
+      "gh",
+      ["pr", "view", "--json", "number,title,state,url"],
+      { cwd, reject: false },
+    );
+    if (!stdout || !stdout.trim()) return null;
     return JSON.parse(stdout);
   } catch {
     return null;
@@ -303,7 +349,13 @@ export async function getPullRequestChecks(
   cwd = process.cwd(),
 ): Promise<CheckRunResult[]> {
   try {
-    const { stdout } = await execa("gh", ["pr", "checks", "--json", "name,state,description,link"], { cwd });
+    // gh pr checks exits with 1 (failing) or 2 (pending); reject: false ensures stdout is preserved
+    const { stdout } = await execa(
+      "gh",
+      ["pr", "checks", "--json", "name,state,description,link"],
+      { cwd, reject: false },
+    );
+    if (!stdout || !stdout.trim()) return [];
     return JSON.parse(stdout);
   } catch {
     return [];

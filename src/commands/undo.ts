@@ -1,6 +1,6 @@
 import { Command } from "commander";
-import { getCurrentBranch, hasCommits, isGitRepo, undoCommit } from "../services/git.ts";
-import { header, p, pc } from "../utils/ui.ts";
+import { getCurrentBranch, hasCommits, isDetachedHead, isGitRepo, undoCommit } from "../services/git.ts";
+import { confirmPrompt, header, p, pc } from "../utils/ui.ts";
 
 export function registerUndoCommand(program: Command): void {
   program
@@ -20,15 +20,17 @@ export function registerUndoCommand(program: Command): void {
         return;
       }
 
-      const branch = await getCurrentBranch();
+      const isDetached = await isDetachedHead();
+      const rawBranch = await getCurrentBranch();
+      const targetDesc = isDetached ? pc.yellow("HEAD (detached)") : `branch ${pc.cyan(rawBranch)}`;
 
       if (!options.yes) {
-        const confirmUndo = await p.confirm({
-          message: `Undo the latest commit on branch ${pc.cyan(branch)}? (Changes will remain staged)`,
+        const confirmUndo = await confirmPrompt({
+          message: `Undo the latest commit on ${targetDesc}? (Changes will remain staged)`,
           initialValue: true,
         });
 
-        if (!confirmUndo || p.isCancel(confirmUndo)) {
+        if (!confirmUndo) {
           p.cancel("Undo cancelled.");
           return;
         }

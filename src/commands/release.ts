@@ -7,9 +7,9 @@ import {
   getGitHubAuthStatus,
   listReleases,
 } from "../services/github.ts";
-import { getRepoRoot, isGitRepo } from "../services/git.ts";
+import { getRepoRoot, hasCommits, isGitRepo } from "../services/git.ts";
 import { resolveAIProvider } from "../services/ai/index.ts";
-import { header, p, pc, promptInput } from "../utils/ui.ts";
+import { confirmPrompt, header, p, pc, promptInput } from "../utils/ui.ts";
 
 function detectPackageVersion(repoRoot: string): string | null {
   try {
@@ -54,11 +54,26 @@ export function registerReleaseCommand(program: Command): void {
         return;
       }
 
-      if (action === "create") {
+      let isCreate = action === "create";
+      let tag = tagArg;
+
+      // Direct tag format e.g. `ggh release v1.0.0`
+      if (action && action !== "create" && action !== "list") {
+        if (/^v?\d+(\.\d+)*/i.test(action)) {
+          isCreate = true;
+          tag = action;
+        }
+      }
+
+      if (isCreate) {
+        if (!(await hasCommits())) {
+          p.log.error("Cannot create a release: repository has no commits.");
+          return;
+        }
+
         const repoRoot = await getRepoRoot();
         const detectedTag = detectPackageVersion(repoRoot);
 
-        let tag = tagArg;
         if (!tag) {
           const inputTag = await promptInput({
             message: "Enter release tag name:",
@@ -119,12 +134,12 @@ export function registerReleaseCommand(program: Command): void {
 
         p.note(notes, `Proposed Release Notes: ${tag}`);
 
-        const confirm = await p.confirm({
+        const confirm = await confirmPrompt({
           message: `Publish release ${pc.bold(pc.cyan(tag))} to GitHub?`,
           initialValue: true,
         });
 
-        if (!confirm || p.isCancel(confirm)) {
+        if (!confirm) {
           p.cancel("Release cancelled.");
           return;
         }

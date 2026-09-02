@@ -5,9 +5,11 @@ import {
   getAheadBehind,
   getCurrentBranch,
   getGoneBranches,
+  getRemotes,
+  isDetachedHead,
   isGitRepo,
 } from "../services/git.ts";
-import { header, p, pc } from "../utils/ui.ts";
+import { confirmPrompt, header, p, pc } from "../utils/ui.ts";
 
 export function registerSyncCommand(program: Command): void {
   program
@@ -23,6 +25,13 @@ export function registerSyncCommand(program: Command): void {
         return;
       }
 
+      const remotes = await getRemotes();
+      if (remotes.length === 0) {
+        p.log.warn(pc.yellow("No git remotes configured for this repository."));
+        p.log.info("Add a remote with `git remote add origin <url>` to sync with remote.");
+        return;
+      }
+
       const s = p.spinner();
       s.start("Fetching latest remote refs and pruning deleted tracking branches...");
 
@@ -33,20 +42,25 @@ export function registerSyncCommand(program: Command): void {
         s.stop(pc.yellow("Fetch/prune completed with warnings."));
       }
 
+      const detached = await isDetachedHead();
       const currentBranch = await getCurrentBranch();
-      const drift = await getAheadBehind();
 
-      if (drift.hasUpstream) {
-        if (drift.ahead === 0 && drift.behind === 0) {
-          p.log.success(pc.green(`Branch ${pc.bold(currentBranch)} is completely in sync with remote.`));
-        } else {
-          const parts: string[] = [];
-          if (drift.ahead > 0) parts.push(pc.yellow(`ahead ${drift.ahead} commit(s)`));
-          if (drift.behind > 0) parts.push(pc.cyan(`behind ${drift.behind} commit(s)`));
-          p.log.step(`Branch ${pc.bold(currentBranch)} drift: ${parts.join(", ")}`);
-        }
+      if (detached) {
+        p.log.warn(pc.yellow("Currently in detached HEAD state. Switch to a named branch to track remote changes."));
       } else {
-        p.log.info(pc.dim(`Branch ${currentBranch} has no upstream remote tracking branch.`));
+        const drift = await getAheadBehind();
+        if (drift.hasUpstream) {
+          if (drift.ahead === 0 && drift.behind === 0) {
+            p.log.success(pc.green(`Branch ${pc.bold(currentBranch)} is completely in sync with remote.`));
+          } else {
+            const parts: string[] = [];
+            if (drift.ahead > 0) parts.push(pc.yellow(`ahead ${drift.ahead} commit(s)`));
+            if (drift.behind > 0) parts.push(pc.cyan(`behind ${drift.behind} commit(s)`));
+            p.log.step(`Branch ${pc.bold(currentBranch)} drift: ${parts.join(", ")}`);
+          }
+        } else {
+          p.log.info(pc.dim(`Branch ${currentBranch} has no upstream remote tracking branch.`));
+        }
       }
 
       // Check for stale (gone) branches
@@ -70,11 +84,11 @@ export function registerSyncCommand(program: Command): void {
 
       let confirmed = options?.yes;
       if (!confirmed) {
-        const confirmDelete = await p.confirm({
+        const confirmDelete = await confirmPrompt({
           message: `Delete ${goneBranches.length} stale local branch(es)?`,
           initialValue: true,
         });
-        if (p.isCancel(confirmDelete) || !confirmDelete) {
+        if (!confirmDelete) {
           p.cancel("Skipped branch cleanup.");
           return;
         }

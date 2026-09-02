@@ -5,9 +5,12 @@ import {
   commit,
   findPrTemplate,
   getRecentCommits,
+  getRemotes,
   getStagedDiff,
   getStagedDiffStat,
   getStatus,
+  hasCommits,
+  isDetachedHead,
   isGitRepo,
   pullRebase,
   push,
@@ -24,7 +27,16 @@ import { createPullRequest, getActivePullRequest, getGitHubAuthStatus } from "..
 import { getConfig, type AIProvider as ConfigAIProvider } from "../services/config.ts";
 import { redactSecrets, scanCodeHygiene, stripLockfilesFromDiff } from "../utils/diff.ts";
 import { detectCommitConvention, type CommitStyle } from "../utils/conventions.ts";
-import { header, p, pc, promptFirstRunProvider, promptInput } from "../utils/ui.ts";
+import {
+  confirmPrompt,
+  header,
+  multiSelectMenu,
+  p,
+  pc,
+  promptFirstRunProvider,
+  promptInput,
+  selectMenu,
+} from "../utils/ui.ts";
 
 function displayColoredDiff(rawDiff: string): void {
   const lines = rawDiff.split("\n");
@@ -36,10 +48,8 @@ function displayColoredDiff(rawDiff: string): void {
       output.push(pc.red(line));
     } else if (line.startsWith("@@")) {
       output.push(pc.cyan(line));
-    } else if (line.startsWith("diff --git") || line.startsWith("index ")) {
-      output.push(pc.bold(pc.dim(line)));
     } else {
-      output.push(line);
+      output.push(pc.dim(line));
     }
   }
   console.log("\n" + output.join("\n") + "\n");
@@ -47,7 +57,7 @@ function displayColoredDiff(rawDiff: string): void {
 
 async function promptConventionalCommitWizard(): Promise<{ subject: string; body: string }> {
   p.log.step("Conventional Commit Wizard");
-  const type = await p.select({
+  const type = await selectMenu({
     message: "Select commit type:",
     options: [
       { value: "feat", label: "feat", hint: "A new feature" },
@@ -59,7 +69,7 @@ async function promptConventionalCommitWizard(): Promise<{ subject: string; body
       { value: "chore", label: "chore", hint: "Changes to build process or auxiliary tools" },
     ],
   });
-  if (p.isCancel(type)) throw new Error("cancelled");
+  if (type === null) throw new Error("cancelled");
 
   const scope = await promptInput({
     message: "Enter scope (optional, press Enter to skip):",
@@ -123,6 +133,16 @@ export function registerCommitCommand(program: Command): void {
         return;
       }
 
+      if (options.message !== undefined && options.message.trim().length === 0) {
+        p.log.error("Commit message cannot be empty.");
+        return;
+      }
+
+      if (options.amend && !(await hasCommits())) {
+        p.log.error("Cannot amend: repository has no commits yet.");
+        return;
+      }
+
       let status = await getStatus();
 
       // Guard against unresolved merge conflicts
@@ -147,7 +167,7 @@ export function registerCommitCommand(program: Command): void {
           return;
         }
 
-        const stageChoice = await p.select({
+        const stageChoice = await selectMenu({
           message: "No files are staged. How would you like to stage changes?",
           options: [
             {
@@ -163,7 +183,7 @@ export function registerCommitCommand(program: Command): void {
           ],
         });
 
-        if (p.isCancel(stageChoice)) {
+        if (stageChoice === null) {
           p.cancel("Commit cancelled.");
           return;
         }
@@ -171,22 +191,22 @@ export function registerCommitCommand(program: Command): void {
         if (stageChoice === "all") {
           await stageAll();
         } else {
-          const selectedFiles = await p.multiselect({
+          const selectedFiles = await multiSelectMenu({
             message: "Select files to stage (space to toggle, enter to confirm):",
             options: unstagedAndUntracked.map((f) => ({
               value: f.path,
               label: `${f.path} ${pc.dim(`(${f.status})`)}`,
             })),
             required: true,
-            maxItems: 8,
+            pageSize: 8,
           });
 
-          if (p.isCancel(selectedFiles)) {
+          if (selectedFiles === null) {
             p.cancel("Commit cancelled.");
             return;
           }
 
-          await stageFiles(selectedFiles as string[]);
+          await stageFiles(selectedFiles);
         }
 
         status = await getStatus();
@@ -210,11 +230,11 @@ export function registerCommitCommand(program: Command): void {
           for (const issue of hygieneIssues.slice(0, 5)) {
             p.log.message(`  ${pc.yellow("▲")} ${issue.message}: ${pc.dim(issue.line.slice(0, 60))}`);
           }
-          const proceed = await p.confirm({
+          const proceed = await confirmPrompt({
             message: "Proceed with commit anyway?",
             initialValue: true,
           });
-          if (!proceed || p.isCancel(proceed)) {
+          if (!proceed) {
             p.cancel("Commit cancelled to address code hygiene.");
             return;
           }
@@ -253,11 +273,11 @@ export function registerCommitCommand(program: Command): void {
         for (const s of dirtySubmodules) {
           p.log.message(`  ${pc.yellow("▲")} ${s.name} (${s.status}, commit: ${s.commit.slice(0, 7)})`);
         }
-        const proceedSubmod = await p.confirm({
+        const proceedSubmod = await confirmPrompt({
           message: "Proceed with commit anyway?",
           initialValue: true,
         });
-        if (!proceedSubmod || p.isCancel(proceedSubmod)) {
+        if (!proceedSubmod) {
           p.cancel("Commit cancelled to address submodules.");
           return;
         }
@@ -266,7 +286,7 @@ export function registerCommitCommand(program: Command): void {
       // Auto-Feature Branching (T3 Code pattern)
       const isDefaultBranch = ["main", "master"].includes(status.branch.toLowerCase());
       if (isDefaultBranch && !options.amend && !options.message) {
-        const branchChoice = await p.select({
+        const branchChoice = await selectMenu({
           message: `You are on default branch ${pc.bold(pc.yellow(status.branch))}. Where would you like to commit?`,
           options: [
             {
@@ -286,7 +306,7 @@ export function registerCommitCommand(program: Command): void {
           ],
         });
 
-        if (p.isCancel(branchChoice) || branchChoice === "cancel") {
+        if (branchChoice === null || branchChoice === "cancel") {
           p.cancel("Commit cancelled.");
           return;
         }
@@ -409,7 +429,7 @@ export function registerCommitCommand(program: Command): void {
             ? `Push updates to active PR #${activePr.number}`
             : "Push and generate AI Pull Request";
 
-          const action = await p.select({
+          const action = await selectMenu({
             message: "What would you like to do?",
             options: [
               { value: "commit", label: "Commit", hint: "Create local commit" },
@@ -422,7 +442,7 @@ export function registerCommitCommand(program: Command): void {
             ],
           });
 
-          if (p.isCancel(action) || action === "cancel") {
+          if (action === null || action === "cancel") {
             p.cancel("Commit cancelled.");
             return;
           }
@@ -465,8 +485,8 @@ export function registerCommitCommand(program: Command): void {
         }
       }
 
-      if (!commitSubject) {
-        p.cancel("Commit cancelled.");
+      if (!commitSubject || commitSubject.trim().length === 0) {
+        p.cancel("Commit cancelled (empty commit message).");
         return;
       }
 
@@ -494,11 +514,11 @@ export function registerCommitCommand(program: Command): void {
           status.branch.toLowerCase(),
         );
         if (isProtected) {
-          const confirmProtected = await p.confirm({
+          const confirmProtected = await confirmPrompt({
             message: `You are on protected branch ${pc.bold(pc.yellow(status.branch))}. Push directly without a PR?`,
             initialValue: false,
           });
-          if (!confirmProtected || p.isCancel(confirmProtected)) {
+          if (!confirmProtected) {
             p.log.info("Push cancelled. Consider running `ggh c --pr` to open a Pull Request.");
             options.push = false;
           }
@@ -507,6 +527,22 @@ export function registerCommitCommand(program: Command): void {
 
       // Handle Push
       if (options.push || options.pr) {
+        if (status.isDetached || status.branch === "HEAD" || (await isDetachedHead())) {
+          p.log.error("Cannot push or open a Pull Request from a detached HEAD state. Please create or switch to a branch first.");
+          options.push = false;
+          options.pr = false;
+          return;
+        }
+
+        const remotes = await getRemotes();
+        if (remotes.length === 0) {
+          p.log.warn("No git remote configured. Commit was created locally, but cannot push to remote.");
+          p.log.info(`Add a remote with \`git remote add origin <url>\` and push with \`git push -u origin ${status.branch}\`.`);
+          options.push = false;
+          options.pr = false;
+          return;
+        }
+
         const pushSpinner = p.spinner();
         pushSpinner.start(`Pushing to remote branch ${pc.cyan(status.branch)}...`);
         try {
@@ -514,12 +550,12 @@ export function registerCommitCommand(program: Command): void {
           pushSpinner.stop(pc.green("Pushed to remote successfully!"));
         } catch (err) {
           pushSpinner.stop(pc.yellow("Push failed or was rejected."));
-          const retryRebase = await p.confirm({
+          const retryRebase = await confirmPrompt({
             message: "Remote branch may have new changes. Run `git pull --rebase` and retry?",
             initialValue: true,
           });
 
-          if (retryRebase && !p.isCancel(retryRebase)) {
+          if (retryRebase) {
             const rebaseSpinner = p.spinner();
             rebaseSpinner.start("Pulling remote changes with rebase...");
             try {
@@ -593,12 +629,12 @@ export function registerCommitCommand(program: Command): void {
 
         p.note(`${pc.bold(prTitle)}\n\n${pc.dim(prBody)}`, "Proposed Pull Request");
 
-        const confirmPr = await p.confirm({
+        const confirmPr = await confirmPrompt({
           message: "Create this Pull Request now on GitHub?",
           initialValue: true,
         });
 
-        if (confirmPr && !p.isCancel(confirmPr)) {
+        if (confirmPr) {
           const createSpinner = p.spinner();
           createSpinner.start("Creating Pull Request on GitHub...");
           try {

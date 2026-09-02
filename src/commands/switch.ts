@@ -1,13 +1,22 @@
 import { Command } from "commander";
+import { resolve } from "node:path";
 import {
-  getCurrentBranch,
   getRepoRoot,
+  getStatus,
   isGitRepo,
   listBranches,
   switchBranch,
   worktreeList,
 } from "../services/git.ts";
 import { header, p, pc, promptInput, searchablePicker, type PickerItem } from "../utils/ui.ts";
+
+function formatSwitchError(err: unknown): string {
+  const str = String(err);
+  if (str.includes("overwritten by checkout") || str.includes("local changes")) {
+    return "Your local uncommitted changes would be overwritten by switching branches. Please commit or stash your changes first (`ggh stash` or `ggh commit`).";
+  }
+  return str;
+}
 
 export function registerSwitchCommand(program: Command): void {
   program
@@ -23,7 +32,8 @@ export function registerSwitchCommand(program: Command): void {
         return;
       }
 
-      const currentBranch = await getCurrentBranch();
+      const status = await getStatus();
+      const currentBranch = status.isDetached ? "HEAD (detached)" : status.branch;
 
       // If user specified target directly on CLI:
       if (target) {
@@ -35,7 +45,7 @@ export function registerSwitchCommand(program: Command): void {
             s.stop(pc.green(`Switched to new branch ${pc.bold(pc.cyan(target))}`));
           } catch (err) {
             s.stop(pc.red("Failed to create branch."));
-            p.log.error(String(err));
+            p.log.error(formatSwitchError(err));
           }
           return;
         }
@@ -47,12 +57,16 @@ export function registerSwitchCommand(program: Command): void {
           s.stop(pc.green(`Switched to branch ${pc.bold(pc.cyan(target))}`));
         } catch (err) {
           s.stop(pc.red("Failed to switch branch."));
-          p.log.error(String(err));
+          p.log.error(formatSwitchError(err));
         }
         return;
       }
 
       // Interactive mode
+      if (status.hasChanges) {
+        p.log.warn(pc.yellow(`You have ${status.staged.length + status.unstaged.length + status.untracked.length} uncommitted change(s).`));
+      }
+
       const branches = await listBranches();
       const worktrees = await worktreeList();
       const repoRoot = await getRepoRoot();
@@ -76,7 +90,7 @@ export function registerSwitchCommand(program: Command): void {
       }
 
       // Add worktrees if more than the main root
-      const secondaryTrees = worktrees.filter((w) => w.path !== repoRoot);
+      const secondaryTrees = worktrees.filter((w) => resolve(w.path) !== resolve(repoRoot));
       if (secondaryTrees.length > 0) {
         for (const wt of secondaryTrees) {
           choices.push({
@@ -119,7 +133,7 @@ export function registerSwitchCommand(program: Command): void {
           s.stop(pc.green(`Switched to new branch ${pc.bold(pc.cyan(cleanName))}`));
         } catch (err) {
           s.stop(pc.red("Failed to create branch."));
-          p.log.error(String(err));
+          p.log.error(formatSwitchError(err));
         }
       } else if (val.startsWith("branch:")) {
         const targetBranch = val.replace("branch:", "");
@@ -135,7 +149,7 @@ export function registerSwitchCommand(program: Command): void {
           s.stop(pc.green(`Switched to branch ${pc.bold(pc.cyan(targetBranch))}`));
         } catch (err) {
           s.stop(pc.red("Failed to switch branch."));
-          p.log.error(String(err));
+          p.log.error(formatSwitchError(err));
         }
       } else if (val.startsWith("worktree:")) {
         const wtPath = val.replace("worktree:", "");

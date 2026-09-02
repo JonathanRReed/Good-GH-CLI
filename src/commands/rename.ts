@@ -3,10 +3,12 @@ import { execa } from "execa";
 import {
   getAheadBehind,
   getCurrentBranch,
+  getRemotes,
+  hasBranch,
   isGitRepo,
   renameBranch,
 } from "../services/git.ts";
-import { header, p, pc, promptInput } from "../utils/ui.ts";
+import { confirmPrompt, header, p, pc, promptInput } from "../utils/ui.ts";
 
 export function registerRenameCommand(program: Command): void {
   program
@@ -27,17 +29,22 @@ export function registerRenameCommand(program: Command): void {
       }
 
       if (current === "main" || current === "master") {
-        const confirmDefault = await p.confirm({
+        const confirmDefault = await confirmPrompt({
           message: `Current branch is default branch ${pc.bold(pc.yellow(current))}. Are you sure you want to rename it?`,
           initialValue: false,
         });
-        if (!confirmDefault || p.isCancel(confirmDefault)) {
+        if (!confirmDefault) {
           p.cancel("Rename cancelled.");
           return;
         }
       }
 
-      let newName = newNameArg;
+      let newName = newNameArg?.trim();
+      if (newNameArg !== undefined && (!newName || newName.length === 0)) {
+        p.log.error("New branch name cannot be empty.");
+        return;
+      }
+
       if (!newName) {
         const inputName = await promptInput({
           message: `Enter new name for branch ${pc.bold(pc.cyan(current))}:`,
@@ -51,6 +58,16 @@ export function registerRenameCommand(program: Command): void {
         }
 
         newName = inputName.trim();
+      }
+
+      if (newName === current) {
+        p.log.warn(`Branch is already named '${current}'. Nothing to rename.`);
+        return;
+      }
+
+      if (await hasBranch(newName)) {
+        p.log.error(`A branch named '${newName}' already exists.`);
+        return;
       }
 
       const s = p.spinner();
@@ -69,21 +86,26 @@ export function registerRenameCommand(program: Command): void {
       }
 
       if (hadRemote) {
-        const updateRemote = await p.confirm({
-          message: `Branch had remote tracking. Push ${pc.bold(pc.green(newName))} to remote and delete old remote branch 'origin/${current}'?`,
-          initialValue: true,
-        });
+        const remotes = await getRemotes();
+        const remoteName = remotes.includes("origin") ? "origin" : remotes[0];
 
-        if (updateRemote && !p.isCancel(updateRemote)) {
-          const remoteSpinner = p.spinner();
-          remoteSpinner.start("Updating remote tracking branch...");
-          try {
-            await execa("git", ["push", "-u", "origin", newName]);
-            await execa("git", ["push", "origin", "--delete", current]);
-            remoteSpinner.stop(pc.green("Remote branch updated successfully!"));
-          } catch (remoteErr) {
-            remoteSpinner.stop(pc.yellow("Remote branch update could not be fully completed."));
-            p.log.warn(String(remoteErr));
+        if (remoteName) {
+          const updateRemote = await confirmPrompt({
+            message: `Branch had remote tracking. Push ${pc.bold(pc.green(newName))} to remote and delete old remote branch '${remoteName}/${current}'?`,
+            initialValue: true,
+          });
+
+          if (updateRemote) {
+            const remoteSpinner = p.spinner();
+            remoteSpinner.start("Updating remote tracking branch...");
+            try {
+              await execa("git", ["push", "-u", remoteName, newName]);
+              await execa("git", ["push", remoteName, "--delete", current]);
+              remoteSpinner.stop(pc.green("Remote branch updated successfully!"));
+            } catch (remoteErr) {
+              remoteSpinner.stop(pc.yellow("Remote branch update could not be fully completed."));
+              p.log.warn(String(remoteErr));
+            }
           }
         }
       }
