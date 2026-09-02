@@ -162,6 +162,7 @@ export function registerStashCommand(program: Command): void {
             label: `${s.ref} (${s.date})`,
             hint: s.message,
           })),
+          maxItems: 8,
         });
 
         if (p.isCancel(pickStash)) return;
@@ -197,6 +198,7 @@ export function registerStashCommand(program: Command): void {
             label: `${s.ref} (${s.date})`,
             hint: s.message,
           })),
+          maxItems: 8,
         });
 
         if (p.isCancel(pickDrop)) return;

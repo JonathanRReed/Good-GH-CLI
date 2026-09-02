@@ -178,6 +178,7 @@ export function registerCommitCommand(program: Command): void {
               label: `${f.path} ${pc.dim(`(${f.status})`)}`,
             })),
             required: true,
+            maxItems: 8,
           });
 
           if (p.isCancel(selectedFiles)) {

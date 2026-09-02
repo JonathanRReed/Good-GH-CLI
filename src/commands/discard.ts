@@ -46,6 +46,7 @@ export function registerDiscardCommand(program: Command): void {
             label: `${f.path} ${pc.dim(`(${f.status}${f.staged ? ", staged" : ""})`)}`,
           })),
           required: true,
+          maxItems: 8,
         });
 
         if (p.isCancel(selected)) {

@@ -53,7 +53,7 @@ export async function getGitHubAuthStatus(): Promise<GitHubAccount> {
 /**
  * Lists user and organization repositories using `gh repo list`.
  */
-export async function listUserRepositories(limit = 30): Promise<RepositoryItem[]> {
+export async function listUserRepositories(limit = 100): Promise<RepositoryItem[]> {
   try {
     const { stdout } = await execa("gh", [
       "repo",
@@ -72,7 +72,7 @@ export async function listUserRepositories(limit = 30): Promise<RepositoryItem[]
 /**
  * Lists user's starred repositories.
  */
-export async function listStarredRepositories(limit = 15): Promise<RepositoryItem[]> {
+export async function listStarredRepositories(limit = 30): Promise<RepositoryItem[]> {
   try {
     const { stdout } = await execa("gh", [
       "api",
@@ -89,17 +89,35 @@ export async function listStarredRepositories(limit = 15): Promise<RepositoryIte
 /**
  * Searches repositories on GitHub with live query.
  */
-export async function searchRepositories(query: string, limit = 15): Promise<RepositoryItem[]> {
+export async function searchRepositories(query: string, limit = 20): Promise<RepositoryItem[]> {
   try {
     const { stdout } = await execa("gh", [
-      "api",
-      `search/repositories?q=${encodeURIComponent(query)}&per_page=${limit}`,
-      "--jq",
-      "[.items[] | { nameWithOwner: .full_name, description: .description, isPrivate: .private }]",
+      "search",
+      "repos",
+      query,
+      "--limit",
+      limit.toString(),
+      "--json",
+      "fullName,description,isPrivate",
     ]);
-    return JSON.parse(stdout);
+    const parsed = JSON.parse(stdout);
+    return parsed.map((r: { fullName: string; description?: string; isPrivate?: boolean }) => ({
+      nameWithOwner: r.fullName,
+      description: r.description,
+      isPrivate: r.isPrivate,
+    }));
   } catch {
-    return [];
+    try {
+      const { stdout } = await execa("gh", [
+        "api",
+        `search/repositories?q=${encodeURIComponent(query)}&per_page=${limit}`,
+        "--jq",
+        "[.items[] | { nameWithOwner: .full_name, description: .description, isPrivate: .private }]",
+      ]);
+      return JSON.parse(stdout);
+    } catch {
+      return [];
+    }
   }
 }
 

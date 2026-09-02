@@ -146,6 +146,7 @@ export function registerWorktreeCommand(program: Command): void {
             value: w.path,
             label: `${w.branch} (${w.path})`,
           })),
+          maxItems: 8,
         });
 
         if (p.isCancel(pick)) {

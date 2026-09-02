@@ -90,6 +90,7 @@ export function registerSwitchCommand(program: Command): void {
       const selected = await p.select({
         message: `Currently on ${pc.cyan(currentBranch)}. Switch to:`,
         options: choices,
+        maxItems: 8,
       });
 
       if (p.isCancel(selected)) {

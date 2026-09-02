@@ -110,6 +110,7 @@ export function registerPrCommand(program: Command): void {
           label: `#${pr.number} ${pr.title}`,
           hint: `by @${pr.author.login} (${pr.headRefName})`,
         })),
+        maxItems: 8,
       });
 
       if (p.isCancel(selectedPrNum)) {
