@@ -9,7 +9,7 @@ import {
   worktreeRemove,
 } from "../services/git.ts";
 import { resolveAIProvider } from "../services/ai/index.ts";
-import { header, p, pc, promptInput } from "../utils/ui.ts";
+import { header, p, pc, promptInput, searchablePicker } from "../utils/ui.ts";
 
 export function registerWorktreeCommand(program: Command): void {
   const wt = program
@@ -140,20 +140,21 @@ export function registerWorktreeCommand(program: Command): void {
 
       let selectedPath = target;
       if (!selectedPath) {
-        const pick = await p.select({
-          message: "Select worktree to remove:",
-          options: nonMainList.map((w) => ({
+        const pick = await searchablePicker({
+          title: "Select worktree to remove:",
+          items: nonMainList.map((w) => ({
             value: w.path,
-            label: `${w.branch} (${w.path})`,
+            label: w.branch,
+            hint: w.path,
           })),
-          maxItems: 8,
+          pageSize: 8,
         });
 
-        if (p.isCancel(pick)) {
+        if (!pick) {
           p.cancel("Cancelled.");
           return;
         }
-        selectedPath = pick as string;
+        selectedPath = pick;
       }
 
       const s = p.spinner();

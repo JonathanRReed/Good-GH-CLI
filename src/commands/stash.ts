@@ -8,7 +8,7 @@ import {
   stashPop,
   stashPush,
 } from "../services/git.ts";
-import { header, p, pc, promptInput } from "../utils/ui.ts";
+import { header, p, pc, promptInput, searchablePicker } from "../utils/ui.ts";
 
 function displayColoredDiff(rawDiff: string): void {
   const lines = rawDiff.split("\n");
@@ -155,17 +155,17 @@ export function registerStashCommand(program: Command): void {
           p.log.error(String(err));
         }
       } else if (choice === "browse") {
-        const pickStash = await p.select({
-          message: "Select stash to inspect:",
-          options: list.map((s) => ({
+        const pickStash = await searchablePicker({
+          title: "Select stash to inspect:",
+          items: list.map((s) => ({
             value: s.ref,
             label: `${s.ref} (${s.date})`,
             hint: s.message,
           })),
-          maxItems: 8,
+          pageSize: 8,
         });
 
-        if (p.isCancel(pickStash)) return;
+        if (!pickStash) return;
 
         const diff = await stashDiff(pickStash as string);
         if (diff) {
@@ -191,17 +191,17 @@ export function registerStashCommand(program: Command): void {
           p.log.success(pc.green(`Dropped ${pickStash}.`));
         }
       } else if (choice === "drop") {
-        const pickDrop = await p.select({
-          message: "Select stash to permanently delete:",
-          options: list.map((s) => ({
+        const pickDrop = await searchablePicker({
+          title: "Select stash to permanently delete:",
+          items: list.map((s) => ({
             value: s.ref,
             label: `${s.ref} (${s.date})`,
             hint: s.message,
           })),
-          maxItems: 8,
+          pageSize: 8,
         });
 
-        if (p.isCancel(pickDrop)) return;
+        if (!pickDrop) return;
 
         await stashDrop(pickDrop as string);
         p.log.success(pc.green(`Dropped ${pickDrop}.`));

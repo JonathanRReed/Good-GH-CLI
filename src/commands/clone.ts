@@ -12,7 +12,7 @@ import {
   type RepositoryItem,
 } from "../services/github.ts";
 import { getConfig, type CloneMode } from "../services/config.ts";
-import { header, p, pc, promptInput } from "../utils/ui.ts";
+import { header, p, pc, promptInput, searchablePicker, type PickerItem } from "../utils/ui.ts";
 
 function expandPath(pathStr: string): string {
   if (pathStr.startsWith("~/") || pathStr === "~") {
@@ -74,21 +74,21 @@ export function registerCloneCommand(program: Command): void {
           if (candidateList.length === 1 && candidateList[0]) {
             selectedRepo = candidateList[0].nameWithOwner;
           } else if (candidateList.length > 1) {
-            const pick = await p.select({
-              message: `Multiple repositories match "${selectedRepo}". Choose one:`,
-              options: candidateList.map((r) => ({
+            const pick = await searchablePicker({
+              title: `Repositories matching "${selectedRepo}":`,
+              items: candidateList.map((r) => ({
                 value: r.nameWithOwner,
                 label: r.nameWithOwner,
                 hint: r.isPrivate ? "🔒 private" : r.description?.slice(0, 45) || "",
               })),
-              maxItems: 8,
+              pageSize: 8,
             });
 
-            if (p.isCancel(pick)) {
+            if (!pick) {
               p.cancel("Clone cancelled.");
               return;
             }
-            selectedRepo = pick as string;
+            selectedRepo = pick;
           }
         }
       }
@@ -110,134 +110,50 @@ export function registerCloneCommand(program: Command): void {
         ]);
         s.stop("Repositories loaded.");
 
-        const choices: { value: string; label: string; hint?: string }[] = [];
-
-        choices.push({
-          value: "__search__",
-          label: "🔍 Search all GitHub & your repos...",
-          hint: "Search any public or private repository",
-        });
-
-        choices.push({
-          value: "__custom__",
-          label: "🔗 Enter custom URL or owner/repo",
-          hint: "e.g. facebook/react or https://github.com/...",
-        });
+        const items: PickerItem[] = [];
 
         if (userRepos.length > 0) {
           for (const r of userRepos) {
-            choices.push({
+            items.push({
               value: r.nameWithOwner,
               label: r.nameWithOwner,
-              hint: r.isPrivate ? "🔒 private" : r.description?.slice(0, 40) || "",
+              hint: r.isPrivate ? "🔒 private" : r.description?.slice(0, 45) || "",
             });
           }
         }
 
         if (starredRepos.length > 0) {
           for (const r of starredRepos) {
-            if (!choices.some((c) => c.value === r.nameWithOwner)) {
-              choices.push({
+            if (!items.some((c) => c.value === r.nameWithOwner)) {
+              items.push({
                 value: r.nameWithOwner,
                 label: `★ ${r.nameWithOwner}`,
-                hint: r.description?.slice(0, 40) || "Starred",
+                hint: r.description?.slice(0, 45) || "Starred",
               });
             }
           }
         }
 
-        const pick = await p.select({
-          message: "Select a repository to clone:",
-          options: choices,
-          maxItems: 8,
+        const pick = await searchablePicker({
+          title: "Select or search repository to clone:",
+          items,
+          pageSize: 8,
+          onSearchGitHub: async (q: string) => {
+            const results = await searchRepositories(q, 15);
+            return results.map((r) => ({
+              value: r.nameWithOwner,
+              label: `🌐 ${r.nameWithOwner}`,
+              hint: r.isPrivate ? "🔒 private" : r.description?.slice(0, 45) || "",
+            }));
+          },
         });
 
-        if (p.isCancel(pick)) {
+        if (!pick) {
           p.cancel("Clone cancelled.");
           return;
         }
 
-        if (pick === "__search__") {
-          const searchQuery = await promptInput({
-            message: "Enter search query (searches your repos and GitHub):",
-            placeholder: "e.g. waves, AI-Drag, or next.js",
-            validate: (v) => (!v.trim() ? "Search query cannot be empty" : undefined),
-          });
-
-          if (!searchQuery) {
-            p.cancel("Search cancelled.");
-            return;
-          }
-
-          const searchSpinner = p.spinner();
-          searchSpinner.start(`Searching for '${searchQuery}'...`);
-          const [userMatches, globalResults] = await Promise.all([
-            userRepos.filter(
-              (r) =>
-                r.nameWithOwner.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                (r.description && r.description.toLowerCase().includes(searchQuery.toLowerCase())),
-            ),
-            searchRepositories(searchQuery, 15),
-          ]);
-          searchSpinner.stop(`Found ${userMatches.length + globalResults.length} match(es).`);
-
-          const combined: { value: string; label: string; hint?: string }[] = [];
-          for (const r of userMatches) {
-            combined.push({
-              value: r.nameWithOwner,
-              label: `👤 ${r.nameWithOwner}`,
-              hint: r.isPrivate ? "🔒 private" : r.description?.slice(0, 45) || "",
-            });
-          }
-          for (const r of globalResults) {
-            if (!combined.some((c) => c.value.toLowerCase() === r.nameWithOwner.toLowerCase())) {
-              combined.push({
-                value: r.nameWithOwner,
-                label: `🌐 ${r.nameWithOwner}`,
-                hint: r.isPrivate ? "🔒 private" : r.description?.slice(0, 45) || "",
-              });
-            }
-          }
-
-          if (combined.length === 0) {
-            p.log.warn(`No repositories found matching '${searchQuery}'.`);
-            const fallbackUrl = await promptInput({
-              message: "Enter custom GitHub repository URL or owner/repo:",
-              placeholder: "owner/repo or https://github.com/...",
-              validate: (v) => (!v.trim() ? "URL cannot be empty" : undefined),
-            });
-            if (!fallbackUrl) {
-              p.cancel("Clone cancelled.");
-              return;
-            }
-            selectedRepo = fallbackUrl;
-          } else {
-            const searchPick = await p.select({
-              message: `Select repository matching '${searchQuery}':`,
-              options: combined,
-              maxItems: 8,
-            });
-
-            if (p.isCancel(searchPick)) {
-              p.cancel("Clone cancelled.");
-              return;
-            }
-            selectedRepo = searchPick as string;
-          }
-        } else if (pick === "__custom__") {
-          const customUrl = await promptInput({
-            message: "Enter GitHub URL or owner/repo:",
-            placeholder: "owner/repo or https://github.com/...",
-            validate: (v) => (!v.trim() ? "URL cannot be empty" : undefined),
-          });
-          if (!customUrl) {
-            p.cancel("Clone cancelled.");
-            return;
-          }
-          selectedRepo = customUrl;
-        } else {
-          selectedRepo = pick as string;
-        }
+        selectedRepo = pick;
       }
 
       if (!selectedRepo) {

@@ -7,7 +7,7 @@ import {
   switchBranch,
   worktreeList,
 } from "../services/git.ts";
-import { header, p, pc, promptInput } from "../utils/ui.ts";
+import { header, p, pc, promptInput, searchablePicker, type PickerItem } from "../utils/ui.ts";
 
 export function registerSwitchCommand(program: Command): void {
   program
@@ -57,10 +57,10 @@ export function registerSwitchCommand(program: Command): void {
       const worktrees = await worktreeList();
       const repoRoot = await getRepoRoot();
 
-      const choices: Array<{ value: string; label: string; hint?: string }> = [
+      const choices: PickerItem[] = [
         {
           value: "__create__",
-          label: pc.green("+ Create new branch..."),
+          label: "+ Create new branch...",
           hint: "branch off current HEAD",
         },
       ];
@@ -70,8 +70,8 @@ export function registerSwitchCommand(program: Command): void {
         const isCurrent = b.name === currentBranch;
         choices.push({
           value: `branch:${b.name}`,
-          label: isCurrent ? `${pc.bold(pc.green("*"))} ${pc.bold(b.name)}` : `  ${b.name}`,
-          hint: isCurrent ? "current branch" : b.commit.slice(0, 50),
+          label: isCurrent ? `* ${b.name}` : b.name,
+          hint: isCurrent ? "current branch" : b.commit.slice(0, 45),
         });
       }
 
@@ -81,24 +81,24 @@ export function registerSwitchCommand(program: Command): void {
         for (const wt of secondaryTrees) {
           choices.push({
             value: `worktree:${wt.path}`,
-            label: `  ${pc.cyan("🌲")} ${wt.branch}`,
+            label: `🌲 ${wt.branch}`,
             hint: wt.path,
           });
         }
       }
 
-      const selected = await p.select({
-        message: `Currently on ${pc.cyan(currentBranch)}. Switch to:`,
-        options: choices,
-        maxItems: 8,
+      const selected = await searchablePicker({
+        title: `Currently on ${currentBranch}. Switch to:`,
+        items: choices,
+        pageSize: 8,
       });
 
-      if (p.isCancel(selected)) {
+      if (!selected) {
         p.cancel("Switch cancelled.");
         return;
       }
 
-      const val = selected as string;
+      const val = selected;
 
       if (val === "__create__") {
         const branchName = await promptInput({

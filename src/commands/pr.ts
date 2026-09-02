@@ -8,7 +8,7 @@ import {
 } from "../services/github.ts";
 import { fetchPullRequestBranch, isGitRepo, worktreeAdd } from "../services/git.ts";
 import { resolveAIProvider } from "../services/ai/index.ts";
-import { header, p, pc } from "../utils/ui.ts";
+import { header, p, pc, searchablePicker } from "../utils/ui.ts";
 
 function displayColoredDiff(rawDiff: string): void {
   const lines = rawDiff.split("\n");
@@ -103,17 +103,17 @@ export function registerPrCommand(program: Command): void {
         return;
       }
 
-      const selectedPrNum = await p.select({
-        message: "Select a Pull Request to inspect:",
-        options: prs.map((pr) => ({
+      const selectedPrNum = await searchablePicker<number>({
+        title: "Select a Pull Request to inspect:",
+        items: prs.map((pr) => ({
           value: pr.number,
           label: `#${pr.number} ${pr.title}`,
           hint: `by @${pr.author.login} (${pr.headRefName})`,
         })),
-        maxItems: 8,
+        pageSize: 8,
       });
 
-      if (p.isCancel(selectedPrNum)) {
+      if (!selectedPrNum) {
         p.cancel("Cancelled.");
         return;
       }
