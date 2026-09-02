@@ -9,7 +9,7 @@ import {
 } from "../services/github.ts";
 import { getRepoRoot, isGitRepo } from "../services/git.ts";
 import { resolveAIProvider } from "../services/ai/index.ts";
-import { header, p, pc } from "../utils/ui.ts";
+import { header, p, pc, promptInput } from "../utils/ui.ts";
 
 function detectPackageVersion(repoRoot: string): string | null {
   try {
@@ -60,16 +60,16 @@ export function registerReleaseCommand(program: Command): void {
 
         let tag = tagArg;
         if (!tag) {
-          const inputTag = await p.text({
+          const inputTag = await promptInput({
             message: "Enter release tag name:",
             defaultValue: detectedTag || "v1.0.0",
             validate: (v) => (!v || !v.trim() ? "Tag name required" : undefined),
           });
-          if (p.isCancel(inputTag)) {
+          if (!inputTag) {
             p.cancel("Cancelled.");
             return;
           }
-          tag = (inputTag as string).trim();
+          tag = inputTag.trim();
         }
 
         const title = options?.title || tag;

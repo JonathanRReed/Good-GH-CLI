@@ -8,7 +8,7 @@ import {
   stashPop,
   stashPush,
 } from "../services/git.ts";
-import { header, p, pc } from "../utils/ui.ts";
+import { header, p, pc, promptInput } from "../utils/ui.ts";
 
 function displayColoredDiff(rawDiff: string): void {
   const lines = rawDiff.split("\n");
@@ -125,12 +125,12 @@ export function registerStashCommand(program: Command): void {
       }
 
       if (choice === "stash") {
-        const msg = await p.text({
+        const msg = await promptInput({
           message: "Enter stash message (optional, press Enter to skip):",
           placeholder: "e.g. wip: work on login button",
         });
 
-        if (p.isCancel(msg)) {
+        if (msg === null) {
           p.cancel("Stash cancelled.");
           return;
         }

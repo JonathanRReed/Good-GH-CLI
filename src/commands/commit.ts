@@ -24,7 +24,7 @@ import { createPullRequest, getActivePullRequest, getGitHubAuthStatus } from "..
 import { getConfig, type AIProvider as ConfigAIProvider } from "../services/config.ts";
 import { redactSecrets, scanCodeHygiene, stripLockfilesFromDiff } from "../utils/diff.ts";
 import { detectCommitConvention, type CommitStyle } from "../utils/conventions.ts";
-import { header, p, pc, promptFirstRunProvider } from "../utils/ui.ts";
+import { header, p, pc, promptFirstRunProvider, promptInput } from "../utils/ui.ts";
 
 function displayColoredDiff(rawDiff: string): void {
   const lines = rawDiff.split("\n");
@@ -61,26 +61,26 @@ async function promptConventionalCommitWizard(): Promise<{ subject: string; body
   });
   if (p.isCancel(type)) throw new Error("cancelled");
 
-  const scope = await p.text({
+  const scope = await promptInput({
     message: "Enter scope (optional, press Enter to skip):",
     placeholder: "e.g. auth, api, ui",
   });
-  if (p.isCancel(scope)) throw new Error("cancelled");
+  if (scope === null) throw new Error("cancelled");
 
-  const desc = await p.text({
+  const desc = await promptInput({
     message: "Enter short description (imperative, <= 72 chars):",
     validate: (v) => (!v || !v.trim() ? "Description required" : undefined),
   });
-  if (p.isCancel(desc)) throw new Error("cancelled");
+  if (desc === null) throw new Error("cancelled");
 
-  const body = await p.text({
+  const body = await promptInput({
     message: "Enter commit body / bullet points (optional, press Enter to skip):",
   });
-  if (p.isCancel(body)) throw new Error("cancelled");
+  if (body === null) throw new Error("cancelled");
 
-  const scopeStr = scope && (scope as string).trim() ? `(${scope.trim()})` : "";
+  const scopeStr = scope.trim() ? `(${scope.trim()})` : "";
   const subject = `${type}${scopeStr}: ${desc.trim()}`;
-  return { subject, body: (body as string).trim() };
+  return { subject, body: body.trim() };
 }
 
 export function registerCommitCommand(program: Command): void {
@@ -292,18 +292,18 @@ export function registerCommitCommand(program: Command): void {
         }
 
         if (branchChoice === "feature") {
-          const featureNameInput = await p.text({
+          const featureNameInput = await promptInput({
             message: "Enter feature branch name:",
             placeholder: "e.g. feat/dashboard-layout",
             validate: (v) => (!v || !v.trim() ? "Branch name required" : undefined),
           });
 
-          if (p.isCancel(featureNameInput)) {
+          if (!featureNameInput) {
             p.cancel("Commit cancelled.");
             return;
           }
 
-          const newBranch = (featureNameInput as string).trim();
+          const newBranch = featureNameInput.trim();
           await switchBranch(newBranch, true);
           status = await getStatus();
           p.log.success(`Created and switched to feature branch ${pc.bold(pc.cyan(newBranch))}!`);
@@ -431,27 +431,27 @@ export function registerCommitCommand(program: Command): void {
             displayColoredDiff(rawDiff);
             continue;
           } else if (action === "edit") {
-            const editSub = await p.text({
+            const editSub = await promptInput({
               message: "Edit commit subject:",
               defaultValue: commitSubject,
             });
-            if (p.isCancel(editSub)) return;
-            commitSubject = editSub as string;
+            if (!editSub) return;
+            commitSubject = editSub;
 
-            const editBody = await p.text({
+            const editBody = await promptInput({
               message: "Edit commit body (optional):",
               defaultValue: commitBody,
             });
-            if (p.isCancel(editBody)) return;
-            commitBody = editBody as string;
+            if (editBody === null) return;
+            commitBody = editBody;
             generationLoop = false;
           } else if (action === "regenerate") {
-            const guidance = await p.text({
+            const guidance = await promptInput({
               message: "Enter guidance or hints for regeneration (optional):",
               placeholder: "e.g. emphasize breaking change or make it shorter",
             });
-            if (p.isCancel(guidance)) return;
-            customGuidance = guidance as string;
+            if (guidance === null) return;
+            customGuidance = guidance;
           } else if (action === "push") {
             options.push = true;
             generationLoop = false;

@@ -6,7 +6,7 @@ import {
   isGitRepo,
   renameBranch,
 } from "../services/git.ts";
-import { header, p, pc } from "../utils/ui.ts";
+import { header, p, pc, promptInput } from "../utils/ui.ts";
 
 export function registerRenameCommand(program: Command): void {
   program
@@ -21,7 +21,12 @@ export function registerRenameCommand(program: Command): void {
       }
 
       const current = await getCurrentBranch();
-      if (["main", "master"].includes(current.toLowerCase())) {
+      if (!current || current === "HEAD") {
+        p.log.error("Cannot rename detached HEAD. Please checkout a named branch first.");
+        return;
+      }
+
+      if (current === "main" || current === "master") {
         const confirmDefault = await p.confirm({
           message: `Current branch is default branch ${pc.bold(pc.yellow(current))}. Are you sure you want to rename it?`,
           initialValue: false,
@@ -34,18 +39,18 @@ export function registerRenameCommand(program: Command): void {
 
       let newName = newNameArg;
       if (!newName) {
-        const inputName = await p.text({
+        const inputName = await promptInput({
           message: `Enter new name for branch ${pc.bold(pc.cyan(current))}:`,
           placeholder: "e.g. feat/new-auth-flow",
           validate: (v) => (!v || !v.trim() ? "New branch name required" : undefined),
         });
 
-        if (p.isCancel(inputName)) {
+        if (!inputName) {
           p.cancel("Rename cancelled.");
           return;
         }
 
-        newName = (inputName as string).trim();
+        newName = inputName.trim();
       }
 
       const s = p.spinner();

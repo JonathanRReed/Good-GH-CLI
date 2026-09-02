@@ -9,7 +9,7 @@ import {
   worktreeRemove,
 } from "../services/git.ts";
 import { resolveAIProvider } from "../services/ai/index.ts";
-import { header, p, pc } from "../utils/ui.ts";
+import { header, p, pc, promptInput } from "../utils/ui.ts";
 
 export function registerWorktreeCommand(program: Command): void {
   const wt = program
@@ -56,17 +56,17 @@ export function registerWorktreeCommand(program: Command): void {
       let branchName = arg;
 
       if (!branchName) {
-        const input = await p.text({
+        const input = await promptInput({
           message: "Enter branch name or feature description:",
           placeholder: "e.g. fix/navbar-bug or 'add dark mode toggle'",
           validate: (v) => (!v || !v.trim() ? "Input required" : undefined),
         });
 
-        if (p.isCancel(input)) {
+        if (!input) {
           p.cancel("Cancelled.");
           return;
         }
-        branchName = input as string;
+        branchName = input;
       }
 
       // If input looks like natural language (contains spaces or > 15 chars without slashes)
@@ -78,17 +78,17 @@ export function registerWorktreeCommand(program: Command): void {
           const generated = await provider.generateBranchName(branchName, model);
           s.stop("Branch name generated.");
 
-          const confirmBranch = await p.text({
+          const confirmBranch = await promptInput({
             message: "Confirm or edit generated branch name:",
             defaultValue: generated,
             placeholder: generated,
           });
 
-          if (p.isCancel(confirmBranch)) {
+          if (!confirmBranch) {
             p.cancel("Cancelled.");
             return;
           }
-          branchName = confirmBranch as string;
+          branchName = confirmBranch;
         } catch {
           s.stop(pc.yellow("AI naming unavailable; formatting from text..."));
           branchName = `feat/${branchName.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30)}`;

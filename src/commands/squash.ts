@@ -8,7 +8,7 @@ import {
   squashCommits,
 } from "../services/git.ts";
 import { generateCommitWithFallback } from "../services/ai/index.ts";
-import { header, p, pc } from "../utils/ui.ts";
+import { header, p, pc, promptInput } from "../utils/ui.ts";
 
 export function registerSquashCommand(program: Command): void {
   program
@@ -30,7 +30,7 @@ export function registerSquashCommand(program: Command): void {
 
       let count = countArg ? parseInt(countArg, 10) : 0;
       if (!count || isNaN(count)) {
-        const input = await p.text({
+        const input = await promptInput({
           message: "How many commits would you like to squash into one?",
           defaultValue: "2",
           validate: (val) => {
@@ -40,12 +40,12 @@ export function registerSquashCommand(program: Command): void {
           },
         });
 
-        if (p.isCancel(input)) {
+        if (!input) {
           p.cancel("Squash cancelled.");
           return;
         }
 
-        count = parseInt(input as string, 10);
+        count = parseInt(input, 10);
       }
 
       const s = p.spinner();
@@ -88,12 +88,12 @@ export function registerSquashCommand(program: Command): void {
         if (aiChoice === "first") {
           commitSubject = previousMessages[previousMessages.length - 1] || "squashed commit";
         } else if (aiChoice === "manual") {
-          const manualSub = await p.text({
+          const manualSub = await promptInput({
             message: "Enter squashed commit subject:",
             validate: (v) => (!v || !v.trim() ? "Subject required" : undefined),
           });
-          if (p.isCancel(manualSub)) return;
-          commitSubject = manualSub as string;
+          if (!manualSub) return;
+          commitSubject = manualSub;
         } else {
           // AI generation
           const aiSpinner = p.spinner();
@@ -112,12 +112,12 @@ export function registerSquashCommand(program: Command): void {
             commitBody = aiResult.body;
           } catch {
             aiSpinner.stop(pc.yellow("AI unavailable. Please enter subject manually."));
-            const fallbackSub = await p.text({
+            const fallbackSub = await promptInput({
               message: "Enter squashed commit subject:",
               defaultValue: previousMessages[0] || "squashed commit",
             });
-            if (p.isCancel(fallbackSub)) return;
-            commitSubject = fallbackSub as string;
+            if (!fallbackSub) return;
+            commitSubject = fallbackSub;
           }
         }
       }

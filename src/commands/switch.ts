@@ -7,7 +7,7 @@ import {
   switchBranch,
   worktreeList,
 } from "../services/git.ts";
-import { header, p, pc } from "../utils/ui.ts";
+import { header, p, pc, promptInput } from "../utils/ui.ts";
 
 export function registerSwitchCommand(program: Command): void {
   program
@@ -101,17 +101,17 @@ export function registerSwitchCommand(program: Command): void {
       const val = selected as string;
 
       if (val === "__create__") {
-        const branchName = await p.text({
+        const branchName = await promptInput({
           message: "Enter new branch name:",
           validate: (v) => (!v || !v.trim() ? "Branch name required" : undefined),
         });
 
-        if (p.isCancel(branchName)) {
+        if (!branchName) {
           p.cancel("Cancelled.");
           return;
         }
 
-        const cleanName = (branchName as string).trim().replace(/\s+/g, "-");
+        const cleanName = branchName.trim().replace(/\s+/g, "-");
         const s = p.spinner();
         s.start(`Creating and switching to ${pc.cyan(cleanName)}...`);
         try {
