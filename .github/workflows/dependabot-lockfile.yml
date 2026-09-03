@@ -1,0 +1,42 @@
+name: Sync bun.lock on Dependabot PRs
+
+# Dependabot's npm ecosystem does not know about bun.lock: it edits package.json
+# and leaves the lockfile stale, so `bun install --frozen-lockfile` in CI rejects
+# every dependency PR. This regenerates the lockfile on the PR branch, which then
+# re-triggers CI against a consistent tree.
+on:
+  pull_request:
+    paths:
+      - package.json
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Regenerate the lockfile
+        run: bun install
+
+      - name: Commit it if it changed
+        run: |
+          if git diff --quiet -- bun.lock; then
+            echo "bun.lock already matches package.json."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bun.lock
+          git commit -m "chore(deps): sync bun.lock"
+          git push
