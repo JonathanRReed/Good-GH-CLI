@@ -1,0 +1,60 @@
+name: Bug report
+description: Something behaves differently than it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: `ggh status` prints which providers and CLIs it can see,
+        and most problems turn out to be a missing or signed-out one.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you ran, and what it did instead of what you expected.
+      placeholder: |
+        $ ggh pr create
+        ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+
+  - type: textarea
+    id: status
+    attributes:
+      label: Output of `ggh status`
+      description: Redact anything you would rather not share.
+      render: text
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: ggh version
+      placeholder: "ggh --version"
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: OS and shell
+      placeholder: macOS 15, zsh
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I ran the command again with `--no-input` or `-q` to rule out a prompt-related issue
+        - label: The problem is not that a provider is out of credits (ggh names this explicitly when it happens)

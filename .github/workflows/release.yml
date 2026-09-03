@@ -1,0 +1,176 @@
+name: Release
+
+# Tagging is the trigger. `bun run release 0.2.0` bumps, tags, and pushes;
+# everything below is what happens after the tag lands.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build a release for
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    name: Verify before releasing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Configure git identity for tests
+        run: |
+          git config --global user.name "CI"
+          git config --global user.email "ci@example.com"
+          git config --global init.defaultBranch main
+      - run: bun run typecheck
+      - run: bun run lint
+      - run: bun test --timeout 30000
+      - name: Tag must match package.json version
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          PKG="v$(bun -e 'console.log(require("./package.json").version)')"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "Tag $TAG does not match package.json $PKG"; exit 1
+          fi
+
+  binaries:
+    name: ${{ matrix.target }}
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: bun-linux-x64
+            asset: ggh-linux-x64
+          - target: bun-linux-arm64
+            asset: ggh-linux-arm64
+          - target: bun-darwin-x64
+            asset: ggh-darwin-x64
+          - target: bun-darwin-arm64
+            asset: ggh-darwin-arm64
+          - target: bun-windows-x64
+            asset: ggh-windows-x64.exe
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+
+      - name: Compile standalone binary
+        run: |
+          bun build bin/ggh.ts \
+            --compile \
+            --minify \
+            --target=${{ matrix.target }} \
+            --outfile ${{ matrix.asset }}
+
+      - name: Checksum
+        run: sha256sum ${{ matrix.asset }} > ${{ matrix.asset }}.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: |
+            ${{ matrix.asset }}
+            ${{ matrix.asset }}.sha256
+          retention-days: 7
+
+  release:
+    name: Publish GitHub Release
+    needs: binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Assemble release notes
+        id: notes
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          {
+            # Prefer the hand-written entry; fall back to the commit list.
+            if [ -f CHANGELOG.md ] && grep -q "^## ${TAG#v}" CHANGELOG.md; then
+              awk -v v="## ${TAG#v}" '$0 ~ v {f=1; next} /^## / && f {exit} f' CHANGELOG.md
+            else
+              PREV=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)
+              if [ -n "$PREV" ]; then
+                git log --pretty='- %s' "$PREV..$TAG"
+              else
+                git log --pretty='- %s' -n 30
+              fi
+            fi
+
+            echo ""
+            echo "### Install"
+            echo ""
+            echo '```bash'
+            echo "bun add -g good-gh-cli@${TAG#v}"
+            echo '```'
+            echo ""
+            echo "Or download a standalone binary below. On macOS, ad-hoc sign it once:"
+            echo ""
+            echo '```bash'
+            echo "chmod +x ggh-darwin-arm64 && codesign --force --sign - ggh-darwin-arm64"
+            echo '```'
+          } > RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file RELEASE_NOTES.md \
+            --verify-tag \
+            artifacts/*
+
+  npm:
+    name: Publish to npm
+    needs: binaries
+    runs-on: ubuntu-latest
+    # Skips cleanly when NPM_TOKEN is not configured, so the rest of the release
+    # still succeeds on a repository that only ships binaries. Declared at job
+    # level because a step's own `env` is not visible to its `if`.
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+
+      - name: Publish
+        if: env.NODE_AUTH_TOKEN != ''
+        run: npm publish --provenance --access public
+
+      - name: Explain a skipped publish
+        if: env.NODE_AUTH_TOKEN == ''
+        run: echo "NPM_TOKEN is not set; skipping npm publish. Binaries were still released."

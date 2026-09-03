@@ -1,0 +1,31 @@
+name: Feature request
+description: Something ggh should do and does not
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: The workflow, not the feature. It is easier to design for a problem than for a proposal.
+    validations:
+      required: true
+
+  - type: textarea
+    id: today
+    attributes:
+      label: How you do it today
+      description: Including which other tool you switch to, if any.
+    validations:
+      required: true
+
+  - type: input
+    id: gh-equivalent
+    attributes:
+      label: Does `gh` do this already
+      description: If so, name the command. Matching a known shape beats inventing one.
+      placeholder: "gh pr diff --name-only"
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else

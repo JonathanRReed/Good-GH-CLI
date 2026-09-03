@@ -4,10 +4,27 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+# A new push to the same branch supersedes the previous run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    name: verify (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # ggh shells out to git constantly; platform differences show up there,
+        # not in the TypeScript.
+        os: [ubuntu-latest, macos-latest]
+
     steps:
       - uses: actions/checkout@v4
 
@@ -17,6 +34,12 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Configure git identity for tests
+        run: |
+          git config --global user.name "CI"
+          git config --global user.email "ci@example.com"
+          git config --global init.defaultBranch main
 
       - name: Typecheck
         run: bun run typecheck
@@ -30,10 +53,19 @@ jobs:
       - name: Build
         run: bun run build
 
-      - name: Smoke test built artifact
+      - name: Smoke test the built artifact
         run: |
           bun dist/ggh.js --version
           bun dist/ggh.js --help > /dev/null
+          bun dist/ggh.js completion zsh | head -1
+
+      - name: Check stdout stays clean
+        # stdout is the data channel. If chrome leaks into it, piping breaks.
+        run: |
+          OUT=$(bun dist/ggh.js worktree list 2>/dev/null || true)
+          if echo "$OUT" | grep -q "good-gh"; then
+            echo "Banner leaked onto stdout:"; echo "$OUT"; exit 1
+          fi
 
       - name: Enforce bundle size budget (400 KB)
         run: |

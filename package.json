@@ -1,7 +1,7 @@
 {
   "name": "good-gh-cli",
   "version": "0.1.0",
-  "description": "A good GitHub and Git CLI inspired by T3 Code",
+  "description": "A modern Git and GitHub CLI: pull requests, issues, CI, stacked branches, and zero-key AI, in one tool.",
   "type": "module",
   "main": "src/index.ts",
   "license": "MIT",
@@ -17,10 +17,14 @@
     "git",
     "github",
     "cli",
-    "worktree",
+    "gh",
     "pull-request",
+    "stacked-prs",
+    "worktree",
+    "code-review",
     "ai",
-    "developer-tools"
+    "developer-tools",
+    "bun"
   ],
   "engines": {
     "bun": ">=1.1.0"
@@ -34,16 +38,20 @@
     "dist",
     "src",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md",
+    "SECURITY.md"
   ],
   "scripts": {
     "dev": "bun run bin/ggh.ts",
     "build": "bun build bin/ggh.ts --target=bun --outdir=dist --minify",
-    "prepublishOnly": "bun run typecheck && bun run lint && bun test && bun run build",
+    "prepublishOnly": "bun run typecheck && bun run lint && bun test --timeout 30000 && bun run build",
     "test": "bun test --timeout 30000",
-    "lint": "eslint src/ tests/ bin/",
+    "lint": "eslint src/ tests/ bin/ scripts/",
     "typecheck": "tsc --noEmit",
-    "format": "prettier --write \"src/**/*.{ts,js,json}\" \"tests/**/*.{ts,js,json}\" \"bin/**/*.{ts,js,json}\""
+    "format": "prettier --write \"src/**/*.{ts,js,json}\" \"tests/**/*.{ts,js,json}\" \"bin/**/*.{ts,js,json}\"",
+    "release": "bun run scripts/release.ts",
+    "compile": "bun build bin/ggh.ts --compile --minify --outfile ggh"
   },
   "dependencies": {
     "commander": "^13.1.0",
@@ -58,5 +66,8 @@
     "prettier": "^3.5.2",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.25.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
