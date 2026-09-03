@@ -54,17 +54,17 @@
     "compile": "bun build bin/ggh.ts --compile --minify --outfile ggh"
   },
   "dependencies": {
-    "commander": "^13.1.0",
+    "commander": "^15.0.0",
     "picocolors": "^1.1.1"
   },
   "devDependencies": {
-    "@eslint/js": "^9.21.0",
+    "@eslint/js": "^10.0.1",
     "@types/bun": "latest",
     "@types/node": "^22.13.9",
-    "eslint": "^9.21.0",
-    "execa": "^9.5.2",
+    "eslint": "^10.9.1",
+    "execa": "^10.0.1",
     "prettier": "^3.5.2",
-    "typescript": "^5.7.3",
+    "typescript": "^5.9.3",
     "typescript-eslint": "^8.25.0"
   },
   "publishConfig": {

@@ -24,6 +24,12 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      # typescript-eslint does not support TS 7 yet, so a TS 7 bump breaks lint
+      # while typecheck still passes. Remove this once it lands.
+      # https://github.com/typescript-eslint/typescript-eslint/issues/10940
+      - dependency-name: typescript
+        versions: [">=7.0.0"]
     labels:
       - dependencies
 

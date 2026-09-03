@@ -37,7 +37,7 @@ export function registerDiscardCommand(program: Command): void {
         return;
       }
 
-      let toDiscard: typeof allDirty = [];
+      let toDiscard: typeof allDirty;
 
       if (options?.all) {
         toDiscard = allDirty;

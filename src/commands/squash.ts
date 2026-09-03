@@ -92,7 +92,7 @@ export function registerSquashCommand(program: Command): void {
       const s = p.spinner();
       s.start(`Soft-resetting last ${count} commits...`);
 
-      let previousMessages: string[] = [];
+      let previousMessages: string[];
       try {
         const result = await squashCommits(count);
         previousMessages = result.previousMessages;

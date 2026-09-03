@@ -375,16 +375,14 @@ export function registerCommitCommand(program: Command): void {
           p.log.warn(pc.yellow(`Redacted ${redactedCount} potential secret(s) from diff sent to AI.`));
         }
 
-        // Detect Style
-        let activeStyle: CommitStyle = "conventional";
-        if (options.style && ["conventional", "gitmoji", "concise"].includes(options.style)) {
-          activeStyle = options.style as CommitStyle;
-        } else if (config.commit_style && config.commit_style !== "auto") {
-          activeStyle = config.commit_style as CommitStyle;
-        } else {
-          const recent = await getRecentCommits(10);
-          activeStyle = detectCommitConvention(recent);
-        }
+        // Style precedence: --style flag, then configured style, then whatever
+        // the last ten commits in this repository already use.
+        const activeStyle: CommitStyle =
+          options.style && ["conventional", "gitmoji", "concise"].includes(options.style)
+            ? (options.style as CommitStyle)
+            : config.commit_style && config.commit_style !== "auto"
+              ? (config.commit_style as CommitStyle)
+              : detectCommitConvention(await getRecentCommits(10));
 
         let customGuidance: string | undefined;
         let generationLoop = true;

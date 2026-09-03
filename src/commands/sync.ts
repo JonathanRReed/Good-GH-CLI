@@ -97,8 +97,7 @@ export function registerSyncCommand(program: Command): void {
         return;
       }
 
-      let confirmed = options?.yes;
-      if (!confirmed) {
+      if (!options?.yes) {
         const confirmDelete = await confirmPrompt({
           message: `Delete ${goneBranches.length} stale local branch(es)?`,
           initialValue: true,
@@ -108,7 +107,6 @@ export function registerSyncCommand(program: Command): void {
           p.cancel("Skipped branch cleanup.");
           return;
         }
-        confirmed = true;
       }
 
       const delSpinner = p.spinner();
