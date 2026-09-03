@@ -22,6 +22,7 @@ export function registerSwitchCommand(program: Command): void {
   program
     .command("switch [target]")
     .alias("sw")
+    .alias("checkout")
     .description("Quickly switch between git branches and active worktrees")
     .option("-c, --create", "Create and switch to a new branch")
     .action(async (target?: string, options?: { create?: boolean }) => {

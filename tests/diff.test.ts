@@ -2,7 +2,6 @@ import { describe, expect, it } from "bun:test";
 import {
   formatStagedSummary,
   isIgnoredDiffFile,
-  isLockfile,
   redactSecrets,
   scanCodeHygiene,
   stripLockfilesFromDiff,
@@ -11,13 +10,13 @@ import {
 } from "../src/utils/diff.ts";
 
 describe("diff utility", () => {
-  it("correctly identifies lockfiles and ignored assets", () => {
-    expect(isLockfile("package-lock.json")).toBe(true);
-    expect(isLockfile("bun.lockb")).toBe(true);
-    expect(isLockfile("pnpm-lock.yaml")).toBe(true);
-    expect(isLockfile("yarn.lock")).toBe(true);
-    expect(isLockfile("Cargo.lock")).toBe(true);
-    expect(isLockfile("src/index.ts")).toBe(false);
+  it("correctly identifies ignored assets", () => {
+    expect(isIgnoredDiffFile("package-lock.json")).toBe(true);
+    expect(isIgnoredDiffFile("bun.lockb")).toBe(true);
+    expect(isIgnoredDiffFile("pnpm-lock.yaml")).toBe(true);
+    expect(isIgnoredDiffFile("yarn.lock")).toBe(true);
+    expect(isIgnoredDiffFile("Cargo.lock")).toBe(true);
+    expect(isIgnoredDiffFile("src/index.ts")).toBe(false);
 
     expect(isIgnoredDiffFile("dist/bundle.min.js")).toBe(true);
     expect(isIgnoredDiffFile("dist/bundle.js.map")).toBe(true);

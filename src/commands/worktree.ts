@@ -107,8 +107,15 @@ export function registerWorktreeCommand(program: Command): void {
       s.start(`Creating worktree for ${pc.cyan(branchName)} at ${pc.dim(targetPath)}...`);
 
       try {
-        await worktreeAdd(branchName, targetPath, baseBranch);
+        const result = await worktreeAdd(branchName, targetPath, baseBranch);
         s.stop(pc.green("Worktree created successfully!"));
+        if (result.copiedEnvFiles.length > 0) {
+          p.log.info(
+            pc.dim(
+              `Copied env file(s) from repo root into the worktree: ${result.copiedEnvFiles.join(", ")}`,
+            ),
+          );
+        }
         p.log.message(
           `\nTo switch to your new worktree:\n  ${pc.bold(pc.cyan(`cd ${targetPath}`))}\n`,
         );
@@ -116,6 +123,7 @@ export function registerWorktreeCommand(program: Command): void {
       } catch (err) {
         s.stop(pc.red("Failed to create worktree."));
         p.log.error(String(err));
+        process.exitCode = 1;
       }
     });
 

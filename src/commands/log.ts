@@ -1,7 +1,7 @@
 import { Command } from "commander";
-import { execa } from "execa";
+import { run } from "../utils/exec.ts";
 import { isGitRepo } from "../services/git.ts";
-import { header, p } from "../utils/ui.ts";
+import { header, p, pc } from "../utils/ui.ts";
 
 export function registerLogCommand(program: Command): void {
   program
@@ -19,7 +19,14 @@ export function registerLogCommand(program: Command): void {
         return;
       }
 
-      const count = options?.count || "20";
+      const countArg = options?.count || "20";
+      const count = Number.parseInt(countArg, 10);
+      if (Number.isNaN(count) || count < 1) {
+        p.log.error(`Invalid commit count: "${countArg}". Please pass a positive number (e.g. ${pc.cyan("ggh log -n 50")}).`);
+        process.exitCode = 1;
+        return;
+      }
+
       const args = [
         "log",
         "--graph",
@@ -37,7 +44,7 @@ export function registerLogCommand(program: Command): void {
       }
 
       try {
-        await execa("git", args, { stdio: "inherit" });
+        await run("git", args, { stdio: "inherit" });
       } catch {
         // Ignored if user exits early with q
       }

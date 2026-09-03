@@ -1,10 +1,16 @@
-import { execa } from "execa";
+import { run } from "../utils/exec.ts";
 
 export interface GitHubAccount {
   authenticated: boolean;
   login?: string;
   host?: string;
   protocol?: "https" | "ssh";
+  /** True when the `gh` binary itself is missing from PATH (distinct from being logged out). */
+  notInstalled?: boolean;
+}
+
+function isMissingBinary(err: unknown): boolean {
+  return (err as { code?: string })?.code === "ENOENT";
 }
 
 export interface RepositoryItem {
@@ -19,7 +25,7 @@ export interface RepositoryItem {
  */
 export async function getGitHubAuthStatus(): Promise<GitHubAccount> {
   try {
-    const { stdout } = await execa("gh", ["auth", "status", "--json", "hosts"]);
+    const { stdout } = await run("gh", ["auth", "status", "--json", "hosts"]);
     if (stdout && stdout.trim()) {
       const parsed = JSON.parse(stdout);
       const hostsObj = parsed?.hosts;
@@ -40,10 +46,13 @@ export async function getGitHubAuthStatus(): Promise<GitHubAccount> {
         }
       }
     }
-  } catch {
+  } catch (err) {
+    if (isMissingBinary(err)) {
+      return { authenticated: false, notInstalled: true };
+    }
     // Fallback: check basic gh auth token
     try {
-      const { stdout: token } = await execa("gh", ["auth", "token"]);
+      const { stdout: token } = await run("gh", ["auth", "token"]);
       if (token.trim().length > 0) {
         return {
           authenticated: true,
@@ -64,7 +73,7 @@ export async function getGitHubAuthStatus(): Promise<GitHubAccount> {
  */
 export async function listUserRepositories(limit = 100): Promise<RepositoryItem[]> {
   try {
-    const { stdout } = await execa("gh", [
+    const { stdout } = await run("gh", [
       "repo",
       "list",
       "--limit",
@@ -83,7 +92,7 @@ export async function listUserRepositories(limit = 100): Promise<RepositoryItem[
  */
 export async function listStarredRepositories(limit = 30): Promise<RepositoryItem[]> {
   try {
-    const { stdout } = await execa("gh", [
+    const { stdout } = await run("gh", [
       "api",
       `user/starred?per_page=${limit}`,
       "--jq",
@@ -103,7 +112,7 @@ export async function searchRepositories(query: string, limit = 20): Promise<Rep
   if (!trimmedQuery) return [];
 
   try {
-    const { stdout } = await execa("gh", [
+    const { stdout } = await run("gh", [
       "search",
       "repos",
       trimmedQuery,
@@ -120,7 +129,7 @@ export async function searchRepositories(query: string, limit = 20): Promise<Rep
     }));
   } catch {
     try {
-      const { stdout } = await execa("gh", [
+      const { stdout } = await run("gh", [
         "api",
         `search/repositories?q=${encodeURIComponent(trimmedQuery)}&per_page=${limit}`,
         "--jq",
@@ -179,7 +188,7 @@ export async function createPullRequest(
   if (options.draft) args.push("--draft");
   if (options.web) args.push("--web");
 
-  const { stdout } = await execa("gh", args, { cwd: options.cwd || process.cwd() });
+  const { stdout } = await run("gh", args, { cwd: options.cwd || process.cwd() });
   return stdout.trim();
 }
 
@@ -197,7 +206,7 @@ export async function listPullRequests(
   cwd = process.cwd(),
 ): Promise<PullRequestItem[]> {
   try {
-    const { stdout } = await execa(
+    const { stdout } = await run(
       "gh",
       ["pr", "list", "--limit", limit.toString(), "--json", "number,title,author,headRefName,state,url"],
       { cwd },
@@ -209,16 +218,16 @@ export async function listPullRequests(
 }
 
 export async function checkoutPullRequest(prNumber: number, cwd = process.cwd()): Promise<void> {
-  await execa("gh", ["pr", "checkout", prNumber.toString()], { cwd, stdio: "inherit" });
+  await run("gh", ["pr", "checkout", prNumber.toString()], { cwd, stdio: "inherit" });
 }
 
 export async function viewPullRequestInBrowser(prNumber: number, cwd = process.cwd()): Promise<void> {
-  await execa("gh", ["pr", "view", "--web", prNumber.toString()], { cwd });
+  await run("gh", ["pr", "view", "--web", prNumber.toString()], { cwd });
 }
 
 export async function getPullRequestDiff(prNumber: number, cwd = process.cwd()): Promise<string> {
   try {
-    const { stdout } = await execa("gh", ["pr", "diff", prNumber.toString()], { cwd });
+    const { stdout } = await run("gh", ["pr", "diff", prNumber.toString()], { cwd });
     return stdout;
   } catch {
     return "";
@@ -235,7 +244,7 @@ export interface ReleaseItem {
 
 export async function listReleases(limit = 10, cwd = process.cwd()): Promise<ReleaseItem[]> {
   try {
-    const { stdout } = await execa(
+    const { stdout } = await run(
       "gh",
       ["release", "list", "--limit", limit.toString(), "--json", "name,tagName,publishedAt,isDraft,isPrerelease"],
       { cwd },
@@ -261,7 +270,7 @@ export async function createRelease(
   if (options.draft) args.push("--draft");
   if (options.prerelease) args.push("--prerelease");
 
-  const { stdout } = await execa("gh", args, { cwd: options.cwd || process.cwd() });
+  const { stdout } = await run("gh", args, { cwd: options.cwd || process.cwd() });
   return stdout.trim();
 }
 
@@ -269,17 +278,17 @@ export async function getCommitsSinceTag(tag?: string, cwd = process.cwd()): Pro
   try {
     if (tag) {
       try {
-        const { stdout: hasTag } = await execa("git", ["tag", "-l", tag], { cwd });
+        const { stdout: hasTag } = await run("git", ["tag", "-l", tag], { cwd });
         if (!hasTag.trim()) {
           // Tag not found locally; try to fetch tags from remote
-          await execa("git", ["fetch", "--tags", "--quiet"], { cwd });
+          await run("git", ["fetch", "--tags", "--quiet"], { cwd });
         }
       } catch {
         // Ignore tag fetch failure
       }
     }
     const revRange = tag ? `${tag}..HEAD` : "HEAD";
-    const { stdout } = await execa(
+    const { stdout } = await run(
       "git",
       ["log", revRange, "--pretty=format:%h %s", "-n", "50"],
       { cwd },
@@ -288,7 +297,7 @@ export async function getCommitsSinceTag(tag?: string, cwd = process.cwd()): Pro
   } catch {
     // If tag..HEAD failed (e.g. tag deleted or unborn revision), fallback to recent HEAD
     try {
-      const { stdout } = await execa(
+      const { stdout } = await run(
         "git",
         ["log", "HEAD", "--pretty=format:%h %s", "-n", "50"],
         { cwd },
@@ -326,7 +335,7 @@ export async function getActivePullRequest(
   cwd = process.cwd(),
 ): Promise<ActivePullRequestInfo | null> {
   try {
-    const { stdout } = await execa(
+    const { stdout } = await run(
       "gh",
       ["pr", "view", "--json", "number,title,state,url"],
       { cwd, reject: false },
@@ -350,7 +359,7 @@ export async function getPullRequestChecks(
 ): Promise<CheckRunResult[]> {
   try {
     // gh pr checks exits with 1 (failing) or 2 (pending); reject: false ensures stdout is preserved
-    const { stdout } = await execa(
+    const { stdout } = await run(
       "gh",
       ["pr", "checks", "--json", "name,state,description,link"],
       { cwd, reject: false },

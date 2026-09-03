@@ -3,6 +3,7 @@ import {
   checkLargeFiles,
   checkSubmodules,
   commit,
+  detectDefaultBranch,
   findPrTemplate,
   getRecentCommits,
   getRemotes,
@@ -10,7 +11,6 @@ import {
   getStagedDiffStat,
   getStatus,
   hasCommits,
-  isDetachedHead,
   isGitRepo,
   pullRebase,
   push,
@@ -130,6 +130,7 @@ export function registerCommitCommand(program: Command): void {
 
       if (!(await isGitRepo())) {
         p.log.error("Not a git repository. Run `git init` or navigate to a repository.");
+        process.exitCode = 1;
         return;
       }
 
@@ -221,8 +222,15 @@ export function registerCommitCommand(program: Command): void {
         `Staged ${pc.green(String(status.staged.length))} file(s) on branch ${pc.cyan(status.branch)}`,
       );
 
-      // Code Hygiene Scanner (--review)
-      const rawDiff = await getStagedDiff();
+      // Code Hygiene Scanner (--review), Large File Guard, and Submodule Guard are independent — run in parallel.
+      // The diff is only fetched when something needs it (hygiene scan, AI generation, or PR creation).
+      const needsDiff = Boolean(options.review || options.pr || (!options.message && options.ai !== false));
+      const [rawDiff, largeFileCheck, submoduleStatus] = await Promise.all([
+        needsDiff ? getStagedDiff() : Promise.resolve(""),
+        checkLargeFiles(status.staged),
+        checkSubmodules(),
+      ]);
+
       if (options.review) {
         const hygieneIssues = scanCodeHygiene(rawDiff);
         if (hygieneIssues.length > 0) {
@@ -244,7 +252,7 @@ export function registerCommitCommand(program: Command): void {
       }
 
       // Large File Pre-Commit Guard (GitHub 100MB hard limit)
-      const { blocked, warnings } = await checkLargeFiles(status.staged);
+      const { blocked, warnings } = largeFileCheck;
       if (blocked.length > 0) {
         p.log.error(
           pc.red(
@@ -266,8 +274,7 @@ export function registerCommitCommand(program: Command): void {
       }
 
       // Submodule Integrity Guard
-      const submodules = await checkSubmodules();
-      const dirtySubmodules = submodules.filter((s) => s.status !== "uninitialized");
+      const dirtySubmodules = submoduleStatus.filter((s) => s.status !== "uninitialized");
       if (dirtySubmodules.length > 0) {
         p.log.warn(pc.yellow(`Detected ${dirtySubmodules.length} dirty/modified submodule(s):`));
         for (const s of dirtySubmodules) {
@@ -498,13 +505,15 @@ export function registerCommitCommand(program: Command): void {
           noVerify: options.noVerify,
           gpgSign: options.gpgSign,
           signoff: options.signoff,
+          amend: options.amend,
         });
         commitSpinner.stop(pc.green(options.amend ? "Commit amended successfully!" : "Commit created successfully!"));
       } catch (err: unknown) {
         commitSpinner.stop(pc.red("Git commit failed."));
-        const execaErr = err as { stderr?: string; stdout?: string };
-        const output = execaErr.stderr || execaErr.stdout || String(err);
+        const execErr = err as { stderr?: string; stdout?: string };
+        const output = execErr.stderr || execErr.stdout || String(err);
         p.log.error(output);
+        process.exitCode = 1;
         return;
       }
 
@@ -527,10 +536,11 @@ export function registerCommitCommand(program: Command): void {
 
       // Handle Push
       if (options.push || options.pr) {
-        if (status.isDetached || status.branch === "HEAD" || (await isDetachedHead())) {
+        if (status.isDetached || status.branch === "HEAD") {
           p.log.error("Cannot push or open a Pull Request from a detached HEAD state. Please create or switch to a branch first.");
           options.push = false;
           options.pr = false;
+          process.exitCode = 1;
           return;
         }
 
@@ -566,10 +576,12 @@ export function registerCommitCommand(program: Command): void {
             } catch (rebaseErr) {
               rebaseSpinner.stop(pc.red("Rebase or push failed. Please resolve conflicts manually."));
               p.log.error(String(rebaseErr));
+              process.exitCode = 1;
               return;
             }
           } else {
             p.log.error(String(err));
+            process.exitCode = 1;
             return;
           }
         }
@@ -579,7 +591,12 @@ export function registerCommitCommand(program: Command): void {
       if (options.pr) {
         const ghAuth = await getGitHubAuthStatus();
         if (!ghAuth.authenticated) {
-          p.log.warn("GitHub CLI is not authenticated. Cannot create PR automatically.");
+          p.log.warn(
+            ghAuth.notInstalled
+              ? "GitHub CLI (`gh`) is not installed. Install it from https://cli.github.com to create PRs automatically."
+              : "GitHub CLI is not authenticated. Cannot create PR automatically.",
+          );
+          process.exitCode = 1;
           return;
         }
 
@@ -593,8 +610,11 @@ export function registerCommitCommand(program: Command): void {
         const prSpinner = p.spinner();
         prSpinner.start("Generating AI Pull Request content...");
 
-        const diffStat = await getStagedDiffStat();
-        const prTemplate = await findPrTemplate();
+        const [diffStat, prTemplate, defaultBranch] = await Promise.all([
+          getStagedDiffStat(),
+          findPrTemplate(),
+          detectDefaultBranch(),
+        ]);
 
         if (prTemplate) {
           p.log.info(pc.dim("Detected repository PR template in .github/"));
@@ -611,8 +631,9 @@ export function registerCommitCommand(program: Command): void {
           const prAi = await provider.generatePr(
             {
               branch: status.branch,
-              baseBranch: "main",
-              diff: rawDiff,
+              baseBranch: defaultBranch,
+              // Never send raw diffs (lockfiles, .env, secrets) to the AI provider
+              diff: stripLockfilesFromDiff(rawDiff),
               diffStat,
               commitSummary: commitSubject,
               template: prTemplate || undefined,
@@ -647,6 +668,8 @@ export function registerCommitCommand(program: Command): void {
           } catch (err) {
             createSpinner.stop(pc.red("Failed to create PR."));
             p.log.error(String(err));
+            process.exitCode = 1;
+            return;
           }
         }
       }

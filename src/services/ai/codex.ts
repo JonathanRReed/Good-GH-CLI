@@ -1,4 +1,4 @@
-import { execa } from "execa";
+import { run } from "../../utils/exec.ts";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,7 +26,7 @@ export class CodexProvider implements AIProvider {
       if (existsSync(authPath)) {
         return true;
       }
-      const result = await execa("codex", ["login", "status"], { reject: false });
+      const result = await run("codex", ["login", "status"], { reject: false });
       const combined = `${result.stdout} ${result.stderr}`.toLowerCase();
       return combined.includes("logged in");
     } catch {
@@ -39,7 +39,7 @@ export class CodexProvider implements AIProvider {
     const outputPath = join(tmpDir, "output.txt");
 
     try {
-      await execa(
+      await run(
         "codex",
         [
           "exec",
@@ -55,7 +55,7 @@ export class CodexProvider implements AIProvider {
         ],
         {
           input: prompt,
-          timeout: 60_000,
+          timeoutMs: 60_000,
         },
       );
 

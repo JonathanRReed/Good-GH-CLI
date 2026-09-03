@@ -66,10 +66,13 @@ export function registerCloneCommand(program: Command): void {
               (r.description && r.description.toLowerCase().includes(query)),
           );
 
-          const candidateList: RepositoryItem[] = [...matchedUserRepos];
-          for (const gr of globalResults) {
-            if (!candidateList.some((c) => c.nameWithOwner.toLowerCase() === gr.nameWithOwner.toLowerCase())) {
-              candidateList.push(gr);
+          const seen = new Set<string>();
+          const candidateList: RepositoryItem[] = [];
+          for (const r of [...matchedUserRepos, ...globalResults]) {
+            const key = r.nameWithOwner.toLowerCase();
+            if (!seen.has(key)) {
+              seen.add(key);
+              candidateList.push(r);
             }
           }
 
@@ -96,8 +99,9 @@ export function registerCloneCommand(program: Command): void {
       }
 
       // Interactive discovery if no repo argument given or not resolved
+      let ghAuth: Awaited<ReturnType<typeof getGitHubAuthStatus>> | null = null;
       if (!selectedRepo) {
-        const ghAuth = await getGitHubAuthStatus();
+        ghAuth = await getGitHubAuthStatus();
         if (!ghAuth.authenticated) {
           p.log.warn(
             pc.yellow("GitHub CLI is not authenticated. You can still paste any repository URL."),
@@ -113,27 +117,26 @@ export function registerCloneCommand(program: Command): void {
         s.stop("Repositories loaded.");
 
         const items: PickerItem[] = [];
+        const seenRepos = new Set<string>();
 
-        if (userRepos.length > 0) {
-          for (const r of userRepos) {
-            items.push({
-              value: r.nameWithOwner,
-              label: r.nameWithOwner,
-              hint: r.isPrivate ? "🔒 private" : r.description?.slice(0, 45) || "",
-            });
-          }
+        for (const r of userRepos) {
+          if (seenRepos.has(r.nameWithOwner)) continue;
+          seenRepos.add(r.nameWithOwner);
+          items.push({
+            value: r.nameWithOwner,
+            label: r.nameWithOwner,
+            hint: r.isPrivate ? "🔒 private" : r.description?.slice(0, 45) || "",
+          });
         }
 
-        if (starredRepos.length > 0) {
-          for (const r of starredRepos) {
-            if (!items.some((c) => c.value === r.nameWithOwner)) {
-              items.push({
-                value: r.nameWithOwner,
-                label: `★ ${r.nameWithOwner}`,
-                hint: r.description?.slice(0, 45) || "Starred",
-              });
-            }
-          }
+        for (const r of starredRepos) {
+          if (seenRepos.has(r.nameWithOwner)) continue;
+          seenRepos.add(r.nameWithOwner);
+          items.push({
+            value: r.nameWithOwner,
+            label: `★ ${r.nameWithOwner}`,
+            hint: r.description?.slice(0, 45) || "Starred",
+          });
         }
 
         const pick = await searchablePicker({
@@ -158,8 +161,8 @@ export function registerCloneCommand(program: Command): void {
         selectedRepo = pick;
       }
 
-      const ghAuth = await getGitHubAuthStatus();
-      const repoUrl = normalizeCloneUrl(selectedRepo, ghAuth.protocol || "https");
+      const finalAuth = ghAuth ?? (await getGitHubAuthStatus());
+      const repoUrl = normalizeCloneUrl(selectedRepo, finalAuth.protocol || "https");
       const defaultRepoName = extractRepoName(selectedRepo);
 
       // Destination directory resolution
@@ -214,6 +217,7 @@ export function registerCloneCommand(program: Command): void {
 
       if (existsSync(targetDir)) {
         p.log.error(`Target directory '${targetDir}' already exists!`);
+        process.exitCode = 1;
         return;
       }
 
@@ -258,6 +262,7 @@ export function registerCloneCommand(program: Command): void {
       } catch (err) {
         cloneSpinner.stop(pc.red("Clone failed."));
         p.log.error(String(err));
+        process.exitCode = 1;
       }
     });
 }

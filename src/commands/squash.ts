@@ -9,6 +9,7 @@ import {
   squashCommits,
 } from "../services/git.ts";
 import { generateCommitWithFallback } from "../services/ai/index.ts";
+import { stripLockfilesFromDiff } from "../utils/diff.ts";
 import { header, p, pc, promptInput, selectMenu } from "../utils/ui.ts";
 
 export function registerSquashCommand(program: Command): void {
@@ -21,6 +22,7 @@ export function registerSquashCommand(program: Command): void {
 
       if (!(await isGitRepo())) {
         p.log.error("Not a git repository.");
+        process.exitCode = 1;
         return;
       }
 
@@ -80,6 +82,7 @@ export function registerSquashCommand(program: Command): void {
       } catch (err) {
         s.stop(pc.red("Failed to squash commits."));
         p.log.error(String(err));
+        process.exitCode = 1;
         return;
       }
 
@@ -125,7 +128,8 @@ export function registerSquashCommand(program: Command): void {
             const { result: aiResult } = await generateCommitWithFallback({
               branch: status.branch,
               stagedFiles: status.staged,
-              stagedDiff: rawDiff,
+              // Never send raw diffs (lockfiles, .env, secrets) to the AI provider
+              stagedDiff: stripLockfilesFromDiff(rawDiff),
               customGuidance: `Consolidate these ${count} commits: ${previousMessages.join(", ")}`,
             });
             aiSpinner.stop("Commit message generated!");
@@ -154,6 +158,7 @@ export function registerSquashCommand(program: Command): void {
       } catch (err) {
         cSpinner.stop(pc.red("Commit failed."));
         p.log.error(String(err));
+        process.exitCode = 1;
       }
     });
 }

@@ -1,9 +1,8 @@
 import { Command } from "commander";
 import { checkSubmodules, getAheadBehind, getAheadOfDefault, getRepoRoot, getStatus, worktreeList } from "../services/git.ts";
-import { getActivePullRequest, getGitHubAuthStatus } from "../services/github.ts";
+import { getActivePullRequest, getGitHubAuthStatus, type GitHubAccount } from "../services/github.ts";
 import { getConfig } from "../services/config.ts";
-import { CodexProvider } from "../services/ai/codex.ts";
-import { GrokProvider } from "../services/ai/grok.ts";
+import { getProviderById } from "../services/ai/index.ts";
 import { header, p, pc } from "../utils/ui.ts";
 
 export function registerStatusCommand(program: Command): void {
@@ -13,15 +12,29 @@ export function registerStatusCommand(program: Command): void {
     .action(async () => {
       header("System & Repository Status");
 
+      // Probe everything in parallel — all of these are independent
+      const [gitStatus, root, wtList, drift, aheadOfDefault, activePr, ghStatus, submodules, codexOk, grokOk] =
+        await Promise.all([
+          getStatus(),
+          getRepoRoot().catch(() => ""),
+          worktreeList().catch(() => []),
+          getAheadBehind().catch(() => ({ ahead: 0, behind: 0, hasUpstream: false })),
+          getAheadOfDefault().catch(() => 0),
+          getActivePullRequest().catch(() => null),
+          getGitHubAuthStatus().catch((): GitHubAccount => ({ authenticated: false })),
+          checkSubmodules().catch(() => []),
+          getProviderById("codex").isAvailable(),
+          getProviderById("grok").isAvailable(),
+        ]);
+
+      const config = getConfig();
+      const codex = getProviderById("codex");
+      const grok = getProviderById("grok");
+
       // Git Status
-      const gitStatus = await getStatus();
       if (!gitStatus.isRepo) {
         p.log.warn(pc.yellow("Not currently inside a Git repository."));
       } else {
-        const root = await getRepoRoot();
-        const wtList = await worktreeList();
-        const drift = await getAheadBehind();
-        const aheadOfDefault = await getAheadOfDefault();
         let driftStr = pc.dim("(no upstream)");
         if (drift.hasUpstream) {
           if (drift.ahead === 0 && drift.behind === 0) {
@@ -41,7 +54,6 @@ export function registerStatusCommand(program: Command): void {
         p.log.message(`  Root:     ${pc.cyan(root)}`);
         p.log.message(`  Branch:   ${pc.green(gitStatus.branch)} ${driftStr}`);
 
-        const activePr = await getActivePullRequest();
         if (activePr) {
           p.log.message(`  Pull Req: ${pc.bold(pc.green(`#${activePr.number}`))} ${activePr.title} (${pc.cyan(activePr.state)})`);
           p.log.message(`            ${pc.dim(activePr.url)}`);
@@ -52,7 +64,6 @@ export function registerStatusCommand(program: Command): void {
         );
         p.log.message(`  Worktrees: ${wtList.length} active`);
 
-        const submodules = await checkSubmodules();
         if (submodules.length > 0) {
           p.log.message(`  Submodules: ${submodules.length} tracked`);
           for (const s of submodules) {
@@ -64,8 +75,9 @@ export function registerStatusCommand(program: Command): void {
 
       // GitHub Status
       p.log.step(pc.bold("GitHub CLI"));
-      const ghStatus = await getGitHubAuthStatus();
-      if (ghStatus.authenticated) {
+      if (ghStatus.notInstalled) {
+        p.log.message(`  Status:   ${pc.yellow("Not installed")} (install from https://cli.github.com)`);
+      } else if (ghStatus.authenticated) {
         p.log.message(
           `  Status:   ${pc.green("Authenticated")} as ${pc.cyan(ghStatus.login || "user")} (${ghStatus.protocol || "https"})`,
         );
@@ -74,12 +86,6 @@ export function registerStatusCommand(program: Command): void {
       }
 
       // AI Status
-      const config = getConfig();
-      const codex = new CodexProvider();
-      const grok = new GrokProvider();
-      const codexOk = await codex.isAvailable();
-      const grokOk = await grok.isAvailable();
-
       p.log.step(pc.bold("AI Integration (Zero API Keys)"));
       p.log.message(
         `  Codex (Luna): ${codexOk ? pc.green("Ready") : pc.dim("Not detected")} (model: ${pc.cyan(config.codex_model || codex.defaultModel)})`,

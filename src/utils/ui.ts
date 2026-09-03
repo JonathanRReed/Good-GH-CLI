@@ -183,12 +183,22 @@ export async function searchablePicker<T = string>(options: {
     }
 
     function cleanup(): void {
-      process.stdin.removeListener("keypress", onKeypress);
+      process.stdin.removeListener("keypress", guardedKeypress);
       process.stdin.setRawMode(false);
       process.stdin.pause();
     }
 
     async function onKeypress(str: string, key: readline.Key): Promise<void> {
+      try {
+        await handleKeypress(str, key);
+      } catch {
+        // An unexpected error must never leave the terminal in raw mode with a hidden cursor
+        cleanup();
+        resolve(null);
+      }
+    }
+
+    async function handleKeypress(str: string, key: readline.Key): Promise<void> {
       if (isSearching) return;
 
       if (key.name === "escape" || (key.ctrl && key.name === "c")) {
@@ -274,7 +284,19 @@ export async function searchablePicker<T = string>(options: {
       }
     }
 
-    process.stdin.on("keypress", onKeypress);
+    // An unexpected error inside a keypress handler must never leave the
+    // terminal in raw mode with a hidden cursor.
+    function guardedKeypress(str: string, key: readline.Key): void {
+      try {
+        onKeypress(str, key);
+      } catch {
+        cleanup();
+        // `null` is falsy for every picker contract (including boolean confirms)
+        resolve(null as never);
+      }
+    }
+
+    process.stdin.on("keypress", guardedKeypress);
     render();
   });
 }
@@ -320,7 +342,7 @@ export async function selectMenu<T>(options: {
 
   return new Promise((resolve) => {
     function cleanup(): void {
-      process.stdin.removeListener("keypress", onKeypress);
+      process.stdin.removeListener("keypress", guardedKeypress);
       process.stdout.write("\x1b[?25h");
       if (process.stdin.isTTY) {
         process.stdin.setRawMode(false);
@@ -434,7 +456,19 @@ export async function selectMenu<T>(options: {
       }
     }
 
-    process.stdin.on("keypress", onKeypress);
+    // An unexpected error inside a keypress handler must never leave the
+    // terminal in raw mode with a hidden cursor.
+    function guardedKeypress(str: string, key: readline.Key): void {
+      try {
+        onKeypress(str, key);
+      } catch {
+        cleanup();
+        // `null` is falsy for every picker contract (including boolean confirms)
+        resolve(null as never);
+      }
+    }
+
+    process.stdin.on("keypress", guardedKeypress);
     render();
   });
 }
@@ -474,7 +508,7 @@ export async function multiSelectMenu<T>(options: {
 
   return new Promise((resolve) => {
     function cleanup(): void {
-      process.stdin.removeListener("keypress", onKeypress);
+      process.stdin.removeListener("keypress", guardedKeypress);
       process.stdout.write("\x1b[?25h");
       if (process.stdin.isTTY) {
         process.stdin.setRawMode(false);
@@ -630,7 +664,19 @@ export async function multiSelectMenu<T>(options: {
       }
     }
 
-    process.stdin.on("keypress", onKeypress);
+    // An unexpected error inside a keypress handler must never leave the
+    // terminal in raw mode with a hidden cursor.
+    function guardedKeypress(str: string, key: readline.Key): void {
+      try {
+        onKeypress(str, key);
+      } catch {
+        cleanup();
+        // `null` is falsy for every picker contract (including boolean confirms)
+        resolve(null as never);
+      }
+    }
+
+    process.stdin.on("keypress", guardedKeypress);
     render();
   });
 }
@@ -653,7 +699,7 @@ export async function confirmPrompt(options: {
 
   return new Promise((resolve) => {
     function cleanup(): void {
-      process.stdin.removeListener("keypress", onKeypress);
+      process.stdin.removeListener("keypress", guardedKeypress);
       process.stdout.write("\x1b[?25h");
       if (process.stdin.isTTY) {
         process.stdin.setRawMode(false);
@@ -731,7 +777,19 @@ export async function confirmPrompt(options: {
       }
     }
 
-    process.stdin.on("keypress", onKeypress);
+    // An unexpected error inside a keypress handler must never leave the
+    // terminal in raw mode with a hidden cursor.
+    function guardedKeypress(str: string, key: readline.Key): void {
+      try {
+        onKeypress(str, key);
+      } catch {
+        cleanup();
+        // `null` is falsy for every picker contract (including boolean confirms)
+        resolve(null as never);
+      }
+    }
+
+    process.stdin.on("keypress", guardedKeypress);
     render();
   });
 }

@@ -36,19 +36,6 @@ const SECRET_PATTERNS = [
   /(password|secret|api[_-]?key|access[_-]?token)\s*[:=]\s*["'][^"'\s]{8,}["']/gi,
 ];
 
-export function isLockfile(filePath: string): boolean {
-  return [
-    /bun\.lockb?$/,
-    /package-lock\.json$/,
-    /pnpm-lock\.yaml$/,
-    /yarn\.lock$/,
-    /Cargo\.lock$/,
-    /poetry\.lock$/,
-    /Gemfile\.lock$/,
-    /composer\.lock$/,
-  ].some((p) => p.test(filePath));
-}
-
 export function isIgnoredDiffFile(filePath: string): boolean {
   return IGNORED_FILE_PATTERNS.some((pattern) => pattern.test(filePath));
 }

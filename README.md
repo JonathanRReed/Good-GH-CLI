@@ -37,9 +37,15 @@ ggh c --review        # check for console.log / debugger / localhost before comm
 # 3. Undo a mistake
 ggh undo              # soft-resets HEAD~1, keeps all files staged
 ggh discard           # interactively revert files (Lazygit-style)
+ggh stash             # interactive stash list, push, pop, and drop
+ggh resolve           # resolve merge conflicts interactively (ours/theirs/mark)
 
 # 4. View recent commit graph
 ggh log               # or: ggh graph
+ggh log -n 50         # control how many commits to show
+
+# 5. Check the installed version
+ggh --version
 ```
 
 ### Branches & Worktrees
@@ -48,6 +54,7 @@ ggh log               # or: ggh graph
 # Switch branches or active worktrees interactively
 ggh switch            # or: ggh sw
 ggh sw -c feat/login  # create and switch to new branch
+ggh checkout main     # checkout works too
 
 # Rename current branch (updates local + remote)
 ggh rename feat/new-name

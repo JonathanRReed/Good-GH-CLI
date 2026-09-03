@@ -1,4 +1,4 @@
-import { execa } from "execa";
+import { run } from "../../utils/exec.ts";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -25,7 +25,7 @@ export class GrokProvider implements AIProvider {
       if (existsSync(authPath)) {
         return true;
       }
-      const { stdout } = await execa("grok", ["models"], { reject: false });
+      const { stdout } = await run("grok", ["models"], { reject: false });
       return !stdout.includes("not authenticated");
     } catch {
       return false;
@@ -40,11 +40,11 @@ export class GrokProvider implements AIProvider {
       // Securely write prompt to file with 0o600 permissions (avoids ps aux argument sniffing)
       writeFileSync(promptPath, prompt, { encoding: "utf-8", mode: 0o600 });
 
-      const { stdout } = await execa(
+      const { stdout } = await run(
         "grok",
         ["--prompt-file", promptPath, "--model", model, "--output-format", "plain"],
         {
-          timeout: 60_000,
+          timeoutMs: 60_000,
         },
       );
       return stdout.trim();

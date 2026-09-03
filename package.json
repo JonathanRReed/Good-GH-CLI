@@ -4,6 +4,27 @@
   "description": "A good GitHub and Git CLI inspired by T3 Code",
   "type": "module",
   "main": "src/index.ts",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JonathanRReed/Good-GH-CLI.git"
+  },
+  "bugs": {
+    "url": "https://github.com/JonathanRReed/Good-GH-CLI/issues"
+  },
+  "homepage": "https://github.com/JonathanRReed/Good-GH-CLI#readme",
+  "keywords": [
+    "git",
+    "github",
+    "cli",
+    "worktree",
+    "pull-request",
+    "ai",
+    "developer-tools"
+  ],
+  "engines": {
+    "bun": ">=1.1.0"
+  },
   "bin": {
     "ggh": "./bin/ggh.ts",
     "good-gh": "./bin/ggh.ts"
@@ -17,7 +38,8 @@
   ],
   "scripts": {
     "dev": "bun run bin/ggh.ts",
-    "build": "bun build bin/ggh.ts --target=bun --outdir=dist",
+    "build": "bun build bin/ggh.ts --target=bun --outdir=dist --minify",
+    "prepublishOnly": "bun run typecheck && bun run lint && bun test && bun run build",
     "test": "bun test",
     "lint": "eslint src/ tests/ bin/",
     "typecheck": "tsc --noEmit",
@@ -26,7 +48,6 @@
   "dependencies": {
     "@clack/prompts": "^0.9.1",
     "commander": "^13.1.0",
-    "execa": "^9.5.2",
     "picocolors": "^1.1.1"
   },
   "devDependencies": {
@@ -34,6 +55,7 @@
     "@types/bun": "latest",
     "@types/node": "^22.13.9",
     "eslint": "^9.21.0",
+    "execa": "^9.5.2",
     "prettier": "^3.5.2",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.25.0"

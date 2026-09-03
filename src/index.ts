@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import packageJson from "../package.json";
 import { registerCloneCommand } from "./commands/clone.ts";
 import { registerCommitCommand } from "./commands/commit.ts";
 import { registerWorktreeCommand } from "./commands/worktree.ts";
@@ -25,7 +26,7 @@ export function createProgram(): Command {
   program
     .name("ggh")
     .description("Good GH CLI — A modern Git and GitHub CLI inspired by T3 Code")
-    .version("0.1.0");
+    .version(packageJson.version);
 
   registerCloneCommand(program);
   registerCommitCommand(program);

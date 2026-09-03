@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { execa } from "execa";
+import { run } from "../utils/exec.ts";
 import {
   getAheadBehind,
   getCurrentBranch,
@@ -99,8 +99,8 @@ export function registerRenameCommand(program: Command): void {
             const remoteSpinner = p.spinner();
             remoteSpinner.start("Updating remote tracking branch...");
             try {
-              await execa("git", ["push", "-u", remoteName, newName]);
-              await execa("git", ["push", remoteName, "--delete", current]);
+              await run("git", ["push", "-u", remoteName, newName]);
+              await run("git", ["push", remoteName, "--delete", current]);
               remoteSpinner.stop(pc.green("Remote branch updated successfully!"));
             } catch (remoteErr) {
               remoteSpinner.stop(pc.yellow("Remote branch update could not be fully completed."));

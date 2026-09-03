@@ -9,19 +9,30 @@ export * from "./prompt.ts";
 export * from "./codex.ts";
 export * from "./grok.ts";
 
-const codex = new CodexProvider();
-const grok = new GrokProvider();
+// Lazily constructed so commands that never touch AI don't pay for provider setup
+let _codex: CodexProvider | null = null;
+let _grok: GrokProvider | null = null;
+
+function getCodex(): CodexProvider {
+  return (_codex ??= new CodexProvider());
+}
+
+function getGrok(): GrokProvider {
+  return (_grok ??= new GrokProvider());
+}
 
 export function getProviderById(id: ConfigAIProvider): AIProvider {
-  return id === "grok" ? grok : codex;
+  return id === "grok" ? getGrok() : getCodex();
 }
 
 export async function getAvailableProviders(): Promise<AIProvider[]> {
+  const [codex, grok] = await Promise.all([getCodex(), getGrok()]);
+  const [codexOk, grokOk] = await Promise.all([codex.isAvailable(), grok.isAvailable()]);
   const providers: AIProvider[] = [];
-  if (await codex.isAvailable()) {
+  if (codexOk) {
     providers.push(codex);
   }
-  if (await grok.isAvailable()) {
+  if (grokOk) {
     providers.push(grok);
   }
   return providers;
@@ -34,7 +45,7 @@ export async function resolveAIProvider(
   const targetId = explicitId || config.ai_provider || "codex";
 
   const primary = getProviderById(targetId);
-  const secondary = targetId === "codex" ? grok : codex;
+  const secondary = targetId === "codex" ? getGrok() : getCodex();
 
   if (await primary.isAvailable()) {
     const model =
@@ -76,7 +87,7 @@ export async function ensureFirstRunSetup(
   }
 
   saveConfig({ ai_provider: "codex", first_run_completed: true });
-  return codex;
+  return getCodex();
 }
 
 export async function generateCommitWithFallback(
@@ -90,7 +101,7 @@ export async function generateCommitWithFallback(
     const result = await primary.generateCommit(input, primaryModel);
     return { result, providerName: primary.displayName, model: primaryModel };
   } catch (primaryErr) {
-    const alternate = primary.id === "codex" ? grok : codex;
+    const alternate = primary.id === "codex" ? getGrok() : getCodex();
     if (await alternate.isAvailable()) {
       const config = getConfig();
       const alternateModel =

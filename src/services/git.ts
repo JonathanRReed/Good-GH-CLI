@@ -1,6 +1,7 @@
-import { execa } from "execa";
-import { existsSync, appendFileSync, readFileSync, rmSync, copyFileSync, statSync } from "node:fs";
-import { join, isAbsolute } from "node:path";
+import { run } from "../utils/exec.ts";
+import { existsSync, appendFileSync, readFileSync, rmSync, copyFileSync } from "node:fs";
+import { stat } from "node:fs/promises";
+import { join, isAbsolute, relative } from "node:path";
 import type { ChangedFile } from "../utils/diff.ts";
 import type { CloneMode } from "./config.ts";
 
@@ -52,7 +53,9 @@ export async function execGitWithRetry(
   const cwd = options.cwd || process.cwd();
   const maxRetries = options.maxRetries ?? 3;
   let delay = options.delayMs ?? 250;
-  const env = options.nonInteractive
+  // Default to non-interactive when stdin is not a TTY so git never blocks on credential prompts
+  const nonInteractive = options.nonInteractive ?? !process.stdin.isTTY;
+  const env = nonInteractive
     ? { ...process.env, ...options.env, ...NON_INTERACTIVE_ENV }
     : options.env
       ? { ...process.env, ...options.env }
@@ -60,7 +63,7 @@ export async function execGitWithRetry(
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      return await execa("git", args, { cwd, env });
+      return await run("git", args, { cwd, env });
     } catch (err: unknown) {
       const errStr = String(err);
       const isLockError =
@@ -76,12 +79,12 @@ export async function execGitWithRetry(
       throw err;
     }
   }
-  return await execa("git", args, { cwd, env });
+  return await run("git", args, { cwd, env });
 }
 
 export async function isGitRepo(cwd = process.cwd()): Promise<boolean> {
   try {
-    const { stdout } = await execa("git", ["rev-parse", "--is-inside-work-tree"], { cwd });
+    const { stdout } = await run("git", ["rev-parse", "--is-inside-work-tree"], { cwd });
     return stdout.trim() === "true";
   } catch {
     return false;
@@ -90,7 +93,7 @@ export async function isGitRepo(cwd = process.cwd()): Promise<boolean> {
 
 export async function hasCommits(cwd = process.cwd()): Promise<boolean> {
   try {
-    await execa("git", ["rev-parse", "--verify", "HEAD"], { cwd });
+    await run("git", ["rev-parse", "--verify", "HEAD"], { cwd });
     return true;
   } catch {
     return false;
@@ -99,7 +102,7 @@ export async function hasCommits(cwd = process.cwd()): Promise<boolean> {
 
 export async function hasBranch(branch: string, cwd = process.cwd()): Promise<boolean> {
   try {
-    await execa("git", ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`], { cwd });
+    await run("git", ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`], { cwd });
     return true;
   } catch {
     return false;
@@ -107,13 +110,13 @@ export async function hasBranch(branch: string, cwd = process.cwd()): Promise<bo
 }
 
 export async function getRepoRoot(cwd = process.cwd()): Promise<string> {
-  const { stdout } = await execa("git", ["rev-parse", "--show-toplevel"], { cwd });
+  const { stdout } = await run("git", ["rev-parse", "--show-toplevel"], { cwd });
   return stdout.trim();
 }
 
 export async function getCurrentBranch(cwd = process.cwd()): Promise<string> {
   try {
-    const { stdout } = await execa("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd });
+    const { stdout } = await run("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd });
     return stdout.trim();
   } catch {
     return "HEAD";
@@ -122,7 +125,7 @@ export async function getCurrentBranch(cwd = process.cwd()): Promise<string> {
 
 export async function isDetachedHead(cwd = process.cwd()): Promise<boolean> {
   try {
-    await execa("git", ["symbolic-ref", "-q", "HEAD"], { cwd });
+    await run("git", ["symbolic-ref", "-q", "HEAD"], { cwd });
     return false;
   } catch {
     return true;
@@ -131,7 +134,7 @@ export async function isDetachedHead(cwd = process.cwd()): Promise<boolean> {
 
 export async function getCommitCount(cwd = process.cwd()): Promise<number> {
   try {
-    const { stdout } = await execa("git", ["rev-list", "--count", "HEAD"], { cwd });
+    const { stdout } = await run("git", ["rev-list", "--count", "HEAD"], { cwd });
     return parseInt(stdout.trim(), 10) || 0;
   } catch {
     return 0;
@@ -140,7 +143,7 @@ export async function getCommitCount(cwd = process.cwd()): Promise<number> {
 
 export async function getRemotes(cwd = process.cwd()): Promise<string[]> {
   try {
-    const { stdout } = await execa("git", ["remote"], { cwd });
+    const { stdout } = await run("git", ["remote"], { cwd });
     return stdout
       .split("\n")
       .map((r) => r.trim())
@@ -157,16 +160,17 @@ export async function hasRemote(name = "origin", cwd = process.cwd()): Promise<b
 
 export async function listBranches(cwd = process.cwd()): Promise<BranchInfo[]> {
   try {
-    const { stdout } = await execa(
+    const { stdout } = await run(
       "git",
-      ["branch", "--list", "--format=%(refname:short)|%(HEAD)|%(subject)"],
+      // NUL-delimited so branch names containing "|" (or subjects containing "|") parse correctly
+      ["for-each-ref", "--format=%(refname:short)%00%(HEAD)%00%(subject)", "refs/heads"],
       { cwd },
     );
     return stdout
       .split("\n")
       .filter(Boolean)
       .map((line) => {
-        const parts = line.split("|");
+        const parts = line.split("\0");
         const name = parts[0]?.trim() || "";
         const head = parts[1]?.trim() || "";
         const commit = parts[2]?.trim() || "";
@@ -187,7 +191,7 @@ export async function setBranchMergeBase(
   cwd = process.cwd(),
 ): Promise<void> {
   try {
-    await execa("git", ["config", `branch.${branch}.gh-merge-base`, baseBranch], { cwd });
+    await run("git", ["config", `branch.${branch}.gh-merge-base`, baseBranch], { cwd });
   } catch {
     // Best-effort
   }
@@ -199,7 +203,7 @@ export async function getBranchMergeBase(
 ): Promise<string | null> {
   try {
     const targetBranch = branch || (await getCurrentBranch(cwd));
-    const { stdout } = await execa("git", ["config", `branch.${targetBranch}.gh-merge-base`], { cwd });
+    const { stdout } = await run("git", ["config", `branch.${targetBranch}.gh-merge-base`], { cwd });
     return stdout.trim() || null;
   } catch {
     return null;
@@ -215,7 +219,7 @@ export async function switchBranch(
   const current = await getCurrentBranch(cwd);
   const args = create
     ? baseBranch
-      ? ["checkout", "-b", branch, "--", baseBranch]
+      ? ["checkout", "-b", branch, baseBranch]
       : ["checkout", "-b", branch]
     : ["checkout", branch];
   await execGitWithRetry(args, { cwd });
@@ -244,7 +248,7 @@ export async function fetchPullRequestBranch(
 ): Promise<void> {
   const remotes = await getRemotes(cwd);
   const remote = remotes.includes("origin") ? "origin" : remotes[0] || "origin";
-  await execa(
+  await run(
     "git",
     ["fetch", "--quiet", "--no-tags", remote, `+refs/pull/${prNumber}/head:refs/heads/${localBranch}`],
     { cwd },
@@ -274,7 +278,18 @@ export async function findPrTemplate(cwd = process.cwd()): Promise<string | null
 }
 
 export async function getStatus(cwd = process.cwd()): Promise<GitStatusResult> {
-  const inRepo = await isGitRepo(cwd);
+  // Probe repo state and porcelain status in parallel (independent git calls)
+  const [inRepo, isDetached, branch, statusResult] = await Promise.all([
+    isGitRepo(cwd),
+    isDetachedHead(cwd),
+    getCurrentBranch(cwd),
+    run(
+      "git",
+      ["-c", "core.quotepath=false", "status", "--porcelain=v1", "-z", "-uall"],
+      { cwd, reject: false },
+    ).catch(() => ({ stdout: "", stderr: "", exitCode: 128 })),
+  ]);
+
   if (!inRepo) {
     return {
       isRepo: false,
@@ -288,13 +303,7 @@ export async function getStatus(cwd = process.cwd()): Promise<GitStatusResult> {
     };
   }
 
-  const isDetached = await isDetachedHead(cwd);
-  const branch = await getCurrentBranch(cwd);
-  const { stdout } = await execa(
-    "git",
-    ["-c", "core.quotepath=false", "status", "--porcelain=v1", "-z", "-uall"],
-    { cwd },
-  );
+  const stdout = statusResult.stdout;
 
   const staged: ChangedFile[] = [];
   const unstaged: ChangedFile[] = [];
@@ -376,27 +385,22 @@ export async function stageAll(cwd = process.cwd()): Promise<void> {
 }
 
 export async function getStagedDiff(cwd = process.cwd()): Promise<string> {
-  const { stdout } = await execa("git", ["diff", "--cached"], { cwd });
+  const { stdout } = await run("git", ["diff", "--cached"], { cwd });
   return stdout;
 }
 
 export async function getStagedDiffStat(cwd = process.cwd()): Promise<string> {
   try {
-    const { stdout } = await execa("git", ["diff", "--cached", "--stat"], { cwd });
+    const { stdout } = await run("git", ["diff", "--cached", "--stat"], { cwd });
     return stdout.trim();
   } catch {
     return "";
   }
 }
 
-export async function getUnstagedDiff(cwd = process.cwd()): Promise<string> {
-  const { stdout } = await execa("git", ["diff"], { cwd });
-  return stdout;
-}
-
 export async function getRecentCommits(count = 10, cwd = process.cwd()): Promise<string[]> {
   try {
-    const { stdout } = await execa("git", ["log", `-n`, `${count}`, "--oneline"], { cwd });
+    const { stdout } = await run("git", ["log", `-n`, `${count}`, "--oneline"], { cwd });
     return stdout.split("\n").filter((l) => l.trim().length > 0);
   } catch {
     return [];
@@ -407,6 +411,7 @@ export interface CommitOptions {
   noVerify?: boolean;
   gpgSign?: boolean;
   signoff?: boolean;
+  amend?: boolean;
   cwd?: string;
 }
 
@@ -423,23 +428,24 @@ export async function checkLargeFiles(
   const blocked: Array<{ path: string; sizeMB: number }> = [];
   const warnings: Array<{ path: string; sizeMB: number }> = [];
 
-  for (const file of files) {
-    if (file.status === "deleted") continue;
-    const fullPath = join(repoRoot, file.path);
-    if (!existsSync(fullPath)) continue;
+  await Promise.all(
+    files.map(async (file) => {
+      if (file.status === "deleted") return;
+      const fullPath = join(repoRoot, file.path);
 
-    try {
-      const stats = statSync(fullPath);
-      const sizeMB = Math.round((stats.size / (1024 * 1024)) * 10) / 10;
-      if (stats.size >= 100 * 1024 * 1024) {
-        blocked.push({ path: file.path, sizeMB });
-      } else if (stats.size >= 50 * 1024 * 1024) {
-        warnings.push({ path: file.path, sizeMB });
+      try {
+        const stats = await stat(fullPath);
+        const sizeMB = Math.round((stats.size / (1024 * 1024)) * 10) / 10;
+        if (stats.size >= 100 * 1024 * 1024) {
+          blocked.push({ path: file.path, sizeMB });
+        } else if (stats.size >= 50 * 1024 * 1024) {
+          warnings.push({ path: file.path, sizeMB });
+        }
+      } catch {
+        // File missing or unreadable; ignore
       }
-    } catch {
-      // Ignore
-    }
-  }
+    }),
+  );
 
   return { blocked, warnings };
 }
@@ -448,7 +454,7 @@ export async function getAheadBehind(
   cwd = process.cwd(),
 ): Promise<{ ahead: number; behind: number; hasUpstream: boolean }> {
   try {
-    const { stdout } = await execa(
+    const { stdout } = await run(
       "git",
       ["rev-list", "--left-right", "--count", "HEAD...@{u}"],
       { cwd },
@@ -460,24 +466,39 @@ export async function getAheadBehind(
   }
 }
 
+/**
+ * Detects the repository's default branch: recorded merge-base first, then main/master fallback.
+ */
+export async function detectDefaultBranch(cwd = process.cwd()): Promise<string> {
+  try {
+    const current = await getCurrentBranch(cwd);
+    const recordedBase = await getBranchMergeBase(current, cwd);
+    if (recordedBase && (await hasBranch(recordedBase, cwd))) {
+      return recordedBase;
+    }
+  } catch {
+    // Fall through to main/master detection
+  }
+
+  const [hasMain, hasMaster] = await Promise.all([hasBranch("main", cwd), hasBranch("master", cwd)]);
+  if (hasMain) return "main";
+  if (hasMaster) return "master";
+  return "main";
+}
+
 export async function getAheadOfDefault(
   defaultBranch?: string,
   cwd = process.cwd(),
 ): Promise<number> {
   try {
     const current = await getCurrentBranch(cwd);
-    const recordedBase = await getBranchMergeBase(current, cwd);
-    const targetCandidate = defaultBranch || recordedBase || "main";
-    const actualDefault = (await hasBranch(targetCandidate, cwd))
-      ? targetCandidate
-      : (await hasBranch("main", cwd))
-        ? "main"
-        : (await hasBranch("master", cwd))
-          ? "master"
-          : null;
+    const actualDefault =
+      defaultBranch && (await hasBranch(defaultBranch, cwd))
+        ? defaultBranch
+        : await detectDefaultBranch(cwd);
     if (!actualDefault || current === actualDefault) return 0;
 
-    const { stdout } = await execa(
+    const { stdout } = await run(
       "git",
       ["rev-list", "--count", `${actualDefault}..HEAD`],
       { cwd },
@@ -492,9 +513,11 @@ export async function discardFiles(
   files: { path: string; staged?: boolean; untracked?: boolean }[],
   cwd = process.cwd(),
 ): Promise<void> {
+  const hasUntracked = files.some((f) => f.untracked);
+  const root = hasUntracked ? await getRepoRoot(cwd) : "";
+
   for (const f of files) {
     if (f.untracked) {
-      const root = await getRepoRoot(cwd);
       rmSync(join(root, f.path), { force: true, recursive: true });
     } else if (f.staged) {
       await execGitWithRetry(["restore", "--staged", "--worktree", "--", f.path], { cwd });
@@ -510,7 +533,7 @@ export async function fetchPrune(cwd = process.cwd()): Promise<void> {
 
 export async function getGoneBranches(cwd = process.cwd()): Promise<string[]> {
   try {
-    const { stdout } = await execa("git", ["branch", "-vv"], { cwd });
+    const { stdout } = await run("git", ["branch", "-vv"], { cwd });
     const gone: string[] = [];
     const lines = stdout.split("\n");
     for (const line of lines) {
@@ -540,12 +563,12 @@ export async function getUnmergedCommits(
   cwd = process.cwd(),
 ): Promise<string[]> {
   try {
-    const actualBase = (await hasBranch(base, cwd))
-      ? base
-      : (await hasBranch("master", cwd))
-        ? "master"
-        : "HEAD";
-    const { stdout } = await execa("git", ["cherry", actualBase, branch], { cwd });
+    const [baseExists, masterExists] = await Promise.all([
+      hasBranch(base, cwd),
+      hasBranch("master", cwd),
+    ]);
+    const actualBase = baseExists ? base : masterExists ? "master" : "HEAD";
+    const { stdout } = await run("git", ["cherry", actualBase, branch], { cwd });
     return stdout
       .split("\n")
       .filter((line) => line.startsWith("+"))
@@ -563,7 +586,7 @@ export interface SubmoduleStatus {
 
 export async function checkSubmodules(cwd = process.cwd()): Promise<SubmoduleStatus[]> {
   try {
-    const { stdout } = await execa("git", ["submodule", "status"], { cwd });
+    const { stdout } = await run("git", ["submodule", "status"], { cwd });
     const results: SubmoduleStatus[] = [];
     const lines = stdout.split("\n").filter(Boolean);
     for (const line of lines) {
@@ -600,7 +623,7 @@ export async function squashCommits(
     throw new Error(`Cannot squash ${count} commits: only ${total} commit(s) available.`);
   }
 
-  const { stdout } = await execa("git", ["log", `-n`, count.toString(), "--pretty=format:%s"], { cwd });
+  const { stdout } = await run("git", ["log", `-n`, count.toString(), "--pretty=format:%s"], { cwd });
   const previousMessages = stdout.split("\n").filter(Boolean);
 
   await execGitWithRetry(["reset", "--soft", `HEAD~${count}`], { cwd });
@@ -620,6 +643,9 @@ export async function commit(
   const options = typeof optionsOrCwd === "string" ? { cwd: optionsOrCwd } : optionsOrCwd || {};
   const cwd = options.cwd || process.cwd();
   const args = ["commit", "-m", subject.trim()];
+  if (options.amend) {
+    args.push("--amend");
+  }
   if (body && body.trim().length > 0) {
     args.push("-m", body.trim());
   }
@@ -649,7 +675,7 @@ export async function undoCommit(cwd = process.cwd()): Promise<void> {
 export async function getRemoteTrackingBranch(cwd = process.cwd(), branch?: string): Promise<string | null> {
   try {
     const ref = branch ? `${branch}@{u}` : "@{u}";
-    const { stdout } = await execa("git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", ref], { cwd });
+    const { stdout } = await run("git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", ref], { cwd });
     return stdout.trim() || null;
   } catch {
     return null;
@@ -657,7 +683,7 @@ export async function getRemoteTrackingBranch(cwd = process.cwd(), branch?: stri
 }
 
 export async function pullRebase(cwd = process.cwd()): Promise<void> {
-  await execa("git", ["pull", "--rebase"], { cwd, stdio: "inherit" });
+  await run("git", ["pull", "--rebase"], { cwd, stdio: "inherit" });
 }
 
 export async function push(
@@ -665,11 +691,12 @@ export async function push(
 ): Promise<void> {
   const cwd = options.cwd || process.cwd();
 
-  if (await isDetachedHead(cwd)) {
+  const [detached, remotes] = await Promise.all([isDetachedHead(cwd), getRemotes(cwd)]);
+
+  if (detached) {
     throw new Error("Cannot push from a detached HEAD state. Please create or checkout a branch first.");
   }
 
-  const remotes = await getRemotes(cwd);
   if (remotes.length === 0) {
     throw new Error("No git remotes configured. Please add a remote (e.g. `git remote add origin <url>`) before pushing.");
   }
@@ -691,7 +718,7 @@ export async function push(
     }
   }
 
-  await execa("git", args, { cwd, stdio: "inherit" });
+  await run("git", args, { cwd, stdio: "inherit" });
 }
 
 export async function clone(
@@ -709,11 +736,11 @@ export async function clone(
   }
 
   args.push("--", repoUrl, destination);
-  await execa("git", args, { cwd, stdio: "inherit" });
+  await run("git", args, { cwd, stdio: "inherit" });
 }
 
 export async function worktreeList(cwd = process.cwd()): Promise<WorktreeInfo[]> {
-  const { stdout } = await execa("git", ["worktree", "list", "--porcelain"], { cwd });
+  const { stdout } = await run("git", ["worktree", "list", "--porcelain"], { cwd });
   const entries: WorktreeInfo[] = [];
 
   const blocks = stdout.split("\n\n");
@@ -745,12 +772,16 @@ export async function worktreeList(cwd = process.cwd()): Promise<WorktreeInfo[]>
   return entries;
 }
 
+export interface WorktreeAddResult {
+  copiedEnvFiles: string[];
+}
+
 export async function worktreeAdd(
   branch: string,
   targetPath: string,
   baseBranch?: string,
   cwd = process.cwd(),
-): Promise<void> {
+): Promise<WorktreeAddResult> {
   const repoRoot = await getRepoRoot(cwd);
   if (!(await hasCommits(repoRoot))) {
     throw new Error(
@@ -762,6 +793,14 @@ export async function worktreeAdd(
 
   // If destination folder exists on disk, check if it's an orphaned worktree directory
   if (existsSync(resolvedPath)) {
+    // Never recursively delete anything outside the repository
+    const rel = relative(repoRoot, resolvedPath);
+    if (!rel || rel.startsWith("..") || isAbsolute(rel)) {
+      throw new Error(
+        `Refusing to clean up '${resolvedPath}': it is outside the repository root '${repoRoot}'.`,
+      );
+    }
+
     const activeTrees = await worktreeList(repoRoot);
     const isActive = activeTrees.some((w) => w.path === resolvedPath);
     if (!isActive) {
@@ -791,6 +830,7 @@ export async function worktreeAdd(
   await execGitWithRetry(args, { cwd: repoRoot });
 
   // Sync .env files from parent repository to the new worktree (T3 Code DX feature)
+  const copiedEnvFiles: string[] = [];
   const envFileCandidates = [".env", ".env.local", ".env.development"];
   for (const envName of envFileCandidates) {
     const srcEnv = join(repoRoot, envName);
@@ -798,6 +838,7 @@ export async function worktreeAdd(
     if (existsSync(srcEnv) && !existsSync(destEnv)) {
       try {
         copyFileSync(srcEnv, destEnv);
+        copiedEnvFiles.push(envName);
       } catch {
         // Best-effort
       }
@@ -808,7 +849,7 @@ export async function worktreeAdd(
   const gitmodulesPath = join(resolvedPath, ".gitmodules");
   if (existsSync(gitmodulesPath)) {
     try {
-      await execa("git", ["submodule", "update", "--init", "--recursive"], {
+      await run("git", ["submodule", "update", "--init", "--recursive"], {
         cwd: resolvedPath,
         stdio: "inherit",
       });
@@ -819,7 +860,7 @@ export async function worktreeAdd(
 
   // Set merge base in git config (T3 Code pattern)
   try {
-    await execa(
+    await run(
       "git",
       ["config", `branch.${branch}.gh-merge-base`, base],
       { cwd: repoRoot },
@@ -827,6 +868,8 @@ export async function worktreeAdd(
   } catch {
     // Best-effort
   }
+
+  return { copiedEnvFiles };
 }
 
 export async function worktreeRemove(
@@ -838,7 +881,7 @@ export async function worktreeRemove(
   if (force) args.push("--force");
   args.push("--", targetPath);
   await execGitWithRetry(args, { cwd });
-  await execa("git", ["worktree", "prune"], { cwd });
+  await run("git", ["worktree", "prune"], { cwd });
 }
 
 export async function resolveConflict(
@@ -865,7 +908,7 @@ export interface StashEntry {
 
 export async function stashList(cwd = process.cwd()): Promise<StashEntry[]> {
   try {
-    const { stdout } = await execa("git", ["stash", "list", "--pretty=format:%gd|%cr|%gs"], { cwd });
+    const { stdout } = await run("git", ["stash", "list", "--pretty=format:%gd|%cr|%gs"], { cwd });
     return stdout
       .split("\n")
       .filter(Boolean)
@@ -904,7 +947,7 @@ export async function stashDrop(ref: string, cwd = process.cwd()): Promise<void>
 
 export async function stashDiff(ref: string, cwd = process.cwd()): Promise<string> {
   try {
-    const { stdout } = await execa("git", ["stash", "show", "-p", "-u", ref], { cwd });
+    const { stdout } = await run("git", ["stash", "show", "-p", "-u", ref], { cwd });
     return stdout;
   } catch {
     return "";
@@ -912,7 +955,7 @@ export async function stashDiff(ref: string, cwd = process.cwd()): Promise<strin
 }
 
 export async function gitPassthrough(args: string[], cwd = process.cwd()): Promise<number> {
-  const result = await execa("git", args, {
+  const result = await run("git", args, {
     cwd,
     stdio: "inherit",
     reject: false,

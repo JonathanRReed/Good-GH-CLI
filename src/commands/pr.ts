@@ -6,8 +6,9 @@ import {
   listPullRequests,
   viewPullRequestInBrowser,
 } from "../services/github.ts";
-import { fetchPullRequestBranch, isGitRepo, worktreeAdd } from "../services/git.ts";
+import { fetchPullRequestBranch, detectDefaultBranch, isGitRepo, worktreeAdd } from "../services/git.ts";
 import { resolveAIProvider } from "../services/ai/index.ts";
+import { stripLockfilesFromDiff } from "../utils/diff.ts";
 import { header, p, pc, searchablePicker, selectMenu } from "../utils/ui.ts";
 
 function displayColoredDiff(rawDiff: string): void {
@@ -42,12 +43,18 @@ export function registerPrCommand(program: Command): void {
 
       if (!(await isGitRepo())) {
         p.log.error("Not a git repository.");
+        process.exitCode = 1;
         return;
       }
 
       const ghAuth = await getGitHubAuthStatus();
       if (!ghAuth.authenticated) {
-        p.log.warn("GitHub CLI is not authenticated. Run `gh auth login` to view Pull Requests.");
+        p.log.warn(
+          ghAuth.notInstalled
+            ? "GitHub CLI (`gh`) is not installed. Install it from https://cli.github.com to view Pull Requests."
+            : "GitHub CLI is not authenticated. Run `gh auth login` to view Pull Requests.",
+        );
+        process.exitCode = 1;
         return;
       }
 
@@ -181,14 +188,18 @@ export function registerPrCommand(program: Command): void {
         reviewSpinner.start("Fetching diff and generating AI review...");
 
         try {
-          const diff = await getPullRequestDiff(selectedPr.number);
+          const [diff, defaultBranch] = await Promise.all([
+            getPullRequestDiff(selectedPr.number),
+            detectDefaultBranch(),
+          ]);
           const { provider, model } = await resolveAIProvider();
 
           const prSummary = await provider.generatePr(
             {
               branch: selectedPr.headRefName,
-              baseBranch: "main",
-              diff,
+              baseBranch: defaultBranch,
+              // Never send raw PR diffs (lockfiles, .env, secrets) to the AI provider
+              diff: stripLockfilesFromDiff(diff),
               commitSummary: selectedPr.title,
             },
             model,
