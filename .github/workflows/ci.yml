@@ -33,7 +33,16 @@ jobs:
           bun-version: latest
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        # Dependabot cannot maintain bun.lock, so its PRs arrive with a stale one.
+        # A sibling workflow commits the corrected lockfile, but a push made with
+        # GITHUB_TOKEN does not re-trigger CI — so resolve here instead of failing,
+        # and the bumped dependency still gets verified.
+        run: |
+          if [ "${{ github.actor }}" = "dependabot[bot]" ]; then
+            bun install
+          else
+            bun install --frozen-lockfile
+          fi
 
       - name: Configure git identity for tests
         run: |
