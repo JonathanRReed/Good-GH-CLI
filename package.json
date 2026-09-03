@@ -1,6 +1,6 @@
 {
   "name": "good-gh-cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A modern Git and GitHub CLI: pull requests, issues, CI, stacked branches, and zero-key AI, in one tool.",
   "type": "module",
   "main": "src/index.ts",
