@@ -60,7 +60,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/bun": "latest",
-    "@types/node": "^22.13.9",
+    "@types/node": "^26.4.0",
     "eslint": "^10.9.1",
     "execa": "^10.0.1",
     "prettier": "^3.5.2",
