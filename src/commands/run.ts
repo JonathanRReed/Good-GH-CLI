@@ -56,7 +56,7 @@ export function registerRunCommand(program: Command): void {
   const runCmd = program
     .command("run [runId]")
     .alias("runs")
-    .description("Inspect GitHub Actions runs, and explain failures with AI")
+    .description("Inspect Actions runs, and explain failures with AI")
     .option("-b, --branch <branch>", "Filter to a branch (defaults to the current one)")
     .option("-s, --status <status>", "Filter by status, e.g. failure, in_progress")
     .option("-w, --workflow <name>", "Filter by workflow name")

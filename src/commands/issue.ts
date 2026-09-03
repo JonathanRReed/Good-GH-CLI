@@ -42,7 +42,7 @@ export function registerIssueCommand(program: Command): void {
   const issue = program
     .command("issue [issueNumber]")
     .alias("issues")
-    .description("Browse, read, open, and close GitHub issues")
+    .description("Browse, read, open, and close issues")
     .option("-s, --state <state>", "Filter by state: open, closed, all", "open")
     .option("-a, --assignee <user>", "Filter by assignee (use @me for your own)")
     .option("-l, --label <label>", "Filter by label")

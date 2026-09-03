@@ -15,7 +15,7 @@ import { emitJson, fail, header, p, pc, selectMenu } from "../utils/ui.ts";
 export function registerConfigCommand(program: Command): void {
   const configCmd = program
     .command("config")
-    .description("View and update Good GH CLI configuration");
+    .description("Configure providers, models, and defaults");
 
   configCmd
     .command("list")

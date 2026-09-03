@@ -21,7 +21,7 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 export function registerChangelogCommand(program: Command): void {
   program
     .command("changelog [version]")
-    .description("Write an AI-summarised changelog entry into CHANGELOG.md")
+    .description("Write a changelog entry into CHANGELOG.md")
     .option("--since <tag>", "Summarise commits since this tag (defaults to the latest release)")
     .option("--stdout", "Print the entry instead of writing the file")
     .option("-y, --yes", "Write without confirming")

@@ -62,7 +62,7 @@ export function registerStackCommand(program: Command): void {
   const stack = program
     .command("stack")
     .alias("stk")
-    .description("Work with stacked branches: view the tree, restack after edits, and submit the chain");
+    .description("Stacked branches: view, restack, and submit the chain");
 
   stack.command("list", { isDefault: true })
     .alias("ls")

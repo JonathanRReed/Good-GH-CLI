@@ -45,7 +45,7 @@ export function registerReleaseCommand(program: Command): void {
   program
     .command("release [action] [tag]")
     .alias("rel")
-    .description("Browse GitHub releases or create new releases with AI changelogs")
+    .description("Browse releases, or publish one with AI-written notes")
     .option("-t, --title <title>", "Release title")
     .option("-n, --notes <notes>", "Release notes (skips AI generation)")
     .option("--draft", "Create as draft release")

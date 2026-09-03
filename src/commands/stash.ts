@@ -16,34 +16,16 @@ import {
   p,
   pc,
   promptInput,
+  renderDiff,
   searchablePicker,
   selectMenu,
 } from "../utils/ui.ts";
-
-function displayColoredDiff(rawDiff: string): void {
-  const lines = rawDiff.split("\n");
-  const output: string[] = [];
-  for (const line of lines) {
-    if (line.startsWith("+") && !line.startsWith("+++")) {
-      output.push(pc.green(line));
-    } else if (line.startsWith("-") && !line.startsWith("---")) {
-      output.push(pc.red(line));
-    } else if (line.startsWith("@@")) {
-      output.push(pc.cyan(line));
-    } else if (line.startsWith("diff --git") || line.startsWith("index ")) {
-      output.push(pc.bold(pc.dim(line)));
-    } else {
-      output.push(line);
-    }
-  }
-  console.log("\n" + output.join("\n") + "\n");
-}
 
 export function registerStashCommand(program: Command): void {
   const stash = program
     .command("stash [action]")
     .alias("sh")
-    .description("Interactive modern Git stash assistant")
+    .description("Push, browse, pop, and drop stashes")
     .option("-m, --message <message>", "Stash message")
     .action(async (action?: string, options?: { message?: string }) => {
       header("Git Stash Assistant");
@@ -188,7 +170,7 @@ export function registerStashCommand(program: Command): void {
 
         const diff = await stashDiff(pickStash as string);
         if (diff) {
-          displayColoredDiff(diff);
+          renderDiff(diff);
         } else {
           p.log.info("Empty stash diff.");
         }

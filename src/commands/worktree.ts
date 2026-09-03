@@ -32,7 +32,7 @@ export function registerWorktreeCommand(program: Command): void {
   const wt = program
     .command("worktree")
     .alias("wt")
-    .description("Manage isolated parallel Git worktrees with AI branch generation");
+    .description("Isolated worktrees for parallel work, with AI branch naming");
 
   wt.command("list")
     .alias("ls")

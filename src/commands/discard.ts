@@ -14,7 +14,7 @@ export function registerDiscardCommand(program: Command): void {
   program
     .command("discard [files...]")
     .alias("restore")
-    .description("Interactively discard and revert changes to working tree files (Lazygit-style)")
+    .description("Discard uncommitted changes to selected files")
     .option("-a, --all", "Discard changes to all modified and untracked files")
     .option("-y, --yes", "Skip the confirmation prompt")
     .action(async (fileArgs?: string[], options?: { all?: boolean; yes?: boolean }) => {

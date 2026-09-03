@@ -11,7 +11,7 @@ import { getFlags } from "../services/runtime.ts";
 export function registerChecksCommand(program: Command): void {
   program
     .command("checks")
-    .description("View GitHub Actions CI status checks for the active branch or Pull Request")
+    .description("CI status for this branch's pull request")
     .option("-w, --watch", "Continuously watch checks until completion")
     .option("--timeout <seconds>", "Give up watching after this long", "1800")
     .action(async (options?: { watch?: boolean; timeout?: string }) => {

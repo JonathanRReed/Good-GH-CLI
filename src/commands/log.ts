@@ -7,7 +7,7 @@ export function registerLogCommand(program: Command): void {
   program
     .command("log")
     .alias("graph")
-    .description("Display a compact, colorized Git DAG graph of commits and branches (Lazygit/Tig style)")
+    .description("Colourised commit graph")
     .option("-n, --count <number>", "Number of commits to display", "20")
     .option("-a, --all", "Show commits from all branches")
     .option("-s, --stat", "Show file change diff stats")

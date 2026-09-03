@@ -881,7 +881,7 @@ export async function worktreeAdd(
 
   await execGitWithRetry(args, { cwd: repoRoot });
 
-  // Sync .env files from parent repository to the new worktree (T3 Code DX feature)
+  // A fresh worktree with no .env cannot run the project, so carry them over.
   const copiedEnvFiles: string[] = [];
   const envFileCandidates = [".env", ".env.local", ".env.development"];
   for (const envName of envFileCandidates) {
@@ -897,7 +897,7 @@ export async function worktreeAdd(
     }
   }
 
-  // Update submodules recursively if present (T3 Code pattern)
+  // A worktree starts with empty submodule directories; initialise them.
   const gitmodulesPath = join(resolvedPath, ".gitmodules");
   if (existsSync(gitmodulesPath)) {
     try {
@@ -910,7 +910,7 @@ export async function worktreeAdd(
     }
   }
 
-  // Set merge base in git config (T3 Code pattern)
+  // Record the parent so `ggh stack` can reconstruct the branch tree later.
   try {
     await run(
       "git",

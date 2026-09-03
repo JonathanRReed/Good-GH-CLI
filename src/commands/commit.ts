@@ -22,16 +22,16 @@ import {
   switchBranch,
 } from "../services/git.ts";
 import {
+  type AIAttempt,
+  type AIAttemptFailure,
   ensureFirstRunSetup,
   generateCommitWithFallback,
   generatePrWithFallback,
-  type AIAttempt,
-  type AIAttemptFailure,
 } from "../services/ai/index.ts";
 import { createPullRequest, getActivePullRequest, getGitHubAuthStatus } from "../services/github.ts";
-import { getConfig, type AIProvider as ConfigAIProvider } from "../services/config.ts";
+import { type AIProvider as ConfigAIProvider, getConfig } from "../services/config.ts";
 import { sanitizeDiffForAI, scanCodeHygiene } from "../utils/diff.ts";
-import { detectCommitConvention, type CommitStyle } from "../utils/conventions.ts";
+import { type CommitStyle, detectCommitConvention } from "../utils/conventions.ts";
 import {
   confirmPrompt,
   fail,
@@ -42,26 +42,10 @@ import {
   pc,
   promptFirstRunProvider,
   promptInput,
+  renderDiff,
   reportAIFailure,
   selectMenu,
 } from "../utils/ui.ts";
-
-function displayColoredDiff(rawDiff: string): void {
-  const lines = rawDiff.split("\n");
-  const output: string[] = [];
-  for (const line of lines) {
-    if (line.startsWith("+") && !line.startsWith("+++")) {
-      output.push(pc.green(line));
-    } else if (line.startsWith("-") && !line.startsWith("---")) {
-      output.push(pc.red(line));
-    } else if (line.startsWith("@@")) {
-      output.push(pc.cyan(line));
-    } else {
-      output.push(pc.dim(line));
-    }
-  }
-  console.log("\n" + output.join("\n") + "\n");
-}
 
 async function promptConventionalCommitWizard(): Promise<{ subject: string; body: string }> {
   p.log.step("Conventional Commit Wizard");
@@ -105,7 +89,7 @@ export function registerCommitCommand(program: Command): void {
   program
     .command("commit")
     .alias("c")
-    .description("Streamlined git commit with interactive staging, AI messages, and stacked actions")
+    .description("Stage, write a message with AI, commit, push, and open a PR")
     .option("-m, --message <message>", "Commit message (skips AI generation)")
     .option("-a, --all", "Stage all modified and untracked files before committing")
     .option("--amend", "Amend previous commit")
@@ -301,7 +285,7 @@ export function registerCommitCommand(program: Command): void {
         }
       }
 
-      // Auto-Feature Branching (T3 Code pattern)
+      // Committing straight to the default branch is rarely what you meant.
       const isDefaultBranch = ["main", "master"].includes(status.branch.toLowerCase());
       if (isDefaultBranch && !options.amend && !options.message) {
         const branchChoice = await selectMenu({
@@ -309,7 +293,7 @@ export function registerCommitCommand(program: Command): void {
           options: [
             {
               value: "feature",
-              label: "Create a feature branch (Recommended by T3 Code)",
+              label: "Create a feature branch",
               hint: "keep default branch clean and ready for PR",
             },
             {
@@ -471,7 +455,7 @@ export function registerCommitCommand(program: Command): void {
           }
 
           if (action === "diff") {
-            displayColoredDiff(rawDiff);
+            renderDiff(rawDiff);
             continue;
           } else if (action === "edit") {
             const editSub = await promptInput({

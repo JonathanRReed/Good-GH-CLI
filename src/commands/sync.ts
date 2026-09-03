@@ -22,7 +22,7 @@ export function registerSyncCommand(program: Command): void {
   program
     .command("sync")
     .alias("prune")
-    .description("Fetch & prune remote refs, show ahead/behind drift, and delete stale merged branches")
+    .description("Fetch, prune, and delete branches whose remote is gone")
     .option("-y, --yes", "Automatically delete stale local branches without confirmation")
     .action(async (options?: { yes?: boolean }) => {
       header("Git Sync & Stale Branch Pruning");

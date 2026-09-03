@@ -40,7 +40,7 @@ function extractRepoName(urlOrShorthand: string): string {
 export function registerCloneCommand(program: Command): void {
   program
     .command("clone [repo]")
-    .description("Search for and clone a repository with fast git internals")
+    .description("Search for and clone a repository, optionally blobless")
     .option("--fast, --blobless", "Use fast blobless clone (--filter=blob:none)")
     .option("--shallow", "Use shallow clone with depth 1 (--depth 1)")
     .option("-d, --dir <directory>", "Target directory for the cloned repository")

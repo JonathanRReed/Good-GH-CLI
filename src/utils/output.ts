@@ -192,3 +192,22 @@ export function restoreTerminal(): void {
     // Terminal already gone
   }
 }
+
+/**
+ * Renders a unified diff with colour. Diffs are output, not chrome, so this goes
+ * to stdout — `ggh pr 42` piped into a pager or a file should get the patch.
+ */
+export function renderDiff(rawDiff: string): void {
+  if (!rawDiff.trim()) return;
+
+  const lines = rawDiff.split("\n").map((line) => {
+    if (line.startsWith("+++") || line.startsWith("---")) return pc.bold(pc.dim(line));
+    if (line.startsWith("+")) return pc.green(line);
+    if (line.startsWith("-")) return pc.red(line);
+    if (line.startsWith("@@")) return pc.cyan(line);
+    if (line.startsWith("diff --git") || line.startsWith("index ")) return pc.bold(pc.dim(line));
+    return line;
+  });
+
+  data(`\n${lines.join("\n")}\n`);
+}

@@ -6,12 +6,12 @@ import {
   listPullRequests,
   viewPullRequestInBrowser,
 } from "../services/github.ts";
-import { fetchPullRequestBranch, detectDefaultBranch, isGitRepo, worktreeAdd } from "../services/git.ts";
+import { detectDefaultBranch, fetchPullRequestBranch, isGitRepo, worktreeAdd } from "../services/git.ts";
 import { registerPrCreateCommand } from "./pr-create.ts";
 import { registerPrLifecycleCommands } from "./pr-lifecycle.ts";
 import { registerPrReviewCommand } from "./pr-review.ts";
 import { getFlags } from "../services/runtime.ts";
-import { generatePrWithFallback, type AIAttempt, type AIAttemptFailure } from "../services/ai/index.ts";
+import { type AIAttempt, type AIAttemptFailure, generatePrWithFallback } from "../services/ai/index.ts";
 import { sanitizeDiffForAI } from "../utils/diff.ts";
 import {
   emitJson,
@@ -20,35 +20,17 @@ import {
   header,
   p,
   pc,
+  renderDiff,
   reportAIFailure,
   searchablePicker,
   selectMenu,
 } from "../utils/ui.ts";
 
-function displayColoredDiff(rawDiff: string): void {
-  const lines = rawDiff.split("\n");
-  const output: string[] = [];
-  for (const line of lines) {
-    if (line.startsWith("+") && !line.startsWith("+++")) {
-      output.push(pc.green(line));
-    } else if (line.startsWith("-") && !line.startsWith("---")) {
-      output.push(pc.red(line));
-    } else if (line.startsWith("@@")) {
-      output.push(pc.cyan(line));
-    } else if (line.startsWith("diff --git") || line.startsWith("index ")) {
-      output.push(pc.bold(pc.dim(line)));
-    } else {
-      output.push(line);
-    }
-  }
-  console.log("\n" + output.join("\n") + "\n");
-}
-
 export function registerPrCommand(program: Command): void {
   const pr = program
     .command("pr [prNumber]")
     .alias("prs")
-    .description("Browse, checkout, and AI-review GitHub Pull Requests")
+    .description("Open, review, merge, and check out pull requests")
     .option("--checkout", "Directly checkout the specified PR number")
     .option("-w, --worktree", "Checkout PR into an isolated worktree (.worktrees/pr-N)")
     .option("--web", "Open the specified PR number in browser")
@@ -197,7 +179,7 @@ export function registerPrCommand(program: Command): void {
       } else if (action === "diff") {
         const diff = await getPullRequestDiff(selectedPr.number);
         if (diff) {
-          displayColoredDiff(diff);
+          renderDiff(diff);
         } else {
           p.log.info("No diff available.");
         }

@@ -11,7 +11,7 @@ import {
 export function registerResolveCommand(program: Command): void {
   program
     .command("resolve")
-    .description("Interactively resolve merge conflicts file by file")
+    .description("Resolve merge conflicts, file by file")
     .action(async () => {
       header("Merge Conflict Resolver");
 

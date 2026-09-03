@@ -156,7 +156,7 @@ function generateFish(specs: CommandSpec[]): string {
 export function registerCompletionCommand(program: Command): void {
   program
     .command("completion [shell]")
-    .description("Generate a shell tab-completion script for zsh, bash, or fish")
+    .description("Generate completions for zsh, bash, or fish")
     .action((shell?: string) => {
       const specs = describeProgram(program);
       const target = (shell || process.env.SHELL?.split("/").pop() || "zsh").toLowerCase();

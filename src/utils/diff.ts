@@ -120,7 +120,7 @@ export function stripLockfilesFromDiff(rawDiff: string): string {
 }
 
 /**
- * Caps the diff patch content, matching T3 Code's limitSection conventions (~40k chars).
+ * Caps the patch so a large change still fits in a model's context window.
  */
 export function truncateDiff(diffText: string, maxChars = 40_000): string {
   if (!diffText) return "";
@@ -133,7 +133,7 @@ export function truncateDiff(diffText: string, maxChars = 40_000): string {
 }
 
 /**
- * Formats a list of changed files into a concise summary matching T3 Code's stagedSummary (~6k chars).
+ * Summarises changed files as a compact list, capped so it cannot crowd out the diff.
  */
 export function formatStagedSummary(files: ChangedFile[], maxChars = 6_000): string {
   if (files.length === 0) return "No files staged.";

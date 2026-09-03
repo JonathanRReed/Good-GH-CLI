@@ -21,7 +21,7 @@ import { isDryRun } from "../utils/flags.ts";
 export function registerRenameCommand(program: Command): void {
   program
     .command("rename [newName]")
-    .description("Safely rename the current branch locally and update remote tracking (Graphite-style)")
+    .description("Rename the current branch, locally and on the remote")
     .action(async (newNameArg?: string) => {
       header("Branch Rename Assistant");
 

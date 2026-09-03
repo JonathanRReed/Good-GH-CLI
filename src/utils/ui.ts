@@ -18,7 +18,7 @@ import { cancel, hideCursorTracked, intro, log, note, outro, showCursorTracked, 
 export const p = { log, spinner, note, intro, outro, cancel };
 
 export { pc };
-export { data, emitJson, restoreTerminal } from "./output.ts";
+export { data, emitJson, renderDiff, restoreTerminal } from "./output.ts";
 
 /**
  * One-line narration for a spinner while the provider chain falls back, e.g.

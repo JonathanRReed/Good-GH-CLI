@@ -29,7 +29,7 @@ import { isDryRun } from "../utils/flags.ts";
 export function registerSquashCommand(program: Command): void {
   program
     .command("squash [count]")
-    .description("Interactive commit squash assistant (soft-resets N commits into a single commit)")
+    .description("Squash the last N commits into one")
     .option("-m, --message <message>", "Consolidated commit message")
     .action(async (countArg?: string, options?: { message?: string }) => {
       header("Commit Squash Assistant");

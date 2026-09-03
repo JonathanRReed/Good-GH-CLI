@@ -10,7 +10,7 @@ export function registerStatusCommand(program: Command): void {
   program
     .command("status")
     .alias("st")
-    .description("Show comprehensive repository, worktree, GitHub, and AI status")
+    .description("Repository, GitHub, and AI provider status in one place")
     .action(async () => {
       header("System & Repository Status");
 

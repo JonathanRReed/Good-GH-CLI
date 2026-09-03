@@ -26,7 +26,7 @@ async function requireAuth(): Promise<boolean> {
 export function registerRepoCommand(program: Command): void {
   const repo = program
     .command("repo [nameWithOwner]")
-    .description("View, fork, create, and set the default GitHub repository")
+    .description("View, fork, create, and set the default repository")
     .option("--readme", "Include the README in the output")
     .action(async (nameWithOwner?: string, options?: { readme?: boolean }) => {
       header("Repository");
@@ -219,7 +219,7 @@ export function registerRepoCommand(program: Command): void {
 export function registerApiCommand(program: Command): void {
   program
     .command("api <endpoint...>")
-    .description("Make an authenticated GitHub API request (passthrough to `gh api`)")
+    .description("Authenticated GitHub API request (passthrough to `gh api`)")
     .allowUnknownOption(true)
     .helpOption(false)
     .action(async (endpoint: string[]) => {

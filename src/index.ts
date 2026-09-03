@@ -31,33 +31,39 @@ export function createProgram(): Command {
 
   program
     .name("ggh")
-    .description("Good GH CLI — A modern Git and GitHub CLI inspired by T3 Code")
+    .description("Git and GitHub in one CLI: pull requests, issues, CI, stacked branches, and AI")
     .version(packageJson.version);
 
-  registerCloneCommand(program);
-  registerCommitCommand(program);
-  registerWorktreeCommand(program);
-  registerConfigCommand(program);
+  // Registration order is the order `ggh --help` prints them, so it runs from
+  // "where am I" through the daily loop, then GitHub, then configuration.
   registerStatusCommand(program);
-  registerUndoCommand(program);
-  registerSwitchCommand(program);
-  registerResolveCommand(program);
-  registerStashCommand(program);
-  registerCompletionCommand(program);
-  registerPrCommand(program);
-  registerSyncCommand(program);
-  registerSquashCommand(program);
-  registerReleaseCommand(program);
-  registerChecksCommand(program);
-  registerDiscardCommand(program);
-  registerRenameCommand(program);
+  registerCommitCommand(program);
   registerLogCommand(program);
+
+  registerSwitchCommand(program);
+  registerStackCommand(program);
+  registerWorktreeCommand(program);
+
+  registerStashCommand(program);
+  registerDiscardCommand(program);
+  registerUndoCommand(program);
+  registerResolveCommand(program);
+  registerSquashCommand(program);
+  registerRenameCommand(program);
+  registerSyncCommand(program);
+
+  registerCloneCommand(program);
+  registerRepoCommand(program);
+  registerPrCommand(program);
   registerIssueCommand(program);
   registerRunCommand(program);
-  registerRepoCommand(program);
-  registerStackCommand(program);
+  registerChecksCommand(program);
+  registerReleaseCommand(program);
   registerChangelogCommand(program);
   registerApiCommand(program);
+
+  registerConfigCommand(program);
+  registerCompletionCommand(program);
 
   applyGlobalFlags(program);
 

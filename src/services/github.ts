@@ -331,7 +331,7 @@ export async function getCommitsSinceTag(tag?: string, cwd = process.cwd()): Pro
 }
 
 /**
- * T3 Code pattern: Parse a GitHub `owner/repo` identifier from common remote URL shapes.
+ * Parses a GitHub `owner/repo` identifier out of any common remote URL shape.
  */
 export function parseGitHubRepositoryNameWithOwnerFromRemoteUrl(url: string | null): string | null {
   const trimmed = url?.trim() ?? "";

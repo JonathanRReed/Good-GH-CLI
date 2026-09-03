@@ -12,7 +12,7 @@ import { isDryRun } from "../utils/flags.ts";
 export function registerUndoCommand(program: Command): void {
   program
     .command("undo")
-    .description("Undo the last commit on the current branch (preserves all changes staged)")
+    .description("Undo the last commit, keeping the changes staged")
     .option("-y, --yes", "Skip confirmation prompt")
     .action(async (options: { yes?: boolean }) => {
       header("Undo Last Commit");
