@@ -1,23 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import {
-  searchablePicker,
-  selectMenu,
-  multiSelectMenu,
-  confirmPrompt,
-  formatError,
-  formatSuccess,
-  formatInfo,
-  formatWarning,
-} from "../src/utils/ui.ts";
+import { confirmPrompt, multiSelectMenu, searchablePicker, selectMenu } from "../src/utils/ui.ts";
 
 describe("ui utilities", () => {
-  it("formats messages with icons", () => {
-    expect(formatError("bad")).toContain("bad");
-    expect(formatSuccess("good")).toContain("good");
-    expect(formatInfo("info")).toContain("info");
-    expect(formatWarning("warn")).toContain("warn");
-  });
-
   /**
    * Without a TTY these must cancel, never auto-answer. The first option of a menu
    * can be destructive (`ggh resolve` offers "accept ours" first) and a default-yes

@@ -872,26 +872,6 @@ export function header(title: string): void {
   p.intro(pc.bgCyan(pc.black(` good-gh `)) + " " + pc.bold(title));
 }
 
-export function footer(message?: string): void {
-  p.outro(message ? pc.green(`✔ ${message}`) : pc.dim("Done."));
-}
-
-export function formatError(message: string): string {
-  return pc.red(`✖ ${message}`);
-}
-
-export function formatSuccess(message: string): string {
-  return pc.green(`✔ ${message}`);
-}
-
-export function formatInfo(message: string): string {
-  return pc.cyan(`ℹ ${message}`);
-}
-
-export function formatWarning(message: string): string {
-  return pc.yellow(`▲ ${message}`);
-}
-
 export async function promptFirstRunProvider(available: AIProvider[]): Promise<"codex" | "grok"> {
   const detected = new Set(available.map((provider) => provider.id));
 
