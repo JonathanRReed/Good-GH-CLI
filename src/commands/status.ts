@@ -2,18 +2,20 @@ import { Command } from "commander";
 import { checkSubmodules, getAheadBehind, getAheadOfDefault, getRepoRoot, getStatus, worktreeList } from "../services/git.ts";
 import { getActivePullRequest, getGitHubAuthStatus, type GitHubAccount } from "../services/github.ts";
 import { getConfig } from "../services/config.ts";
-import { getProviderById } from "../services/ai/index.ts";
-import { header, p, pc } from "../utils/ui.ts";
+import { buildAttemptChain, getAvailableProviders, getProviderById, PROVIDER_ORDER } from "../services/ai/index.ts";
+import { emitJson, header, p, pc } from "../utils/ui.ts";
+import { getFlags } from "../services/runtime.ts";
 
 export function registerStatusCommand(program: Command): void {
   program
     .command("status")
+    .alias("st")
     .description("Show comprehensive repository, worktree, GitHub, and AI status")
     .action(async () => {
       header("System & Repository Status");
 
       // Probe everything in parallel — all of these are independent
-      const [gitStatus, root, wtList, drift, aheadOfDefault, activePr, ghStatus, submodules, codexOk, grokOk] =
+      const [gitStatus, root, wtList, drift, aheadOfDefault, activePr, ghStatus, submodules, availableProviders] =
         await Promise.all([
           getStatus(),
           getRepoRoot().catch(() => ""),
@@ -23,13 +25,45 @@ export function registerStatusCommand(program: Command): void {
           getActivePullRequest().catch(() => null),
           getGitHubAuthStatus().catch((): GitHubAccount => ({ authenticated: false })),
           checkSubmodules().catch(() => []),
-          getProviderById("codex").isAvailable(),
-          getProviderById("grok").isAvailable(),
+          getAvailableProviders(),
         ]);
 
       const config = getConfig();
-      const codex = getProviderById("codex");
-      const grok = getProviderById("grok");
+      const detected = new Set(availableProviders.map((provider) => provider.id));
+
+      if (getFlags().json) {
+        emitJson({
+          repository: gitStatus.isRepo
+            ? {
+                root,
+                branch: gitStatus.branch,
+                detached: Boolean(gitStatus.isDetached),
+                ahead: drift.ahead,
+                behind: drift.behind,
+                hasUpstream: drift.hasUpstream,
+                aheadOfDefault,
+                staged: gitStatus.staged.length,
+                unstaged: gitStatus.unstaged.length,
+                untracked: gitStatus.untracked.length,
+                conflicts: gitStatus.conflicts.length,
+                worktrees: wtList.length,
+                submodules,
+              }
+            : null,
+          pullRequest: activePr,
+          github: ghStatus,
+          ai: {
+            active: config.ai_provider || "codex",
+            providers: PROVIDER_ORDER.map((id) => ({
+              id,
+              detected: detected.has(id),
+              model: getProviderById(id).defaultModel,
+            })),
+            chain: buildAttemptChain().map((a) => `${a.provider.id}/${a.model}`),
+          },
+        });
+        return;
+      }
 
       // Git Status
       if (!gitStatus.isRepo) {
@@ -87,13 +121,25 @@ export function registerStatusCommand(program: Command): void {
 
       // AI Status
       p.log.step(pc.bold("AI Integration (Zero API Keys)"));
+      for (const id of PROVIDER_ORDER) {
+        const provider = getProviderById(id);
+        const label = provider.displayName.padEnd(16);
+        p.log.message(
+          `  ${label} ${detected.has(id) ? pc.green("Ready") : pc.dim("Not detected")} ${pc.dim("·")} ${pc.cyan(
+            (config[`${id}_model` as keyof typeof config] as string) || provider.defaultModel,
+          )}`,
+        );
+      }
+      p.log.message(`  Active:          ${pc.bold(pc.magenta(config.ai_provider || "codex"))}`);
       p.log.message(
-        `  Codex (Luna): ${codexOk ? pc.green("Ready") : pc.dim("Not detected")} (model: ${pc.cyan(config.codex_model || codex.defaultModel)})`,
+        `  Fallback: ${pc.dim(buildAttemptChain().map((a) => `${a.provider.id}/${a.model}`).join(" → "))}`,
       );
-      p.log.message(
-        `  Grok:         ${grokOk ? pc.green("Ready") : pc.dim("Not detected")} (model: ${pc.cyan(config.grok_model || grok.defaultModel)})`,
-      );
-      p.log.message(`  Active:       ${pc.bold(pc.magenta(config.ai_provider || "codex"))}`);
+
+      if (detected.size === 0) {
+        p.log.warn(
+          pc.yellow("No AI provider detected. Sign in with `codex login` or `grok login`, or use `ggh commit -m`."),
+        );
+      }
 
       p.outro(pc.dim("All systems operational."));
     });

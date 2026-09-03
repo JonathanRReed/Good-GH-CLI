@@ -8,7 +8,17 @@ import {
   stashPop,
   stashPush,
 } from "../services/git.ts";
-import { header, p, pc, promptInput, searchablePicker, selectMenu } from "../utils/ui.ts";
+import { getFlags } from "../services/runtime.ts";
+import {
+  emitJson,
+  fail,
+  header,
+  p,
+  pc,
+  promptInput,
+  searchablePicker,
+  selectMenu,
+} from "../utils/ui.ts";
 
 function displayColoredDiff(rawDiff: string): void {
   const lines = rawDiff.split("\n");
@@ -32,14 +42,14 @@ function displayColoredDiff(rawDiff: string): void {
 export function registerStashCommand(program: Command): void {
   const stash = program
     .command("stash [action]")
-    .alias("st")
+    .alias("sh")
     .description("Interactive modern Git stash assistant")
     .option("-m, --message <message>", "Stash message")
     .action(async (action?: string, options?: { message?: string }) => {
       header("Git Stash Assistant");
 
       if (!(await isGitRepo())) {
-        p.log.error("Not a git repository.");
+        fail("Not a git repository.");
         return;
       }
 
@@ -51,7 +61,7 @@ export function registerStashCommand(program: Command): void {
           s.stop(pc.green("Changes stashed successfully!"));
         } catch (err) {
           s.stop(pc.red("Stash failed."));
-          p.log.error(String(err));
+          fail(String(err));
         }
         return;
       }
@@ -64,13 +74,17 @@ export function registerStashCommand(program: Command): void {
           s.stop(pc.green("Stash applied and popped!"));
         } catch (err) {
           s.stop(pc.red("Failed to pop stash."));
-          p.log.error(String(err));
+          fail(String(err));
         }
         return;
       }
 
       if (action === "list") {
         const list = await stashList();
+        if (getFlags().json) {
+          emitJson(list);
+          return;
+        }
         if (list.length === 0) {
           p.log.info(pc.dim("No stashes found."));
           return;
@@ -147,7 +161,7 @@ export function registerStashCommand(program: Command): void {
           s.stop(pc.green("Changes safely stashed!"));
         } catch (err) {
           s.stop(pc.red("Failed to stash changes."));
-          p.log.error(String(err));
+          fail(String(err));
         }
       } else if (choice === "pop") {
         const s = p.spinner();
@@ -157,7 +171,7 @@ export function registerStashCommand(program: Command): void {
           s.stop(pc.green("Stash restored successfully!"));
         } catch (err) {
           s.stop(pc.red("Failed to pop stash."));
-          p.log.error(String(err));
+          fail(String(err));
         }
       } else if (choice === "browse") {
         const pickStash = await searchablePicker({
@@ -195,14 +209,14 @@ export function registerStashCommand(program: Command): void {
             await stashPop(pickStash as string);
             p.log.success(pc.green(`Popped ${pickStash}.`));
           } catch (err) {
-            p.log.error(`Failed to pop ${pickStash}: ${String(err)}`);
+            fail(`Failed to pop ${pickStash}: ${String(err)}`);
           }
         } else if (stashAction === "drop") {
           try {
             await stashDrop(pickStash as string);
             p.log.success(pc.green(`Dropped ${pickStash}.`));
           } catch (err) {
-            p.log.error(`Failed to drop ${pickStash}: ${String(err)}`);
+            fail(`Failed to drop ${pickStash}: ${String(err)}`);
           }
         }
       } else if (choice === "drop") {
@@ -222,7 +236,7 @@ export function registerStashCommand(program: Command): void {
           await stashDrop(pickDrop as string);
           p.log.success(pc.green(`Dropped ${pickDrop}.`));
         } catch (err) {
-          p.log.error(`Failed to drop ${pickDrop}: ${String(err)}`);
+          fail(`Failed to drop ${pickDrop}: ${String(err)}`);
         }
       }
     });
@@ -233,14 +247,14 @@ export function registerStashCommand(program: Command): void {
     .action(async (ref?: string) => {
       header("Pop Stash");
       if (!(await isGitRepo())) {
-        p.log.error("Not a git repository.");
+        fail("Not a git repository.");
         return;
       }
       try {
         await stashPop(ref);
         p.log.success(pc.green(ref ? `Stash ${ref} popped.` : "Latest stash popped."));
       } catch (err) {
-        p.log.error(`Failed to pop stash: ${String(err)}`);
+        fail(`Failed to pop stash: ${String(err)}`);
       }
     });
 
@@ -250,14 +264,14 @@ export function registerStashCommand(program: Command): void {
     .action(async (ref: string) => {
       header("Drop Stash");
       if (!(await isGitRepo())) {
-        p.log.error("Not a git repository.");
+        fail("Not a git repository.");
         return;
       }
       try {
         await stashDrop(ref);
         p.log.success(pc.green(`Dropped ${ref}.`));
       } catch (err) {
-        p.log.error(`Failed to drop stash: ${String(err)}`);
+        fail(`Failed to drop stash: ${String(err)}`);
       }
     });
 }

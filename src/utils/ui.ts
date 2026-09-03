@@ -1,10 +1,64 @@
-import * as p from "@clack/prompts";
 import * as readline from "node:readline";
 import * as readlinePromises from "node:readline/promises";
 import pc from "picocolors";
-import type { AIProvider } from "../services/ai/index.ts";
+import {
+  describeAIFailure,
+  type AIAttempt,
+  type AIAttemptFailure,
+  type AIProvider,
+} from "../services/ai/index.ts";
+import { isNonInteractive } from "../services/runtime.ts";
+import { cancel, hideCursorTracked, intro, log, note, outro, showCursorTracked, spinner } from "./output.ts";
 
-export { p, pc };
+/**
+ * Drop-in replacement for the @clack/prompts surface this CLI still used
+ * (logging, spinner, note, intro/outro). Everything writes to stderr so stdout
+ * stays reserved for data.
+ */
+export const p = { log, spinner, note, intro, outro, cancel };
+
+export { pc };
+export { data, emitJson, restoreTerminal } from "./output.ts";
+
+/**
+ * One-line narration for a spinner while the provider chain falls back, e.g.
+ * "Codex [gpt-5.6-luna] usage limit or credits exhausted — trying xAI Grok [grok-4.5]...".
+ */
+export function formatAIFallback(failure: AIAttemptFailure, next?: AIAttempt): string {
+  const failed = `${pc.yellow(failure.providerName)} ${pc.dim(`[${failure.model}]`)} ${failure.reason}`;
+  if (!next) return `${failed} — no providers left`;
+  return `${failed} — trying ${pc.cyan(next.providerName)} ${pc.dim(`[${next.model}]`)}...`;
+}
+
+/**
+ * Prints exactly why AI generation failed, per provider and model, plus what to
+ * do about it. Never swallow a provider error: "AI unavailable" alone is useless.
+ */
+export function reportAIFailure(err: unknown, headline: string): void {
+  const { summary, steps } = describeAIFailure(err);
+  p.log.warn(pc.yellow(headline));
+  for (const line of summary.split("\n")) {
+    p.log.message(`  ${pc.red("✖")} ${line}`);
+  }
+  for (const step of steps) {
+    p.log.message(`  ${pc.cyan("→")} ${pc.dim(step)}`);
+  }
+}
+
+/**
+ * A prompt cannot be answered without a TTY. Auto-answering is never safe here:
+ * the first option of a menu may be destructive (`ggh resolve` -> "accept ours")
+ * and a default-yes confirm may publish a release or open a Pull Request. So we
+ * cancel loudly and point at the explicit, scriptable alternative.
+ */
+function nonInteractiveNotice(what: string): void {
+  // The command could not do its job, so scripts must see a failure.
+  process.exitCode = 1;
+  p.log.warn(pc.yellow(`Cannot prompt for "${what}": no interactive terminal.`));
+  p.log.info(
+    pc.dim("Re-run in a terminal, or pass explicit flags (for example -m, -a, -y, --no-ai)."),
+  );
+}
 
 export async function promptInput(options: {
   message: string;
@@ -13,13 +67,18 @@ export async function promptInput(options: {
   initialValue?: string;
   validate?: (value: string) => string | undefined;
 }): Promise<string | null> {
+  if (isNonInteractive()) {
+    nonInteractiveNotice(options.message);
+    return null;
+  }
+
   const rl = readlinePromises.createInterface({
     input: process.stdin,
-    output: process.stdout,
+    output: process.stderr,
   });
 
   try {
-    process.stdout.write(`\n${pc.cyan("◆")}  ${options.message}\n`);
+    process.stderr.write(`\n${pc.cyan("◆")}  ${options.message}\n`);
     const defaultVal = options.initialValue || options.defaultValue;
     const hint = defaultVal
       ? pc.dim(` [default: ${defaultVal}]`)
@@ -32,12 +91,12 @@ export async function promptInput(options: {
     if (options.validate) {
       const err = options.validate(result);
       if (err) {
-        process.stdout.write(`${pc.yellow("└")}  ${pc.yellow(err)}\n`);
+        process.stderr.write(`${pc.yellow("└")}  ${pc.yellow(err)}\n`);
         rl.close();
         return promptInput(options);
       }
     }
-    process.stdout.write(`${pc.dim("└")}\n`);
+    process.stderr.write(`${pc.dim("└")}\n`);
     return result;
   } catch {
     return null;
@@ -71,9 +130,9 @@ export async function searchablePicker<T = string>(options: {
   initialQuery?: string;
   onSearchGitHub?: (query: string) => Promise<PickerItem<T>[]>;
 }): Promise<T | null> {
-  if (!process.stdin.isTTY) {
-    // Non-interactive fallback
-    return options.items[0]?.value ?? null;
+  if (isNonInteractive()) {
+    nonInteractiveNotice(options.title);
+    return null;
   }
 
   const pageSize = options.pageSize || 7;
@@ -129,7 +188,7 @@ export async function searchablePicker<T = string>(options: {
     }
 
     function render(): void {
-      const cols = Math.max((process.stdout.columns || 80) - 2, 40);
+      const cols = Math.max((process.stderr.columns || process.stdout.columns || 80) - 2, 40);
       const filtered = getFilteredItems();
 
       if (selectedIndex >= filtered.length) {
@@ -176,9 +235,9 @@ export async function searchablePicker<T = string>(options: {
 
       // Erase previous frame cleanly
       if (linesDrawn > 0) {
-        process.stdout.write(`\x1b[${linesDrawn}A\r\x1b[J`);
+        process.stderr.write(`\x1b[${linesDrawn}A\r\x1b[J`);
       }
-      process.stdout.write(out);
+      process.stderr.write(out);
       linesDrawn = out.split("\n").length - 1;
     }
 
@@ -204,9 +263,9 @@ export async function searchablePicker<T = string>(options: {
       if (key.name === "escape" || (key.ctrl && key.name === "c")) {
         cleanup();
         if (linesDrawn > 0) {
-          process.stdout.write(`\x1b[${linesDrawn}A\r\x1b[J`);
+          process.stderr.write(`\x1b[${linesDrawn}A\r\x1b[J`);
         }
-        process.stdout.write(`${pc.red("✖")}  ${options.title}: Cancelled.\n\n`);
+        process.stderr.write(`${pc.red("✖")}  ${options.title}: Cancelled.\n\n`);
         resolve(null);
         return;
       }
@@ -241,9 +300,9 @@ export async function searchablePicker<T = string>(options: {
 
         cleanup();
         if (linesDrawn > 0) {
-          process.stdout.write(`\x1b[${linesDrawn}A\r\x1b[J`);
+          process.stderr.write(`\x1b[${linesDrawn}A\r\x1b[J`);
         }
-        process.stdout.write(`${pc.green("✔")}  ${options.title}: ${pc.cyan(chosen.label)}\n\n`);
+        process.stderr.write(`${pc.green("✔")}  ${options.title}: ${pc.cyan(chosen.label)}\n\n`);
         resolve(chosen.value);
         return;
       }
@@ -318,12 +377,9 @@ export async function selectMenu<T>(options: {
     return null;
   }
 
-  if (!process.stdin.isTTY) {
-    if (options.initialValue !== undefined) {
-      const match = items.find((o) => o.value === options.initialValue);
-      if (match) return match.value;
-    }
-    return items[0]?.value ?? null;
+  if (isNonInteractive()) {
+    nonInteractiveNotice(options.message);
+    return null;
   }
 
   let selectedIndex = 0;
@@ -338,12 +394,12 @@ export async function selectMenu<T>(options: {
   readline.emitKeypressEvents(process.stdin);
   process.stdin.setRawMode(true);
   process.stdin.resume();
-  process.stdout.write("\x1b[?25l");
+  hideCursorTracked();
 
   return new Promise((resolve) => {
     function cleanup(): void {
       process.stdin.removeListener("keypress", guardedKeypress);
-      process.stdout.write("\x1b[?25h");
+      showCursorTracked();
       if (process.stdin.isTTY) {
         process.stdin.setRawMode(false);
         process.stdin.pause();
@@ -351,7 +407,7 @@ export async function selectMenu<T>(options: {
     }
 
     function render(): void {
-      const cols = Math.max((process.stdout.columns || 80) - 2, 40);
+      const cols = Math.max((process.stderr.columns || process.stdout.columns || 80) - 2, 40);
 
       if (selectedIndex >= items.length) {
         selectedIndex = Math.max(0, items.length - 1);
@@ -389,9 +445,9 @@ export async function selectMenu<T>(options: {
       out += truncateLine(`${pc.dim("└")}  ${pc.dim("↑/↓: navigate • Enter: select • Esc: cancel")}`, cols) + "\n";
 
       if (linesDrawn > 0) {
-        process.stdout.write(`\x1b[${linesDrawn}A\r\x1b[J`);
+        process.stderr.write(`\x1b[${linesDrawn}A\r\x1b[J`);
       }
-      process.stdout.write(out);
+      process.stderr.write(out);
       linesDrawn = out.split("\n").length - 1;
     }
 
@@ -401,9 +457,9 @@ export async function selectMenu<T>(options: {
       if (key.name === "escape" || (key.ctrl && key.name === "c")) {
         cleanup();
         if (linesDrawn > 0) {
-          process.stdout.write(`\x1b[${linesDrawn}A\r\x1b[J`);
+          process.stderr.write(`\x1b[${linesDrawn}A\r\x1b[J`);
         }
-        process.stdout.write(`${pc.red("✖")}  ${options.message} ${pc.dim("· Cancelled.")}\n\n`);
+        process.stderr.write(`${pc.red("✖")}  ${options.message} ${pc.dim("· Cancelled.")}\n\n`);
         resolve(null);
         return;
       }
@@ -411,10 +467,10 @@ export async function selectMenu<T>(options: {
       if (key.name === "return") {
         cleanup();
         if (linesDrawn > 0) {
-          process.stdout.write(`\x1b[${linesDrawn}A\r\x1b[J`);
+          process.stderr.write(`\x1b[${linesDrawn}A\r\x1b[J`);
         }
         const chosen = items[selectedIndex];
-        process.stdout.write(`${pc.green("✔")}  ${options.message} ${pc.dim("·")} ${pc.cyan(chosen.label)}\n\n`);
+        process.stderr.write(`${pc.green("✔")}  ${options.message} ${pc.dim("·")} ${pc.cyan(chosen.label)}\n\n`);
         resolve(chosen.value);
         return;
       }
@@ -491,8 +547,9 @@ export async function multiSelectMenu<T>(options: {
     return [];
   }
 
-  if (!process.stdin.isTTY) {
-    return options.initialValues ?? [];
+  if (isNonInteractive()) {
+    nonInteractiveNotice(options.message);
+    return null;
   }
 
   const selectedSet = new Set<T>(options.initialValues ?? []);
@@ -504,12 +561,12 @@ export async function multiSelectMenu<T>(options: {
   readline.emitKeypressEvents(process.stdin);
   process.stdin.setRawMode(true);
   process.stdin.resume();
-  process.stdout.write("\x1b[?25l");
+  hideCursorTracked();
 
   return new Promise((resolve) => {
     function cleanup(): void {
       process.stdin.removeListener("keypress", guardedKeypress);
-      process.stdout.write("\x1b[?25h");
+      showCursorTracked();
       if (process.stdin.isTTY) {
         process.stdin.setRawMode(false);
         process.stdin.pause();
@@ -517,7 +574,7 @@ export async function multiSelectMenu<T>(options: {
     }
 
     function render(): void {
-      const cols = Math.max((process.stdout.columns || 80) - 2, 40);
+      const cols = Math.max((process.stderr.columns || process.stdout.columns || 80) - 2, 40);
 
       if (selectedIndex >= items.length) {
         selectedIndex = Math.max(0, items.length - 1);
@@ -564,9 +621,9 @@ export async function multiSelectMenu<T>(options: {
       ) + "\n";
 
       if (linesDrawn > 0) {
-        process.stdout.write(`\x1b[${linesDrawn}A\r\x1b[J`);
+        process.stderr.write(`\x1b[${linesDrawn}A\r\x1b[J`);
       }
-      process.stdout.write(out);
+      process.stderr.write(out);
       linesDrawn = out.split("\n").length - 1;
     }
 
@@ -576,9 +633,9 @@ export async function multiSelectMenu<T>(options: {
       if (key.name === "escape" || (key.ctrl && key.name === "c")) {
         cleanup();
         if (linesDrawn > 0) {
-          process.stdout.write(`\x1b[${linesDrawn}A\r\x1b[J`);
+          process.stderr.write(`\x1b[${linesDrawn}A\r\x1b[J`);
         }
-        process.stdout.write(`${pc.red("✖")}  ${options.message} ${pc.dim("· Cancelled.")}\n\n`);
+        process.stderr.write(`${pc.red("✖")}  ${options.message} ${pc.dim("· Cancelled.")}\n\n`);
         resolve(null);
         return;
       }
@@ -592,10 +649,10 @@ export async function multiSelectMenu<T>(options: {
 
         cleanup();
         if (linesDrawn > 0) {
-          process.stdout.write(`\x1b[${linesDrawn}A\r\x1b[J`);
+          process.stderr.write(`\x1b[${linesDrawn}A\r\x1b[J`);
         }
         const chosen = items.filter((it) => selectedSet.has(it.value)).map((it) => it.value);
-        process.stdout.write(`${pc.green("✔")}  ${options.message} ${pc.dim("·")} ${pc.cyan(`${chosen.length} selected`)}\n\n`);
+        process.stderr.write(`${pc.green("✔")}  ${options.message} ${pc.dim("·")} ${pc.cyan(`${chosen.length} selected`)}\n\n`);
         resolve(chosen);
         return;
       }
@@ -684,9 +741,17 @@ export async function multiSelectMenu<T>(options: {
 export async function confirmPrompt(options: {
   message: string;
   initialValue?: boolean;
+  /** Set by an explicit `--yes` flag. The only way to confirm without a TTY. */
+  assumeYes?: boolean;
 }): Promise<boolean> {
-  if (!process.stdin.isTTY) {
-    return options.initialValue ?? false;
+  if (options.assumeYes) {
+    p.log.info(`${options.message} ${pc.dim("· yes (--yes)")}`);
+    return true;
+  }
+
+  if (isNonInteractive()) {
+    nonInteractiveNotice(options.message);
+    return false;
   }
 
   let value = options.initialValue ?? true;
@@ -695,12 +760,12 @@ export async function confirmPrompt(options: {
   readline.emitKeypressEvents(process.stdin);
   process.stdin.setRawMode(true);
   process.stdin.resume();
-  process.stdout.write("\x1b[?25l");
+  hideCursorTracked();
 
   return new Promise((resolve) => {
     function cleanup(): void {
       process.stdin.removeListener("keypress", guardedKeypress);
-      process.stdout.write("\x1b[?25h");
+      showCursorTracked();
       if (process.stdin.isTTY) {
         process.stdin.setRawMode(false);
         process.stdin.pause();
@@ -708,7 +773,7 @@ export async function confirmPrompt(options: {
     }
 
     function render(): void {
-      const cols = Math.max((process.stdout.columns || 80) - 2, 40);
+      const cols = Math.max((process.stderr.columns || process.stdout.columns || 80) - 2, 40);
 
       const yesLabel = value ? pc.bold(pc.cyan("● Yes")) : pc.dim("○ Yes");
       const noLabel = !value ? pc.bold(pc.cyan("● No")) : pc.dim("○ No");
@@ -722,9 +787,9 @@ export async function confirmPrompt(options: {
       ) + "\n";
 
       if (linesDrawn > 0) {
-        process.stdout.write(`\x1b[${linesDrawn}A\r\x1b[J`);
+        process.stderr.write(`\x1b[${linesDrawn}A\r\x1b[J`);
       }
-      process.stdout.write(out);
+      process.stderr.write(out);
       linesDrawn = out.split("\n").length - 1;
     }
 
@@ -734,9 +799,9 @@ export async function confirmPrompt(options: {
       if (key.name === "escape" || (key.ctrl && key.name === "c")) {
         cleanup();
         if (linesDrawn > 0) {
-          process.stdout.write(`\x1b[${linesDrawn}A\r\x1b[J`);
+          process.stderr.write(`\x1b[${linesDrawn}A\r\x1b[J`);
         }
-        process.stdout.write(`${pc.red("✖")}  ${options.message} ${pc.dim("· Cancelled (No).")}\n\n`);
+        process.stderr.write(`${pc.red("✖")}  ${options.message} ${pc.dim("· Cancelled (No).")}\n\n`);
         resolve(false);
         return;
       }
@@ -744,10 +809,10 @@ export async function confirmPrompt(options: {
       if (key.name === "return") {
         cleanup();
         if (linesDrawn > 0) {
-          process.stdout.write(`\x1b[${linesDrawn}A\r\x1b[J`);
+          process.stderr.write(`\x1b[${linesDrawn}A\r\x1b[J`);
         }
         const answer = value ? pc.green("Yes") : pc.dim("No");
-        process.stdout.write(`${pc.green("✔")}  ${options.message} ${pc.dim("·")} ${answer}\n\n`);
+        process.stderr.write(`${pc.green("✔")}  ${options.message} ${pc.dim("·")} ${answer}\n\n`);
         resolve(value);
         return;
       }
@@ -794,6 +859,15 @@ export async function confirmPrompt(options: {
   });
 }
 
+/**
+ * Reports a command failure and marks the process as failed, so `ggh` can be
+ * used in scripts and CI without every caller remembering to set exitCode.
+ */
+export function fail(message: string): void {
+  process.exitCode = 1;
+  p.log.error(message);
+}
+
 export function header(title: string): void {
   p.intro(pc.bgCyan(pc.black(` good-gh `)) + " " + pc.bold(title));
 }
@@ -818,34 +892,57 @@ export function formatWarning(message: string): string {
   return pc.yellow(`▲ ${message}`);
 }
 
-export async function promptFirstRunProvider(_available: AIProvider[]): Promise<"codex" | "grok"> {
-  p.note(
-    "Good GH CLI detected your local AI logins (Codex / Grok).\nNo API keys or credit cards required!",
-    "First-Time Setup",
-  );
+export async function promptFirstRunProvider(available: AIProvider[]): Promise<"codex" | "grok"> {
+  const detected = new Set(available.map((provider) => provider.id));
+
+  if (detected.size === 0) {
+    p.log.warn(
+      pc.yellow("No local AI CLI was detected. Install and sign in to `codex` or `grok` to enable AI messages."),
+    );
+    p.log.info(pc.dim("Until then, `ggh commit -m \"...\"` and `ggh commit --no-ai` still work."));
+  } else {
+    p.note(
+      `Detected local AI login(s): ${[...detected].join(", ")}.\nNo API keys or credit cards required.`,
+      "First-Time Setup",
+    );
+  }
 
   const options = [
     {
       value: "codex" as const,
-      label: "Codex (Luna / ChatGPT)",
-      hint: "Fast & high-quality using gpt-5.6-luna (Recommended)",
+      label: "Codex (ChatGPT)",
+      hint: detected.has("codex")
+        ? "detected — falls back across GPT-5.6 tiers, then Grok"
+        : "not detected (run `codex login`)",
     },
     {
       value: "grok" as const,
       label: "xAI Grok",
-      hint: "Using your local grok CLI session",
+      hint: detected.has("grok") ? "detected — local grok CLI session" : "not detected (run `grok login`)",
     },
   ];
 
+  // Preselect something that actually works rather than always defaulting to Codex.
+  const initialValue: "codex" | "grok" = detected.has("codex")
+    ? "codex"
+    : detected.has("grok")
+      ? "grok"
+      : "codex";
+
+  if (isNonInteractive()) {
+    p.log.info(pc.dim(`Defaulting to ${initialValue} (nothing to prompt on).`));
+    return initialValue;
+  }
+
   const selection = await selectMenu<"codex" | "grok">({
-    message: "Choose your primary AI commit provider:",
+    message: "Choose your primary AI provider:",
     options,
-    initialValue: "codex",
+    initialValue,
   });
 
   if (selection === null) {
-    p.cancel("Setup cancelled. Defaulting to Codex (Luna).");
-    return "codex";
+    p.cancel(`Setup cancelled. Defaulting to ${initialValue}.`);
+    return initialValue;
   }
 
   return selection;

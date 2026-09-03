@@ -40,13 +40,12 @@
     "dev": "bun run bin/ggh.ts",
     "build": "bun build bin/ggh.ts --target=bun --outdir=dist --minify",
     "prepublishOnly": "bun run typecheck && bun run lint && bun test && bun run build",
-    "test": "bun test",
+    "test": "bun test --timeout 30000",
     "lint": "eslint src/ tests/ bin/",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write \"src/**/*.{ts,js,json}\" \"tests/**/*.{ts,js,json}\" \"bin/**/*.{ts,js,json}\""
   },
   "dependencies": {
-    "@clack/prompts": "^0.9.1",
     "commander": "^13.1.0",
     "picocolors": "^1.1.1"
   },

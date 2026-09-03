@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { run } from "../utils/exec.ts";
 import { isGitRepo } from "../services/git.ts";
-import { header, p, pc } from "../utils/ui.ts";
+import { fail, header, pc } from "../utils/ui.ts";
 
 export function registerLogCommand(program: Command): void {
   program
@@ -15,15 +15,14 @@ export function registerLogCommand(program: Command): void {
       header("Git Commit Graph");
 
       if (!(await isGitRepo())) {
-        p.log.error("Not a git repository.");
+        fail("Not a git repository.");
         return;
       }
 
       const countArg = options?.count || "20";
       const count = Number.parseInt(countArg, 10);
       if (Number.isNaN(count) || count < 1) {
-        p.log.error(`Invalid commit count: "${countArg}". Please pass a positive number (e.g. ${pc.cyan("ggh log -n 50")}).`);
-        process.exitCode = 1;
+        fail(`Invalid commit count: "${countArg}". Please pass a positive number (e.g. ${pc.cyan("ggh log -n 50")}).`);
         return;
       }
 

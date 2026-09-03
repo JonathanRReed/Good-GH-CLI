@@ -1,6 +1,13 @@
 import { Command } from "commander";
 import { getCurrentBranch, hasCommits, isDetachedHead, isGitRepo, undoCommit } from "../services/git.ts";
-import { confirmPrompt, header, p, pc } from "../utils/ui.ts";
+import {
+  confirmPrompt,
+  fail,
+  header,
+  p,
+  pc,
+} from "../utils/ui.ts";
+import { isDryRun } from "../utils/flags.ts";
 
 export function registerUndoCommand(program: Command): void {
   program
@@ -11,7 +18,7 @@ export function registerUndoCommand(program: Command): void {
       header("Undo Last Commit");
 
       if (!(await isGitRepo())) {
-        p.log.error("Not a git repository.");
+        fail("Not a git repository.");
         return;
       }
 
@@ -23,6 +30,11 @@ export function registerUndoCommand(program: Command): void {
       const isDetached = await isDetachedHead();
       const rawBranch = await getCurrentBranch();
       const targetDesc = isDetached ? pc.yellow("HEAD (detached)") : `branch ${pc.cyan(rawBranch)}`;
+
+      if (isDryRun()) {
+        p.log.warn(`${pc.yellow("dry run")} ${pc.dim("·")} would soft-reset the last commit on ${targetDesc}`);
+        return;
+      }
 
       if (!options.yes) {
         const confirmUndo = await confirmPrompt({
@@ -45,7 +57,7 @@ export function registerUndoCommand(program: Command): void {
         p.outro(pc.green("Done."));
       } catch (err) {
         s.stop(pc.red("Undo failed."));
-        p.log.error(String(err));
+        fail(String(err));
       }
     });
 }

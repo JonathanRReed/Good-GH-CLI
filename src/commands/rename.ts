@@ -8,7 +8,15 @@ import {
   isGitRepo,
   renameBranch,
 } from "../services/git.ts";
-import { confirmPrompt, header, p, pc, promptInput } from "../utils/ui.ts";
+import {
+  confirmPrompt,
+  fail,
+  header,
+  p,
+  pc,
+  promptInput,
+} from "../utils/ui.ts";
+import { isDryRun } from "../utils/flags.ts";
 
 export function registerRenameCommand(program: Command): void {
   program
@@ -18,13 +26,13 @@ export function registerRenameCommand(program: Command): void {
       header("Branch Rename Assistant");
 
       if (!(await isGitRepo())) {
-        p.log.error("Not a git repository.");
+        fail("Not a git repository.");
         return;
       }
 
       const current = await getCurrentBranch();
       if (!current || current === "HEAD") {
-        p.log.error("Cannot rename detached HEAD. Please checkout a named branch first.");
+        fail("Cannot rename detached HEAD. Please checkout a named branch first.");
         return;
       }
 
@@ -41,7 +49,7 @@ export function registerRenameCommand(program: Command): void {
 
       let newName = newNameArg?.trim();
       if (newNameArg !== undefined && (!newName || newName.length === 0)) {
-        p.log.error("New branch name cannot be empty.");
+        fail("New branch name cannot be empty.");
         return;
       }
 
@@ -66,7 +74,12 @@ export function registerRenameCommand(program: Command): void {
       }
 
       if (await hasBranch(newName)) {
-        p.log.error(`A branch named '${newName}' already exists.`);
+        fail(`A branch named '${newName}' already exists.`);
+        return;
+      }
+
+      if (isDryRun()) {
+        p.log.warn(`${pc.yellow("dry run")} ${pc.dim("·")} would rename ${pc.bold(current)} to ${pc.bold(newName)}`);
         return;
       }
 
@@ -81,7 +94,7 @@ export function registerRenameCommand(program: Command): void {
         s.stop(pc.green(`Branch renamed to ${pc.bold(pc.green(newName))}!`));
       } catch (err) {
         s.stop(pc.red("Failed to rename local branch."));
-        p.log.error(String(err));
+        fail(String(err));
         return;
       }
 

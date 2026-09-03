@@ -115,9 +115,20 @@ export async function getRepoRoot(cwd = process.cwd()): Promise<string> {
 }
 
 export async function getCurrentBranch(cwd = process.cwd()): Promise<string> {
+  // `rev-parse --abbrev-ref HEAD` fails on an unborn branch (a fresh repo with no
+  // commits), which would report the branch as "HEAD" and trip the detached-HEAD
+  // guards. `branch --show-current` resolves it, and returns "" when detached.
+  try {
+    const { stdout } = await run("git", ["branch", "--show-current"], { cwd });
+    const name = stdout.trim();
+    if (name) return name;
+  } catch {
+    // Fall through to rev-parse
+  }
+
   try {
     const { stdout } = await run("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd });
-    return stdout.trim();
+    return stdout.trim() || "HEAD";
   } catch {
     return "HEAD";
   }
@@ -395,6 +406,47 @@ export async function getStagedDiffStat(cwd = process.cwd()): Promise<string> {
     return stdout.trim();
   } catch {
     return "";
+  }
+}
+
+/**
+ * Diff of the current branch against its merge base with `baseBranch`
+ * (`git diff base...HEAD`). This is what a Pull Request actually contains —
+ * the staged diff is empty once the commit has been made.
+ */
+export async function getBranchDiff(baseBranch: string, cwd = process.cwd()): Promise<string> {
+  try {
+    const { stdout } = await run("git", ["diff", `${baseBranch}...HEAD`], { cwd });
+    return stdout;
+  } catch {
+    return "";
+  }
+}
+
+export async function getBranchDiffStat(baseBranch: string, cwd = process.cwd()): Promise<string> {
+  try {
+    const { stdout } = await run("git", ["diff", "--stat", `${baseBranch}...HEAD`], { cwd });
+    return stdout.trim();
+  } catch {
+    return "";
+  }
+}
+
+/** Subjects of the commits this branch adds on top of `baseBranch`, newest first. */
+export async function getCommitsSinceBase(
+  baseBranch: string,
+  limit = 50,
+  cwd = process.cwd(),
+): Promise<string[]> {
+  try {
+    const { stdout } = await run(
+      "git",
+      ["log", `${baseBranch}..HEAD`, "--pretty=format:%s", "-n", String(limit)],
+      { cwd },
+    );
+    return stdout.split("\n").filter((line) => line.trim().length > 0);
+  } catch {
+    return [];
   }
 }
 
@@ -961,4 +1013,145 @@ export async function gitPassthrough(args: string[], cwd = process.cwd()): Promi
     reject: false,
   });
   return result.exitCode ?? 0;
+}
+
+/* ------------------------------------------------------------------ *
+ * Branch stacks
+ *
+ * Every branch created through ggh already records its parent in git config as
+ * `branch.<name>.gh-merge-base`. Read together, those pointers form a tree —
+ * which is exactly the data structure a stacked-pull-request workflow needs.
+ * ------------------------------------------------------------------ */
+
+export interface StackNode {
+  branch: string;
+  parent: string | null;
+  children: string[];
+  /** Commits this branch adds on top of its parent. */
+  ahead: number;
+  /** Commits the parent has that this branch is missing (needs a restack). */
+  behind: number;
+  isCurrent: boolean;
+}
+
+/** Reads every recorded parent pointer in one git call. */
+export async function getAllMergeBases(cwd = process.cwd()): Promise<Map<string, string>> {
+  const bases = new Map<string, string>();
+  try {
+    const { stdout } = await run("git", ["config", "--get-regexp", "^branch\\..*\\.gh-merge-base$"], {
+      cwd,
+      reject: false,
+    });
+    for (const line of stdout.split("\n")) {
+      const match = line.match(/^branch\.(.+)\.gh-merge-base\s+(.+)$/);
+      if (match) bases.set(match[1], match[2].trim());
+    }
+  } catch {
+    // No recorded bases yet
+  }
+  return bases;
+}
+
+export async function getStackGraph(cwd = process.cwd()): Promise<Map<string, StackNode>> {
+  const [branches, bases, current] = await Promise.all([
+    listBranches(cwd),
+    getAllMergeBases(cwd),
+    getCurrentBranch(cwd),
+  ]);
+
+  const known = new Set(branches.map((b) => b.name));
+  const graph = new Map<string, StackNode>();
+
+  for (const branch of branches) {
+    const parent = bases.get(branch.name) ?? null;
+    graph.set(branch.name, {
+      branch: branch.name,
+      // A parent that no longer exists is treated as no parent, not a dangling edge.
+      parent: parent && known.has(parent) && parent !== branch.name ? parent : null,
+      children: [],
+      ahead: 0,
+      behind: 0,
+      isCurrent: branch.name === current,
+    });
+  }
+
+  for (const node of graph.values()) {
+    if (node.parent) graph.get(node.parent)?.children.push(node.branch);
+  }
+
+  await Promise.all(
+    [...graph.values()].map(async (node) => {
+      if (!node.parent) return;
+      try {
+        const { stdout } = await run(
+          "git",
+          ["rev-list", "--left-right", "--count", `${node.parent}...${node.branch}`],
+          { cwd },
+        );
+        const [behind, ahead] = stdout.trim().split(/\s+/).map(Number);
+        node.behind = behind || 0;
+        node.ahead = ahead || 0;
+      } catch {
+        // Unrelated histories; leave both at zero
+      }
+    }),
+  );
+
+  return graph;
+}
+
+/** Walks from a branch down to the root, nearest parent first. */
+export function getStackAncestors(graph: Map<string, StackNode>, branch: string): string[] {
+  const chain: string[] = [];
+  const seen = new Set<string>([branch]);
+  let cursor = graph.get(branch)?.parent ?? null;
+  while (cursor && !seen.has(cursor)) {
+    chain.push(cursor);
+    seen.add(cursor);
+    cursor = graph.get(cursor)?.parent ?? null;
+  }
+  return chain;
+}
+
+/** Every branch stacked on top of `branch`, parents before children. */
+export function getStackDescendants(graph: Map<string, StackNode>, branch: string): string[] {
+  const out: string[] = [];
+  const queue = [...(graph.get(branch)?.children ?? [])];
+  const seen = new Set<string>([branch]);
+  while (queue.length > 0) {
+    const next = queue.shift() as string;
+    if (seen.has(next)) continue;
+    seen.add(next);
+    out.push(next);
+    queue.push(...(graph.get(next)?.children ?? []));
+  }
+  return out;
+}
+
+/** Rebases `branch` onto its recorded parent. Returns false on conflict. */
+export async function restackBranch(
+  branch: string,
+  parent: string,
+  cwd = process.cwd(),
+): Promise<{ ok: boolean; message: string }> {
+  try {
+    await execGitWithRetry(["checkout", branch], { cwd });
+    await execGitWithRetry(["rebase", parent], { cwd });
+    return { ok: true, message: `${branch} rebased onto ${parent}` };
+  } catch (err) {
+    const text = String(err);
+    if (/conflict/i.test(text)) {
+      return { ok: false, message: `${branch} has conflicts against ${parent}. Resolve, then \`git rebase --continue\`.` };
+    }
+    return { ok: false, message: text };
+  }
+}
+
+export async function isRebaseInProgress(cwd = process.cwd()): Promise<boolean> {
+  try {
+    const root = await getRepoRoot(cwd);
+    return existsSync(join(root, ".git", "rebase-merge")) || existsSync(join(root, ".git", "rebase-apply"));
+  } catch {
+    return false;
+  }
 }

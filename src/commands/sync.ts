@@ -9,7 +9,14 @@ import {
   isDetachedHead,
   isGitRepo,
 } from "../services/git.ts";
-import { confirmPrompt, header, p, pc } from "../utils/ui.ts";
+import {
+  confirmPrompt,
+  fail,
+  header,
+  p,
+  pc,
+} from "../utils/ui.ts";
+import { isDryRun } from "../utils/flags.ts";
 
 export function registerSyncCommand(program: Command): void {
   program
@@ -21,7 +28,7 @@ export function registerSyncCommand(program: Command): void {
       header("Git Sync & Stale Branch Pruning");
 
       if (!(await isGitRepo())) {
-        p.log.error("Not a git repository.");
+        fail("Not a git repository.");
         return;
       }
 
@@ -82,11 +89,20 @@ export function registerSyncCommand(program: Command): void {
         p.log.message(`  ${pc.red("✖")} ${pc.bold(branch)} ${pc.dim("(remote: gone)")}`);
       }
 
+      if (isDryRun()) {
+        for (const branch of goneBranches) {
+          if (branch === currentBranch) continue;
+          p.log.warn(`${pc.yellow("dry run")} ${pc.dim("·")} would delete ${pc.bold(branch)}`);
+        }
+        return;
+      }
+
       let confirmed = options?.yes;
       if (!confirmed) {
         const confirmDelete = await confirmPrompt({
           message: `Delete ${goneBranches.length} stale local branch(es)?`,
           initialValue: true,
+          assumeYes: options?.yes,
         });
         if (!confirmDelete) {
           p.cancel("Skipped branch cleanup.");

@@ -8,6 +8,11 @@ import { registerChecksCommand } from "./commands/checks.ts";
 import { registerCompletionCommand } from "./commands/completion.ts";
 import { registerDiscardCommand } from "./commands/discard.ts";
 import { registerLogCommand } from "./commands/log.ts";
+import { registerIssueCommand } from "./commands/issue.ts";
+import { registerRunCommand } from "./commands/run.ts";
+import { registerApiCommand, registerRepoCommand } from "./commands/repo.ts";
+import { registerStackCommand } from "./commands/stack.ts";
+import { registerChangelogCommand } from "./commands/changelog.ts";
 import { registerPrCommand } from "./commands/pr.ts";
 import { registerReleaseCommand } from "./commands/release.ts";
 import { registerRenameCommand } from "./commands/rename.ts";
@@ -19,6 +24,7 @@ import { registerSwitchCommand } from "./commands/switch.ts";
 import { registerSyncCommand } from "./commands/sync.ts";
 import { registerUndoCommand } from "./commands/undo.ts";
 import { gitPassthrough } from "./services/git.ts";
+import { applyGlobalFlags } from "./utils/flags.ts";
 
 export function createProgram(): Command {
   const program = new Command();
@@ -46,46 +52,33 @@ export function createProgram(): Command {
   registerDiscardCommand(program);
   registerRenameCommand(program);
   registerLogCommand(program);
+  registerIssueCommand(program);
+  registerRunCommand(program);
+  registerRepoCommand(program);
+  registerStackCommand(program);
+  registerChangelogCommand(program);
+  registerApiCommand(program);
+
+  applyGlobalFlags(program);
 
   return program;
 }
 
-const KNOWN_COMMANDS = new Set([
-  "clone",
-  "add",
-  "commit",
-  "c",
-  "undo",
-  "resolve",
-  "stash",
-  "st",
-  "switch",
-  "sw",
-  "checkout",
-  "completion",
-  "pr",
-  "prs",
-  "checks",
-  "sync",
-  "prune",
-  "squash",
-  "release",
-  "rel",
-  "discard",
-  "restore",
-  "rename",
-  "graph",
-  "log",
-  "worktree",
-  "wt",
-  "config",
-  "status",
-  "help",
-  "--help",
-  "-h",
-  "--version",
-  "-V",
-]);
+/**
+ * Names and aliases `ggh` handles itself. Derived from the registered commands so
+ * it can never drift out of sync: a command that is registered but missing here
+ * would be silently forwarded to git.
+ */
+function getKnownCommands(program: Command): Set<string> {
+  const known = new Set<string>(["help", "--help", "-h", "--version", "-V"]);
+  for (const command of program.commands) {
+    known.add(command.name());
+    for (const alias of command.aliases()) {
+      known.add(alias);
+    }
+  }
+  return known;
+}
 
 const GIT_GLOBAL_FLAGS = new Set([
   "-C",
@@ -108,14 +101,14 @@ export async function runCli(argv: string[]): Promise<void> {
     process.exit(exitCode);
   }
 
+  const program = createProgram();
+
   // If first argument is not a known good-gh command and arguments are provided,
   // pass through to native git directly!
-  if (firstArg && !KNOWN_COMMANDS.has(firstArg) && !firstArg.startsWith("-")) {
+  if (firstArg && !getKnownCommands(program).has(firstArg) && !firstArg.startsWith("-")) {
     const exitCode = await gitPassthrough(args);
     process.exit(exitCode);
   }
-
-  const program = createProgram();
 
   if (args.length === 0) {
     program.outputHelp();

@@ -8,7 +8,15 @@ import {
   switchBranch,
   worktreeList,
 } from "../services/git.ts";
-import { header, p, pc, promptInput, searchablePicker, type PickerItem } from "../utils/ui.ts";
+import {
+  fail,
+  header,
+  p,
+  pc,
+  type PickerItem,
+  promptInput,
+  searchablePicker,
+} from "../utils/ui.ts";
 
 function formatSwitchError(err: unknown): string {
   const str = String(err);
@@ -29,12 +37,13 @@ export function registerSwitchCommand(program: Command): void {
       header("Switch Branch / Worktree");
 
       if (!(await isGitRepo())) {
-        p.log.error("Not a git repository.");
+        fail("Not a git repository.");
         return;
       }
 
       const status = await getStatus();
-      const currentBranch = status.isDetached ? "HEAD (detached)" : status.branch;
+      const currentBranch = status.branch;
+      const currentLabel = status.isDetached ? "HEAD (detached)" : status.branch;
 
       // If user specified target directly on CLI:
       if (target) {
@@ -46,7 +55,7 @@ export function registerSwitchCommand(program: Command): void {
             s.stop(pc.green(`Switched to new branch ${pc.bold(pc.cyan(target))}`));
           } catch (err) {
             s.stop(pc.red("Failed to create branch."));
-            p.log.error(formatSwitchError(err));
+            fail(formatSwitchError(err));
           }
           return;
         }
@@ -58,7 +67,7 @@ export function registerSwitchCommand(program: Command): void {
           s.stop(pc.green(`Switched to branch ${pc.bold(pc.cyan(target))}`));
         } catch (err) {
           s.stop(pc.red("Failed to switch branch."));
-          p.log.error(formatSwitchError(err));
+          fail(formatSwitchError(err));
         }
         return;
       }
@@ -82,7 +91,7 @@ export function registerSwitchCommand(program: Command): void {
 
       // Add local branches
       for (const b of branches) {
-        const isCurrent = b.name === currentBranch;
+        const isCurrent = !status.isDetached && b.name === currentBranch;
         choices.push({
           value: `branch:${b.name}`,
           label: isCurrent ? `* ${b.name}` : b.name,
@@ -103,7 +112,7 @@ export function registerSwitchCommand(program: Command): void {
       }
 
       const selected = await searchablePicker({
-        title: `Currently on ${currentBranch}. Switch to:`,
+        title: `Currently on ${currentLabel}. Switch to:`,
         items: choices,
         pageSize: 8,
       });
@@ -134,11 +143,11 @@ export function registerSwitchCommand(program: Command): void {
           s.stop(pc.green(`Switched to new branch ${pc.bold(pc.cyan(cleanName))}`));
         } catch (err) {
           s.stop(pc.red("Failed to create branch."));
-          p.log.error(formatSwitchError(err));
+          fail(formatSwitchError(err));
         }
       } else if (val.startsWith("branch:")) {
         const targetBranch = val.replace("branch:", "");
-        if (targetBranch === currentBranch) {
+        if (!status.isDetached && targetBranch === currentBranch) {
           p.log.info(pc.dim(`Already on branch ${targetBranch}.`));
           return;
         }
@@ -150,7 +159,7 @@ export function registerSwitchCommand(program: Command): void {
           s.stop(pc.green(`Switched to branch ${pc.bold(pc.cyan(targetBranch))}`));
         } catch (err) {
           s.stop(pc.red("Failed to switch branch."));
-          p.log.error(formatSwitchError(err));
+          fail(formatSwitchError(err));
         }
       } else if (val.startsWith("worktree:")) {
         const wtPath = val.replace("worktree:", "");

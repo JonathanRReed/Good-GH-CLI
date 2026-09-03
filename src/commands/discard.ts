@@ -1,6 +1,14 @@
 import { Command } from "commander";
 import { discardFiles, getStatus, isGitRepo } from "../services/git.ts";
-import { confirmPrompt, header, multiSelectMenu, p, pc } from "../utils/ui.ts";
+import {
+  confirmPrompt,
+  fail,
+  header,
+  multiSelectMenu,
+  p,
+  pc,
+} from "../utils/ui.ts";
+import { isDryRun } from "../utils/flags.ts";
 
 export function registerDiscardCommand(program: Command): void {
   program
@@ -8,11 +16,12 @@ export function registerDiscardCommand(program: Command): void {
     .alias("restore")
     .description("Interactively discard and revert changes to working tree files (Lazygit-style)")
     .option("-a, --all", "Discard changes to all modified and untracked files")
-    .action(async (fileArgs?: string[], options?: { all?: boolean }) => {
+    .option("-y, --yes", "Skip the confirmation prompt")
+    .action(async (fileArgs?: string[], options?: { all?: boolean; yes?: boolean }) => {
       header("Discard Changes (Revert)");
 
       if (!(await isGitRepo())) {
-        p.log.error("Not a git repository.");
+        fail("Not a git repository.");
         return;
       }
 
@@ -57,9 +66,17 @@ export function registerDiscardCommand(program: Command): void {
         toDiscard = allDirty.filter((f) => selected.includes(f.path));
       }
 
+      if (isDryRun()) {
+        for (const f of toDiscard) {
+          p.log.warn(`${pc.yellow("dry run")} ${pc.dim("·")} would discard ${pc.bold(f.path)}`);
+        }
+        return;
+      }
+
       const confirm = await confirmPrompt({
         message: `Permanently discard changes to ${pc.bold(pc.red(String(toDiscard.length)))} file(s)? This cannot be undone!`,
         initialValue: false,
+        assumeYes: options?.yes,
       });
 
       if (!confirm) {
@@ -75,7 +92,7 @@ export function registerDiscardCommand(program: Command): void {
         p.outro(pc.green("Working tree restored."));
       } catch (err) {
         s.stop(pc.red("Failed to discard some changes."));
-        p.log.error(String(err));
+        fail(String(err));
       }
     });
 }

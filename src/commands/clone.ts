@@ -12,7 +12,17 @@ import {
   type RepositoryItem,
 } from "../services/github.ts";
 import { getConfig, type CloneMode } from "../services/config.ts";
-import { header, p, pc, promptInput, searchablePicker, selectMenu, type PickerItem } from "../utils/ui.ts";
+import {
+  confirmPrompt,
+  fail,
+  header,
+  p,
+  pc,
+  type PickerItem,
+  promptInput,
+  searchablePicker,
+  selectMenu,
+} from "../utils/ui.ts";
 
 function expandPath(pathStr: string): string {
   if (pathStr.startsWith("~/") || pathStr === "~") {
@@ -30,12 +40,12 @@ function extractRepoName(urlOrShorthand: string): string {
 export function registerCloneCommand(program: Command): void {
   program
     .command("clone [repo]")
-    .alias("add")
-    .description("Quickly search, add, or clone a repository with fast git internals")
+    .description("Search for and clone a repository with fast git internals")
     .option("--fast, --blobless", "Use fast blobless clone (--filter=blob:none)")
     .option("--shallow", "Use shallow clone with depth 1 (--depth 1)")
     .option("-d, --dir <directory>", "Target directory for the cloned repository")
-    .action(async (repoArg?: string, options?: { fast?: boolean; blobless?: boolean; shallow?: boolean; dir?: string }) => {
+    .option("--refresh", "Bypass the cached repository list")
+    .action(async (repoArg?: string, options?: { fast?: boolean; blobless?: boolean; shallow?: boolean; dir?: string; refresh?: boolean }) => {
       header("Clone & Add Project");
 
       let selectedRepo = repoArg;
@@ -48,7 +58,7 @@ export function registerCloneCommand(program: Command): void {
         const s = p.spinner();
         s.start(`Finding repository matching "${selectedRepo}"...`);
         const [userRepos, globalResults] = await Promise.all([
-          listUserRepositories(100),
+          listUserRepositories(100, options?.refresh),
           searchRepositories(selectedRepo, 10),
         ]);
         s.stop();
@@ -77,7 +87,16 @@ export function registerCloneCommand(program: Command): void {
           }
 
           if (candidateList.length === 1 && candidateList[0]) {
-            selectedRepo = candidateList[0].nameWithOwner;
+            const only = candidateList[0].nameWithOwner;
+            const acceptMatch = await confirmPrompt({
+              message: `No repository is named '${selectedRepo}'. Clone ${pc.bold(pc.cyan(only))} instead?`,
+              initialValue: false,
+            });
+            if (!acceptMatch) {
+              p.cancel("Clone cancelled.");
+              return;
+            }
+            selectedRepo = only;
           } else if (candidateList.length > 1) {
             const pick = await searchablePicker({
               title: `Repositories matching "${selectedRepo}":`,
@@ -111,8 +130,8 @@ export function registerCloneCommand(program: Command): void {
         const s = p.spinner();
         s.start("Loading your GitHub repositories...");
         const [userRepos, starredRepos] = await Promise.all([
-          listUserRepositories(100),
-          listStarredRepositories(30),
+          listUserRepositories(100, options?.refresh),
+          listStarredRepositories(30, options?.refresh),
         ]);
         s.stop("Repositories loaded.");
 
@@ -216,13 +235,13 @@ export function registerCloneCommand(program: Command): void {
       }
 
       if (existsSync(targetDir)) {
-        p.log.error(`Target directory '${targetDir}' already exists!`);
-        process.exitCode = 1;
+        fail(`Target directory '${targetDir}' already exists!`);
         return;
       }
 
-      // Clone mode selection if not specified via flags
-      if (!options?.fast && !options?.shallow) {
+      // Clone mode selection if not specified via flags. `--fast` is an alias of
+      // `--blobless`, so commander only ever populates `blobless`.
+      if (!isFast && !options?.shallow) {
         const modePick = await selectMenu({
           message: "Select clone mode:",
           options: [
@@ -261,8 +280,7 @@ export function registerCloneCommand(program: Command): void {
         p.outro(pc.green("Ready to code!"));
       } catch (err) {
         cloneSpinner.stop(pc.red("Clone failed."));
-        p.log.error(String(err));
-        process.exitCode = 1;
+        fail(String(err));
       }
     });
 }

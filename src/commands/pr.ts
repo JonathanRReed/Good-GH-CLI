@@ -7,9 +7,23 @@ import {
   viewPullRequestInBrowser,
 } from "../services/github.ts";
 import { fetchPullRequestBranch, detectDefaultBranch, isGitRepo, worktreeAdd } from "../services/git.ts";
-import { resolveAIProvider } from "../services/ai/index.ts";
-import { stripLockfilesFromDiff } from "../utils/diff.ts";
-import { header, p, pc, searchablePicker, selectMenu } from "../utils/ui.ts";
+import { registerPrCreateCommand } from "./pr-create.ts";
+import { registerPrLifecycleCommands } from "./pr-lifecycle.ts";
+import { registerPrReviewCommand } from "./pr-review.ts";
+import { getFlags } from "../services/runtime.ts";
+import { generatePrWithFallback, type AIAttempt, type AIAttemptFailure } from "../services/ai/index.ts";
+import { sanitizeDiffForAI } from "../utils/diff.ts";
+import {
+  emitJson,
+  fail,
+  formatAIFallback,
+  header,
+  p,
+  pc,
+  reportAIFailure,
+  searchablePicker,
+  selectMenu,
+} from "../utils/ui.ts";
 
 function displayColoredDiff(rawDiff: string): void {
   const lines = rawDiff.split("\n");
@@ -31,7 +45,7 @@ function displayColoredDiff(rawDiff: string): void {
 }
 
 export function registerPrCommand(program: Command): void {
-  program
+  const pr = program
     .command("pr [prNumber]")
     .alias("prs")
     .description("Browse, checkout, and AI-review GitHub Pull Requests")
@@ -42,8 +56,7 @@ export function registerPrCommand(program: Command): void {
       header("GitHub Pull Requests");
 
       if (!(await isGitRepo())) {
-        p.log.error("Not a git repository.");
-        process.exitCode = 1;
+        fail("Not a git repository.");
         return;
       }
 
@@ -61,7 +74,7 @@ export function registerPrCommand(program: Command): void {
       if (prNumber) {
         const num = parseInt(prNumber, 10);
         if (isNaN(num)) {
-          p.log.error(`Invalid PR number: ${prNumber}`);
+          fail(`Invalid PR number: ${prNumber}`);
           return;
         }
 
@@ -69,7 +82,7 @@ export function registerPrCommand(program: Command): void {
           try {
             await viewPullRequestInBrowser(num);
           } catch (err) {
-            p.log.error(`Failed to open PR #${num} in browser: ${String(err)}`);
+            fail(`Failed to open PR #${num} in browser: ${String(err)}`);
           }
           return;
         }
@@ -86,7 +99,7 @@ export function registerPrCommand(program: Command): void {
             p.log.info(`Run ${pc.bold(pc.cyan(`cd ${worktreePath}`))} to start working.`);
           } catch (err) {
             s.stop(pc.red(`Failed to checkout PR #${num} into worktree.`));
-            p.log.error(String(err));
+            fail(String(err));
           }
           return;
         }
@@ -98,7 +111,7 @@ export function registerPrCommand(program: Command): void {
           s.stop(pc.green(`Checked out PR #${num} successfully!`));
         } catch (err) {
           s.stop(pc.red(`Failed to checkout PR #${num}.`));
-          p.log.error(String(err));
+          fail(String(err));
         }
         return;
       }
@@ -108,6 +121,11 @@ export function registerPrCommand(program: Command): void {
       s.start("Fetching open Pull Requests from GitHub...");
       const prs = await listPullRequests(20);
       s.stop(`Loaded ${pc.green(String(prs.length))} open Pull Request(s).`);
+
+      if (getFlags().json) {
+        emitJson(prs);
+        return;
+      }
 
       if (prs.length === 0) {
         p.log.info(pc.dim("No open Pull Requests found for this repository."));
@@ -158,7 +176,7 @@ export function registerPrCommand(program: Command): void {
           p.log.info(`Run ${pc.bold(pc.cyan(`cd ${worktreePath}`))} to review or build.`);
         } catch (err) {
           wtSpinner.stop(pc.red(`Failed to checkout PR into worktree.`));
-          p.log.error(String(err));
+          fail(String(err));
         }
       } else if (action === "checkout") {
         const checkoutSpinner = p.spinner();
@@ -168,13 +186,13 @@ export function registerPrCommand(program: Command): void {
           checkoutSpinner.stop(pc.green(`Checked out PR #${selectedPr.number}!`));
         } catch (err) {
           checkoutSpinner.stop(pc.red("Checkout failed."));
-          p.log.error(String(err));
+          fail(String(err));
         }
       } else if (action === "web") {
         try {
           await viewPullRequestInBrowser(selectedPr.number);
         } catch (err) {
-          p.log.error(`Failed to open PR #${selectedPr.number} in browser: ${String(err)}`);
+          fail(`Failed to open PR #${selectedPr.number} in browser: ${String(err)}`);
         }
       } else if (action === "diff") {
         const diff = await getPullRequestDiff(selectedPr.number);
@@ -192,24 +210,36 @@ export function registerPrCommand(program: Command): void {
             getPullRequestDiff(selectedPr.number),
             detectDefaultBranch(),
           ]);
-          const { provider, model } = await resolveAIProvider();
+          if (!diff.trim()) {
+            reviewSpinner.stop(pc.yellow("No diff available for this Pull Request."));
+            return;
+          }
 
-          const prSummary = await provider.generatePr(
+          const { result: prSummary, providerName, model } = await generatePrWithFallback(
             {
               branch: selectedPr.headRefName,
               baseBranch: defaultBranch,
               // Never send raw PR diffs (lockfiles, .env, secrets) to the AI provider
-              diff: stripLockfilesFromDiff(diff),
+              diff: sanitizeDiffForAI(diff).diff,
               commitSummary: selectedPr.title,
             },
-            model,
+            undefined,
+            (failure: AIAttemptFailure, next?: AIAttempt) => {
+              reviewSpinner.message(formatAIFallback(failure, next));
+            },
           );
 
-          reviewSpinner.stop("AI Summary Generated:");
+          reviewSpinner.stop(`AI summary generated by ${pc.bold(providerName)} [${pc.cyan(model)}].`);
           p.note(prSummary.body, `AI Summary for PR #${selectedPr.number}`);
-        } catch {
-          reviewSpinner.stop(pc.yellow("AI review unavailable."));
+        } catch (err) {
+          reviewSpinner.stop(pc.yellow("AI review failed."));
+          reportAIFailure(err, "Could not generate an AI review:");
+          process.exitCode = 1;
         }
       }
     });
+
+  registerPrCreateCommand(pr);
+  registerPrLifecycleCommands(pr);
+  registerPrReviewCommand(pr);
 }

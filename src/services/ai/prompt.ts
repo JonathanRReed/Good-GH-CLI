@@ -122,6 +122,77 @@ export function buildPrPrompt(input: PrPromptInput): string {
   return parts.join("\n");
 }
 
+export interface ReviewPromptInput {
+  title: string;
+  diff: string;
+  /** Extra direction, e.g. "focus on error handling". */
+  guidance?: string;
+}
+
+export interface ReviewFinding {
+  /** Repository-relative path exactly as it appears in the diff. */
+  path: string;
+  /** Line number in the NEW file, as shown in the diff hunk header. */
+  line: number;
+  severity: "blocker" | "concern" | "nit";
+  body: string;
+}
+
+export interface ReviewResult {
+  summary: string;
+  findings: ReviewFinding[];
+}
+
+export function buildReviewPrompt(input: ReviewPromptInput): string {
+  const parts = [
+    "You are a careful senior engineer reviewing a pull request.",
+    "Return a JSON object strictly in this format, with no markdown fences and no other text:",
+    JSON.stringify({
+      summary: "two or three sentences on what this change does and its overall risk",
+      findings: [
+        { path: "src/example.ts", line: 42, severity: "blocker", body: "what is wrong and how to fix it" },
+      ],
+    }),
+    "",
+    "Rules:",
+    "- only report real defects: correctness bugs, security issues, resource leaks, missing error handling, broken edge cases",
+    "- severity is 'blocker' (must fix before merge), 'concern' (should fix), or 'nit' (optional polish)",
+    "- 'path' must exactly match a file path in the diff, and 'line' must be a line the diff ADDS (a '+' line)",
+    "- never invent a path or a line number; if you are unsure of the line, leave the finding out",
+    "- do not comment on formatting, or restate what the code obviously does",
+    "- an empty findings array is the correct answer for a clean change",
+  ];
+
+  if (input.guidance) {
+    parts.push(`- reviewer direction: ${input.guidance}`);
+  }
+
+  parts.push("", `Pull Request: ${input.title}`, "", "Diff:", truncateDiff(input.diff, 60_000));
+  return parts.join("\n");
+}
+
+export interface ReleaseNotesPromptInput {
+  tag: string;
+  previousTag?: string;
+  commits: string[];
+}
+
+export function buildReleaseNotesPrompt(input: ReleaseNotesPromptInput): string {
+  return [
+    `You write clean, professional GitHub Release Notes for version ${input.tag}.`,
+    "Return Markdown only, with no code fences and no preamble.",
+    "",
+    "Rules:",
+    "- group the changes under '### Features', '### Fixes', and '### Maintenance' headings",
+    "- omit any heading that has no entries",
+    "- one concise bullet per user-visible change; merge duplicates",
+    "- do not invent changes that are not in the commit list",
+    "",
+    input.previousTag ? `Changes since ${input.previousTag}:` : "Changes in this release:",
+    ...input.commits.map((c) => `- ${c}`),
+  ].join("\n");
+}
+
 export function buildBranchNamePrompt(taskDescription: string): string {
   return [
     "Generate a short, semantic git branch name from the following description.",

@@ -1,6 +1,12 @@
 import { Command } from "commander";
 import { getStatus, isGitRepo, resolveConflict } from "../services/git.ts";
-import { header, p, pc, selectMenu } from "../utils/ui.ts";
+import {
+  fail,
+  header,
+  p,
+  pc,
+  selectMenu,
+} from "../utils/ui.ts";
 
 export function registerResolveCommand(program: Command): void {
   program
@@ -10,7 +16,7 @@ export function registerResolveCommand(program: Command): void {
       header("Merge Conflict Resolver");
 
       if (!(await isGitRepo())) {
-        p.log.error("Not a git repository.");
+        fail("Not a git repository.");
         return;
       }
 
@@ -65,7 +71,7 @@ export function registerResolveCommand(program: Command): void {
             p.log.success(`Marked ${pc.cyan(conflict.path)} as resolved.`);
           }
         } catch (err) {
-          p.log.error(`Failed to resolve ${pc.bold(conflict.path)}: ${String(err)}`);
+          fail(`Failed to resolve ${pc.bold(conflict.path)}: ${String(err)}`);
         }
       }
 

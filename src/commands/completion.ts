@@ -1,187 +1,176 @@
-import { Command } from "commander";
-import { header, p } from "../utils/ui.ts";
+import type { Command } from "commander";
+import { data, fail, header, p, pc } from "../utils/ui.ts";
 
-const ZSH_COMPLETION = `#compdef ggh good-gh
+interface CommandSpec {
+  name: string;
+  aliases: string[];
+  description: string;
+  options: string[];
+  subcommands: Array<{ name: string; aliases: string[]; description: string }>;
+}
+
+/**
+ * Reads the real command tree. Completions were three hand-written scripts that
+ * drifted every time a command was added; generating them means they cannot.
+ */
+function describeProgram(program: Command): CommandSpec[] {
+  return program.commands
+    .filter((c) => c.name() !== "help")
+    .map((c) => ({
+      name: c.name(),
+      aliases: c.aliases(),
+      description: (c.description() || "").split("\n")[0],
+      options: c.options
+        .filter((o) => !o.hidden)
+        .flatMap((o) => [o.short, o.long].filter((f): f is string => Boolean(f))),
+      subcommands: c.commands
+        .filter((s) => s.name() !== "help")
+        .map((s) => ({
+          name: s.name(),
+          aliases: s.aliases(),
+          description: (s.description() || "").split("\n")[0],
+        })),
+    }));
+}
+
+/** zsh and bash both break on an unescaped quote inside a description. */
+function esc(text: string): string {
+  return text.replace(/'/g, "").replace(/\\/g, "");
+}
+
+function generateZsh(specs: CommandSpec[]): string {
+  const entries = specs
+    .flatMap((c) => [
+      `    '${c.name}:${esc(c.description)}'`,
+      ...c.aliases.map((a) => `    '${a}:Alias for ${c.name}'`),
+    ])
+    .join("\n");
+
+  const cases = specs
+    .filter((c) => c.subcommands.length > 0 || c.options.length > 0)
+    .map((c) => {
+      const names = [c.name, ...c.aliases].join("|");
+      const subs = c.subcommands
+        .flatMap((s) => [s.name, ...s.aliases])
+        .join(" ");
+      const opts = c.options.map((o) => `'${o}'`).join(" ");
+      const lines = [`      ${names})`];
+      if (subs) lines.push(`        _values 'subcommand' ${subs}`);
+      if (opts) lines.push(`        _values 'option' ${opts}`);
+      lines.push("        ;;");
+      return lines.join("\n");
+    })
+    .join("\n");
+
+  return `#compdef ggh good-gh
 
 _ggh() {
   local -a commands
   commands=(
-    'clone:Search, add, or clone repositories'
-    'commit:Interactive commit with AI and stacked actions'
-    'c:Alias for commit'
-    'undo:Soft-reset the last commit while keeping changes'
-    'resolve:Interactively resolve merge conflicts'
-    'stash:Git stash assistant (push, pop, browse, drop)'
-    'st:Alias for stash'
-    'switch:Switch branches or worktrees'
-    'sw:Alias for switch'
-    'worktree:Manage isolated git worktrees'
-    'wt:Alias for worktree'
-    'pr:Browse, checkout, and AI-review GitHub Pull Requests'
-    'prs:Alias for pr'
-    'sync:Fetch, prune remote refs, and delete stale merged branches'
-    'prune:Alias for sync'
-    'squash:Interactive commit squash assistant'
-    'release:Browse GitHub releases or create new release with AI changelog'
-    'rel:Alias for release'
-    'checks:View GitHub Actions CI status checks'
-    'discard:Discard changes to working tree files'
-    'restore:Alias for discard'
-    'rename:Rename current branch locally and update remote tracking'
-    'log:Display colorized Git commit DAG graph'
-    'graph:Alias for log'
-    'config:Configure good-gh settings and AI provider'
-    'status:Check repo, worktree, and AI model health'
-    'completion:Generate shell autocompletion script'
+${entries}
   )
 
   if (( CURRENT == 2 )); then
     _describe -t commands 'ggh command' commands
   else
     case $words[2] in
-      commit|c)
-        _arguments \
-          '(-a --all)'{-a,--all}'[Stage all modified and untracked files]' \
-          '--amend[Amend previous commit]' \
-          '(-m --message)'{-m,--message}'[Commit message]:message:' \
-          '--push[Commit and push to remote]' \
-          '--pr[Commit, push, and create GitHub PR]' \
-          '(-n --no-verify)'{-n,--no-verify}'[Bypass pre-commit hooks]' \
-          '(-i --issue)'{-i,--issue}'[Link GitHub issue number]:issue:' \
-          '--review[Run pre-commit hygiene scan]' \
-          '--no-ai[Disable AI commit generation]'
-        ;;
-      switch|sw)
-        local -a branches
-        branches=($(git branch --format='%(refname:short)' 2>/dev/null))
-        _describe -t branches 'branches' branches
-        ;;
-      worktree|wt)
-        _arguments \
-          '1:action:(add list remove)'
-        ;;
-      stash|st)
-        _arguments \
-          '1:action:(push pop list drop)'
-        ;;
-      pr|prs)
-        _arguments \
-          '--checkout[Directly checkout specified PR]' \
-          '(-w --worktree)'{-w,--worktree}'[Checkout PR into an isolated worktree]' \
-          '--web[Open PR in browser]'
-        ;;
-      checks)
-        _arguments \
-          '(-w --watch)'{-w,--watch}'[Continuously watch checks until completion]'
-        ;;
-      discard|restore)
-        _arguments \
-          '(-a --all)'{-a,--all}'[Discard all changes in repository]'
-        ;;
-      release|rel)
-        _arguments \
-          '1:action:(create)' \
-          '(-t --title)'{-t,--title}'[Release title]:title:' \
-          '(-n --notes)'{-n,--notes}'[Release notes]:notes:' \
-          '--draft[Create as draft]' \
-          '--prerelease[Create as prerelease]'
-        ;;
+${cases}
     esac
   fi
 }
 
 _ggh
 `;
+}
 
-const BASH_COMPLETION = `_ggh_completions() {
+function generateBash(specs: CommandSpec[]): string {
+  const names = specs.flatMap((c) => [c.name, ...c.aliases]).join(" ");
+  const cases = specs
+    .filter((c) => c.subcommands.length > 0 || c.options.length > 0)
+    .map((c) => {
+      const match = [c.name, ...c.aliases].join("|");
+      const words = [
+        ...c.subcommands.flatMap((s) => [s.name, ...s.aliases]),
+        ...c.options,
+      ].join(" ");
+      return `    ${match})\n      COMPREPLY=( $(compgen -W "${words}" -- "$cur") )\n      return 0\n      ;;`;
+    })
+    .join("\n");
+
+  return `_ggh_completions() {
   local cur prev commands
   cur="\${COMP_WORDS[COMP_CWORD]}"
-  prev="\${COMP_WORDS[COMP_CWORD-1]}"
-  commands="clone commit c undo resolve stash st switch sw worktree wt pr prs sync prune squash release rel checks discard restore rename log graph config status completion"
+  prev="\${COMP_WORDS[1]}"
+  commands="${names}"
 
-  if [ $COMP_CWORD -eq 1 ]; then
-    COMPREPLY=( $(compgen -W "\${commands}" -- \${cur}) )
+  if [ "$COMP_CWORD" -eq 1 ]; then
+    COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
     return 0
   fi
 
-  case "\${prev}" in
-    switch|sw)
-      local branches
-      branches=$(git branch --format='%(refname:short)' 2>/dev/null)
-      COMPREPLY=( $(compgen -W "\${branches}" -- \${cur}) )
-      return 0
-      ;;
-    worktree|wt)
-      COMPREPLY=( $(compgen -W "add list remove" -- \${cur}) )
-      return 0
-      ;;
-    stash|st)
-      COMPREPLY=( $(compgen -W "push pop list drop" -- \${cur}) )
-      return 0
-      ;;
-    release|rel)
-      COMPREPLY=( $(compgen -W "create" -- \${cur}) )
-      return 0
-      ;;
+  case "$prev" in
+${cases}
   esac
 }
 
-complete -F _ggh_completions ggh
-complete -F _ggh_completions good-gh
+complete -F _ggh_completions ggh good-gh
 `;
+}
 
-const FISH_COMPLETION = `function __fish_ggh_branches
-  git branch --format='%(refname:short)' 2>/dev/null
-end
+function generateFish(specs: CommandSpec[]): string {
+  const lines: string[] = [
+    "function __fish_ggh_branches",
+    "  git branch --format='%(refname:short)' 2>/dev/null",
+    "end",
+    "",
+  ];
 
-complete -c ggh -f -n '__fish_use_subcommand' -a 'clone' -d 'Search, add, or clone repositories'
-complete -c ggh -f -n '__fish_use_subcommand' -a 'commit' -d 'Interactive commit with AI and stacked actions'
-complete -c ggh -f -n '__fish_use_subcommand' -a 'c' -d 'Alias for commit'
-complete -c ggh -f -n '__fish_use_subcommand' -a 'undo' -d 'Soft-reset last commit'
-complete -c ggh -f -n '__fish_use_subcommand' -a 'resolve' -d 'Interactively resolve merge conflicts'
-complete -c ggh -f -n '__fish_use_subcommand' -a 'stash' -d 'Git stash assistant'
-complete -c ggh -f -n '__fish_use_subcommand' -a 'st' -d 'Alias for stash'
-complete -c ggh -f -n '__fish_use_subcommand' -a 'switch' -d 'Switch branches or worktrees'
-complete -c ggh -f -n '__fish_use_subcommand' -a 'sw' -d 'Alias for switch'
-complete -c ggh -f -n '__fish_use_subcommand' -a 'worktree' -d 'Manage git worktrees'
-complete -c ggh -f -n '__fish_use_subcommand' -a 'wt' -d 'Alias for worktree'
-complete -c ggh -f -n '__fish_use_subcommand' -a 'pr' -d 'Browse, checkout, and AI-review Pull Requests'
-complete -c ggh -f -n '__fish_use_subcommand' -a 'prs' -d 'Alias for pr'
-complete -c ggh -f -n '__fish_use_subcommand' -a 'sync' -d 'Fetch, prune, and delete stale branches'
-complete -c ggh -f -n '__fish_use_subcommand' -a 'prune' -d 'Alias for sync'
-complete -c ggh -f -n '__fish_use_subcommand' -a 'squash' -d 'Interactive commit squash assistant'
-complete -c ggh -f -n '__fish_use_subcommand' -a 'release' -d 'Browse or create GitHub releases'
-complete -c ggh -f -n '__fish_use_subcommand' -a 'rel' -d 'Alias for release'
-complete -c ggh -f -n '__fish_use_subcommand' -a 'checks' -d 'View CI status checks'
-complete -c ggh -f -n '__fish_use_subcommand' -a 'discard' -d 'Discard file changes'
-complete -c ggh -f -n '__fish_use_subcommand' -a 'restore' -d 'Alias for discard'
-complete -c ggh -f -n '__fish_use_subcommand' -a 'rename' -d 'Rename current branch'
-complete -c ggh -f -n '__fish_use_subcommand' -a 'log' -d 'Display Git DAG graph'
-complete -c ggh -f -n '__fish_use_subcommand' -a 'graph' -d 'Alias for log'
-complete -c ggh -f -n '__fish_use_subcommand' -a 'config' -d 'Configure good-gh'
-complete -c ggh -f -n '__fish_use_subcommand' -a 'status' -d 'Check repo and AI health'
-complete -c ggh -f -n '__fish_use_subcommand' -a 'completion' -d 'Generate shell completions'
+  for (const c of specs) {
+    lines.push(
+      `complete -c ggh -f -n '__fish_use_subcommand' -a '${c.name}' -d '${esc(c.description)}'`,
+    );
+    for (const alias of c.aliases) {
+      lines.push(
+        `complete -c ggh -f -n '__fish_use_subcommand' -a '${alias}' -d 'Alias for ${c.name}'`,
+      );
+    }
+  }
 
-complete -c ggh -n '__fish_seen_subcommand_from switch sw' -a '(__fish_ggh_branches)'
-`;
+  lines.push("");
+  for (const c of specs) {
+    const seen = [c.name, ...c.aliases].join(" ");
+    for (const sub of c.subcommands) {
+      lines.push(
+        `complete -c ggh -f -n '__fish_seen_subcommand_from ${seen}' -a '${sub.name}' -d '${esc(sub.description)}'`,
+      );
+    }
+  }
+
+  lines.push(
+    "",
+    "complete -c ggh -n '__fish_seen_subcommand_from switch sw checkout' -a '(__fish_ggh_branches)'",
+  );
+  return lines.join("\n") + "\n";
+}
 
 export function registerCompletionCommand(program: Command): void {
   program
     .command("completion [shell]")
-    .description("Generate shell tab-completion script for zsh, bash, or fish")
+    .description("Generate a shell tab-completion script for zsh, bash, or fish")
     .action((shell?: string) => {
-      const userShell = shell || process.env.SHELL?.split("/").pop() || "zsh";
+      const specs = describeProgram(program);
+      const target = (shell || process.env.SHELL?.split("/").pop() || "zsh").toLowerCase();
 
-      if (userShell.includes("zsh")) {
-        console.log(ZSH_COMPLETION);
-      } else if (userShell.includes("bash")) {
-        console.log(BASH_COMPLETION);
-      } else if (userShell.includes("fish")) {
-        console.log(FISH_COMPLETION);
+      if (target.includes("zsh")) {
+        data(generateZsh(specs));
+      } else if (target.includes("bash")) {
+        data(generateBash(specs));
+      } else if (target.includes("fish")) {
+        data(generateFish(specs));
       } else {
         header("Shell Completion");
-        p.log.warn(`Unsupported shell: ${userShell}. Supported shells: zsh, bash, fish.`);
-        p.log.message("\nExample usage:\n  eval \"$(ggh completion zsh)\"\n");
+        fail(`Unsupported shell: ${target}. Supported shells: zsh, bash, fish.`);
+        p.log.message(`\nExample:\n  ${pc.cyan('eval "$(ggh completion zsh)"')}\n`);
       }
     });
 }

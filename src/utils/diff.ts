@@ -28,12 +28,23 @@ const IGNORED_FILE_PATTERNS = [
 ];
 
 const SECRET_PATTERNS = [
-  /sk-[a-zA-Z0-9_-]{20,}/g, // OpenAI/Codex API keys
+  /sk-[a-zA-Z0-9_-]{20,}/g, // OpenAI / Anthropic style API keys
   /gh[pousr]_[a-zA-Z0-9]{36,}/g, // GitHub tokens
+  /github_pat_[a-zA-Z0-9_]{20,}/g, // GitHub fine-grained PATs
   /xai-[a-zA-Z0-9_-]{20,}/g, // xAI tokens
-  /AKIA[0-9A-Z]{16}/g, // AWS Access Key
+  /xox[baprs]-[a-zA-Z0-9-]{10,}/g, // Slack tokens
+  /AKIA[0-9A-Z]{16}/g, // AWS access key id
+  /ASIA[0-9A-Z]{16}/g, // AWS temporary access key id
+  /AIza[0-9A-Za-z_-]{35}/g, // Google API keys
+  /\bglpat-[a-zA-Z0-9_-]{20,}/g, // GitLab PATs
+  /\bnpm_[a-zA-Z0-9]{36}/g, // npm automation tokens
+  /\bey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, // JWTs
+  /postgres(?:ql)?:\/\/[^\s:@/]+:[^\s:@/]+@[^\s]+/gi, // DB URLs with credentials
   /-----BEGIN [A-Z ]+ PRIVATE KEY-----[\s\S]*?-----END [A-Z ]+ PRIVATE KEY-----/g,
-  /(password|secret|api[_-]?key|access[_-]?token)\s*[:=]\s*["'][^"'\s]{8,}["']/gi,
+  // Quoted assignments: API_KEY: "value"
+  /(password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|private[_-]?key)\s*[:=]\s*["'][^"'\s]{8,}["']/gi,
+  // Bare assignments, which quoted-only matching missed: API_KEY=value, export TOKEN=value
+  /(password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret)\s*[:=]\s*[^\s"'`,;)}\]]{8,}/gi,
 ];
 
 export function isIgnoredDiffFile(filePath: string): boolean {
@@ -61,12 +72,21 @@ export function redactSecrets(text: string): { text: string; redactedCount: numb
   return { text: redacted, redactedCount: count };
 }
 
+export interface SanitizedDiff {
+  /** Diff text safe to send to an AI provider. */
+  diff: string;
+  /** Number of secret-looking tokens replaced with [REDACTED_SECRET]. */
+  redactedCount: number;
+  /** Number of diff blocks dropped as lockfiles, binaries, or sensitive files. */
+  strippedBlocks: number;
+}
+
 /**
- * Strips diff sections that belong to lockfiles, binary files, minified bundles, or sensitive files,
- * and redacts any detected secrets.
+ * Single sanitisation pass over a raw diff: drops lockfile, binary, bundle, and
+ * sensitive-file blocks, then redacts any secrets left in the remaining hunks.
  */
-export function stripLockfilesFromDiff(rawDiff: string): string {
-  if (!rawDiff) return "";
+export function sanitizeDiffForAI(rawDiff: string): SanitizedDiff {
+  if (!rawDiff) return { diff: "", redactedCount: 0, strippedBlocks: 0 };
 
   const diffBlocks = rawDiff.split(/(?=^diff --git )/m);
   const filteredBlocks = diffBlocks.filter((block) => {
@@ -83,8 +103,20 @@ export function stripLockfilesFromDiff(rawDiff: string): string {
   });
 
   const joined = filteredBlocks.join("").trim();
-  const { text: sanitized } = redactSecrets(joined);
-  return sanitized;
+  const { text, redactedCount } = redactSecrets(joined);
+  return {
+    diff: text,
+    redactedCount,
+    strippedBlocks: diffBlocks.length - filteredBlocks.length,
+  };
+}
+
+/**
+ * Strips diff sections that belong to lockfiles, binary files, minified bundles, or sensitive files,
+ * and redacts any detected secrets.
+ */
+export function stripLockfilesFromDiff(rawDiff: string): string {
+  return sanitizeDiffForAI(rawDiff).diff;
 }
 
 /**

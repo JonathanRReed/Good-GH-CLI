@@ -18,70 +18,62 @@ describe("ui utilities", () => {
     expect(formatWarning("warn")).toContain("warn");
   });
 
-  it("handles non-interactive fallback for searchablePicker", async () => {
-    const result = await searchablePicker({
-      title: "Test Picker",
-      items: [
-        { value: "item1", label: "Item 1" },
-        { value: "item2", label: "Item 2" },
-      ],
+  /**
+   * Without a TTY these must cancel, never auto-answer. The first option of a menu
+   * can be destructive (`ggh resolve` offers "accept ours" first) and a default-yes
+   * confirm can publish a release or open a Pull Request.
+   */
+  describe("non-interactive prompts", () => {
+    it("cancels searchablePicker instead of taking the first item", async () => {
+      const result = await searchablePicker({
+        title: "Test Picker",
+        items: [
+          { value: "item1", label: "Item 1" },
+          { value: "item2", label: "Item 2" },
+        ],
+      });
+      expect(result).toBeNull();
     });
 
-    expect(result).toBe("item1");
-  });
-
-  it("handles non-interactive fallback for selectMenu", async () => {
-    const defaultResult = await selectMenu({
-      message: "Select an item",
-      options: [
+    it("cancels selectMenu instead of taking the first option or the initialValue", async () => {
+      const options = [
         { value: "alpha", label: "Alpha" },
         { value: "beta", label: "Beta" },
-      ],
+      ];
+      expect(await selectMenu({ message: "Select an item", options })).toBeNull();
+      expect(
+        await selectMenu({ message: "Select an item", options, initialValue: "beta" }),
+      ).toBeNull();
     });
-    expect(defaultResult).toBe("alpha");
 
-    const initialResult = await selectMenu({
-      message: "Select with initialValue",
-      options: [
-        { value: "alpha", label: "Alpha" },
-        { value: "beta", label: "Beta" },
-      ],
-      initialValue: "beta",
-    });
-    expect(initialResult).toBe("beta");
-  });
-
-  it("handles non-interactive fallback for multiSelectMenu", async () => {
-    const emptyResult = await multiSelectMenu({
-      message: "Select items",
-      options: [
+    it("cancels multiSelectMenu instead of returning a silently empty selection", async () => {
+      const options = [
         { value: "one", label: "One" },
         { value: "two", label: "Two" },
-      ],
+      ];
+      expect(await multiSelectMenu({ message: "Select items", options })).toBeNull();
+      expect(
+        await multiSelectMenu({ message: "Select items", options, initialValues: ["two"] }),
+      ).toBeNull();
     });
-    expect(emptyResult).toEqual([]);
 
-    const initialResult = await multiSelectMenu({
-      message: "Select items with initialValues",
-      options: [
-        { value: "one", label: "One" },
-        { value: "two", label: "Two" },
-      ],
-      initialValues: ["two"],
+    it("refuses confirmPrompt regardless of initialValue", async () => {
+      expect(await confirmPrompt({ message: "Are you sure?" })).toBe(false);
+      // initialValue is a UI preselection, never a non-interactive answer.
+      expect(await confirmPrompt({ message: "Are you sure?", initialValue: true })).toBe(false);
     });
-    expect(initialResult).toEqual(["two"]);
-  });
 
-  it("handles non-interactive fallback for confirmPrompt", async () => {
-    const defaultResult = await confirmPrompt({
-      message: "Are you sure?",
+    it("confirms only when an explicit --yes flag is passed through", async () => {
+      expect(
+        await confirmPrompt({ message: "Publish?", initialValue: false, assumeYes: true }),
+      ).toBe(true);
     });
-    expect(defaultResult).toBe(false);
 
-    const trueResult = await confirmPrompt({
-      message: "Are you sure?",
-      initialValue: true,
+    it("marks the process as failed when it cannot prompt", async () => {
+      process.exitCode = 0;
+      await confirmPrompt({ message: "Are you sure?", initialValue: true });
+      expect(process.exitCode).toBe(1);
+      process.exitCode = 0;
     });
-    expect(trueResult).toBe(true);
   });
 });

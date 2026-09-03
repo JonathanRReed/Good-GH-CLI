@@ -1,53 +1,66 @@
-import { run } from "../../utils/exec.ts";
+import { commandExists, run } from "../../utils/exec.ts";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AIProvider } from "./provider.ts";
-import {
-  buildBranchNamePrompt,
-  buildCommitPrompt,
-  buildPrPrompt,
-  parseJsonResponse,
-  type CommitMessageResult,
-  type CommitPromptInput,
-  type PrContentResult,
-  type PrPromptInput,
-} from "./prompt.ts";
+import { CliAIProvider } from "./base.ts";
+import type { AIProviderId } from "./provider.ts";
 
-export class GrokProvider implements AIProvider {
-  readonly id = "grok" as const;
+/**
+ * Grok is the last resort in the provider chain, and the model list is
+ * account-specific (`grok models`), so there is no safe hardcoded second tier:
+ * an unknown slug would turn a working fallback into a hard failure.
+ */
+export const GROK_MODEL_CHAIN: readonly string[] = [];
+
+export class GrokProvider extends CliAIProvider {
+  readonly id: AIProviderId = "grok";
   readonly displayName = "xAI Grok";
   readonly defaultModel = "grok-4.5";
+  readonly fallbackModels = GROK_MODEL_CHAIN;
 
   async isAvailable(): Promise<boolean> {
     try {
-      const authPath = join(homedir(), ".grok", "auth.json");
-      if (existsSync(authPath)) {
+      if (!commandExists("grok")) {
+        return false;
+      }
+      if (existsSync(join(homedir(), ".grok", "auth.json"))) {
         return true;
       }
-      const { stdout } = await run("grok", ["models"], { reject: false });
-      return !stdout.includes("not authenticated");
+      const { stdout, stderr } = await run("grok", ["models"], {
+        reject: false,
+        timeoutMs: 15_000,
+      });
+      return !/not authenticated|please (?:run )?grok login/i.test(`${stdout} ${stderr}`);
     } catch {
       return false;
     }
   }
 
-  private async runPrompt(prompt: string, model = this.defaultModel): Promise<string> {
+  protected async invoke(prompt: string, model: string, timeoutMs: number): Promise<string> {
     const tmpDir = mkdtempSync(join(tmpdir(), "good-gh-grok-"));
     const promptPath = join(tmpDir, "prompt.txt");
 
     try {
-      // Securely write prompt to file with 0o600 permissions (avoids ps aux argument sniffing)
+      // 0o600 so the prompt (which contains the diff) is not world-readable, and
+      // passing it by path keeps it out of `ps aux`.
       writeFileSync(promptPath, prompt, { encoding: "utf-8", mode: 0o600 });
 
       const { stdout } = await run(
         "grok",
-        ["--prompt-file", promptPath, "--model", model, "--output-format", "plain"],
-        {
-          timeoutMs: 60_000,
-        },
+        [
+          "--prompt-file",
+          promptPath,
+          "--model",
+          model,
+          "--output-format",
+          "plain",
+          // Single-turn text generation: no tools, no web, no subagents.
+          "--no-subagents",
+          "--disable-web-search",
+        ],
+        { timeoutMs },
       );
-      return stdout.trim();
+      return stdout;
     } finally {
       try {
         rmSync(tmpDir, { recursive: true, force: true });
@@ -55,56 +68,5 @@ export class GrokProvider implements AIProvider {
         // Ignore cleanup failure
       }
     }
-  }
-
-  async generateCommit(
-    input: CommitPromptInput,
-    model = this.defaultModel,
-  ): Promise<CommitMessageResult> {
-    const prompt = buildCommitPrompt(input);
-    const raw = await this.runPrompt(prompt, model);
-
-    const parsed = parseJsonResponse<CommitMessageResult>(raw, {
-      subject: raw.split("\n")[0]?.slice(0, 72) || "update files",
-      body: raw.split("\n").slice(1).join("\n").trim(),
-    });
-
-    return {
-      subject: parsed.subject.replace(/\.$/, "").trim(),
-      body: (parsed.body || "").trim(),
-    };
-  }
-
-  async generatePr(
-    input: PrPromptInput,
-    model = this.defaultModel,
-  ): Promise<PrContentResult> {
-    const prompt = buildPrPrompt(input);
-    const raw = await this.runPrompt(prompt, model);
-
-    const parsed = parseJsonResponse<PrContentResult>(raw, {
-      title: raw.split("\n")[0]?.slice(0, 72) || "Update repository",
-      body: raw.split("\n").slice(1).join("\n").trim(),
-    });
-
-    return {
-      title: parsed.title.trim(),
-      body: parsed.body.trim(),
-    };
-  }
-
-  async generateBranchName(
-    taskDescription: string,
-    model = this.defaultModel,
-  ): Promise<string> {
-    const prompt = buildBranchNamePrompt(taskDescription);
-    const raw = await this.runPrompt(prompt, model);
-    const branch = raw
-      .trim()
-      .split("\n")[0]
-      .replace(/[`'"]/g, "")
-      .replace(/\s+/g, "-")
-      .toLowerCase();
-    return branch || "feat/update";
   }
 }

@@ -5,6 +5,9 @@ import {
   commit,
   detectDefaultBranch,
   findPrTemplate,
+  getBranchDiff,
+  getBranchDiffStat,
+  getCommitsSinceBase,
   getRecentCommits,
   getRemotes,
   getStagedDiff,
@@ -21,20 +24,25 @@ import {
 import {
   ensureFirstRunSetup,
   generateCommitWithFallback,
-  resolveAIProvider,
+  generatePrWithFallback,
+  type AIAttempt,
+  type AIAttemptFailure,
 } from "../services/ai/index.ts";
 import { createPullRequest, getActivePullRequest, getGitHubAuthStatus } from "../services/github.ts";
 import { getConfig, type AIProvider as ConfigAIProvider } from "../services/config.ts";
-import { redactSecrets, scanCodeHygiene, stripLockfilesFromDiff } from "../utils/diff.ts";
+import { sanitizeDiffForAI, scanCodeHygiene } from "../utils/diff.ts";
 import { detectCommitConvention, type CommitStyle } from "../utils/conventions.ts";
 import {
   confirmPrompt,
+  fail,
+  formatAIFallback,
   header,
   multiSelectMenu,
   p,
   pc,
   promptFirstRunProvider,
   promptInput,
+  reportAIFailure,
   selectMenu,
 } from "../utils/ui.ts";
 
@@ -105,6 +113,7 @@ export function registerCommitCommand(program: Command): void {
     .option("-S, --gpg-sign", "GPG-sign commits")
     .option("-s, --signoff", "Add Signed-off-by line at the end of the commit message")
     .option("-i, --issue <issue>", "Link commit and PR to a GitHub issue number (e.g. 42)")
+    .option("-y, --yes", "Answer every confirmation with yes (required for non-interactive use)")
     .option("--review", "Run pre-commit hygiene scan for console.log, debugger, and localhost URLs")
     .option("--push", "Automatically commit and push to remote tracking branch")
     .option("--pr", "Commit, push, and create a GitHub Pull Request with AI summary")
@@ -119,6 +128,7 @@ export function registerCommitCommand(program: Command): void {
       gpgSign?: boolean;
       signoff?: boolean;
       issue?: string;
+      yes?: boolean;
       review?: boolean;
       push?: boolean;
       pr?: boolean;
@@ -129,18 +139,17 @@ export function registerCommitCommand(program: Command): void {
       header(options.amend ? "Amend Last Commit" : "Commit & Stacked Actions");
 
       if (!(await isGitRepo())) {
-        p.log.error("Not a git repository. Run `git init` or navigate to a repository.");
-        process.exitCode = 1;
+        fail("Not a git repository. Run `git init` or navigate to a repository.");
         return;
       }
 
       if (options.message !== undefined && options.message.trim().length === 0) {
-        p.log.error("Commit message cannot be empty.");
+        fail("Commit message cannot be empty.");
         return;
       }
 
       if (options.amend && !(await hasCommits())) {
-        p.log.error("Cannot amend: repository has no commits yet.");
+        fail("Cannot amend: repository has no commits yet.");
         return;
       }
 
@@ -148,7 +157,7 @@ export function registerCommitCommand(program: Command): void {
 
       // Guard against unresolved merge conflicts
       if (status.conflicts.length > 0) {
-        p.log.error(`Unresolved merge conflicts detected in ${status.conflicts.length} file(s):`);
+        fail(`Unresolved merge conflicts detected in ${status.conflicts.length} file(s):`);
         for (const c of status.conflicts) {
           p.log.message(`  ${pc.red("✖")} ${pc.bold(c.path)}`);
         }
@@ -241,6 +250,7 @@ export function registerCommitCommand(program: Command): void {
           const proceed = await confirmPrompt({
             message: "Proceed with commit anyway?",
             initialValue: true,
+            assumeYes: options.yes,
           });
           if (!proceed) {
             p.cancel("Commit cancelled to address code hygiene.");
@@ -254,7 +264,7 @@ export function registerCommitCommand(program: Command): void {
       // Large File Pre-Commit Guard (GitHub 100MB hard limit)
       const { blocked, warnings } = largeFileCheck;
       if (blocked.length > 0) {
-        p.log.error(
+        fail(
           pc.red(
             `Commit blocked: ${blocked.length} staged file(s) exceed GitHub's 100MB limit (which permanently breaks git push):`,
           ),
@@ -283,6 +293,7 @@ export function registerCommitCommand(program: Command): void {
         const proceedSubmod = await confirmPrompt({
           message: "Proceed with commit anyway?",
           initialValue: true,
+          assumeYes: options.yes,
         });
         if (!proceedSubmod) {
           p.cancel("Commit cancelled to address submodules.");
@@ -357,13 +368,12 @@ export function registerCommitCommand(program: Command): void {
         const config = getConfig();
         const diffStat = await getStagedDiffStat();
 
-        // Secret scanning & sanitization
-        const { redactedCount } = redactSecrets(rawDiff);
+        // Strip lockfiles/binaries/.env blocks and redact secrets in a single pass;
+        // this is the only diff text that ever leaves the machine.
+        const { diff: sanitizedDiff, redactedCount } = sanitizeDiffForAI(rawDiff);
         if (redactedCount > 0) {
           p.log.warn(pc.yellow(`Redacted ${redactedCount} potential secret(s) from diff sent to AI.`));
         }
-
-        const sanitizedDiff = stripLockfilesFromDiff(rawDiff);
 
         // Detect Style
         let activeStyle: CommitStyle = "conventional";
@@ -384,7 +394,7 @@ export function registerCommitCommand(program: Command): void {
           s.start("Generating commit message with AI...");
 
           try {
-            const { result: aiResult, providerName, model: activeModel } =
+            const { result: aiResult, providerName, model: activeModel, failures } =
               await generateCommitWithFallback(
                 {
                   branch: status.branch,
@@ -396,16 +406,24 @@ export function registerCommitCommand(program: Command): void {
                   customGuidance,
                 },
                 options.provider as ConfigAIProvider | undefined,
-                (primary, fallback) => {
-                  s.message(`Primary provider ${pc.yellow(primary)} failed. Falling back to ${pc.cyan(fallback)}...`);
+                (failure: AIAttemptFailure, next?: AIAttempt) => {
+                  s.message(formatAIFallback(failure, next));
                 },
               );
             s.stop(`Commit message generated by ${pc.bold(providerName)} [${pc.cyan(activeModel)}].`);
 
+            for (const failure of failures) {
+              p.log.info(
+                pc.dim(`Skipped ${failure.providerName} [${failure.model}]: ${failure.reason}`),
+              );
+            }
+
             commitSubject = aiResult.subject;
             commitBody = aiResult.body;
-          } catch {
-            s.stop(pc.yellow("AI generation unavailable. Launching Conventional Commit wizard..."));
+          } catch (err) {
+            s.stop(pc.yellow("AI commit generation failed."));
+            reportAIFailure(err, "Every configured AI provider and model failed:");
+            p.log.info("Falling back to the Conventional Commit wizard.");
             try {
               const wizardResult = await promptConventionalCommitWizard();
               commitSubject = wizardResult.subject;
@@ -512,8 +530,7 @@ export function registerCommitCommand(program: Command): void {
         commitSpinner.stop(pc.red("Git commit failed."));
         const execErr = err as { stderr?: string; stdout?: string };
         const output = execErr.stderr || execErr.stdout || String(err);
-        p.log.error(output);
-        process.exitCode = 1;
+        fail(output);
         return;
       }
 
@@ -526,6 +543,7 @@ export function registerCommitCommand(program: Command): void {
           const confirmProtected = await confirmPrompt({
             message: `You are on protected branch ${pc.bold(pc.yellow(status.branch))}. Push directly without a PR?`,
             initialValue: false,
+            assumeYes: options.yes,
           });
           if (!confirmProtected) {
             p.log.info("Push cancelled. Consider running `ggh c --pr` to open a Pull Request.");
@@ -537,7 +555,7 @@ export function registerCommitCommand(program: Command): void {
       // Handle Push
       if (options.push || options.pr) {
         if (status.isDetached || status.branch === "HEAD") {
-          p.log.error("Cannot push or open a Pull Request from a detached HEAD state. Please create or switch to a branch first.");
+          fail("Cannot push or open a Pull Request from a detached HEAD state. Please create or switch to a branch first.");
           options.push = false;
           options.pr = false;
           process.exitCode = 1;
@@ -563,6 +581,7 @@ export function registerCommitCommand(program: Command): void {
           const retryRebase = await confirmPrompt({
             message: "Remote branch may have new changes. Run `git pull --rebase` and retry?",
             initialValue: true,
+            assumeYes: options.yes,
           });
 
           if (retryRebase) {
@@ -575,13 +594,11 @@ export function registerCommitCommand(program: Command): void {
               p.log.success(pc.green("Pushed to remote successfully!"));
             } catch (rebaseErr) {
               rebaseSpinner.stop(pc.red("Rebase or push failed. Please resolve conflicts manually."));
-              p.log.error(String(rebaseErr));
-              process.exitCode = 1;
+              fail(String(rebaseErr));
               return;
             }
           } else {
-            p.log.error(String(err));
-            process.exitCode = 1;
+            fail(String(err));
             return;
           }
         }
@@ -610,42 +627,46 @@ export function registerCommitCommand(program: Command): void {
         const prSpinner = p.spinner();
         prSpinner.start("Generating AI Pull Request content...");
 
-        const [diffStat, prTemplate, defaultBranch] = await Promise.all([
-          getStagedDiffStat(),
-          findPrTemplate(),
-          detectDefaultBranch(),
+        const [prTemplate, defaultBranch] = await Promise.all([findPrTemplate(), detectDefaultBranch()]);
+
+        // The staged diff is empty now that the commit exists; a PR is the whole
+        // branch, so describe it from base...HEAD instead.
+        const [branchDiff, branchDiffStat, branchCommits] = await Promise.all([
+          getBranchDiff(defaultBranch),
+          getBranchDiffStat(defaultBranch),
+          getCommitsSinceBase(defaultBranch),
         ]);
 
         if (prTemplate) {
           p.log.info(pc.dim("Detected repository PR template in .github/"));
         }
 
-        const { provider, model } = await resolveAIProvider(
-          options.provider as ConfigAIProvider | undefined,
-        );
-
         let prTitle = commitSubject;
         let prBody = commitBody;
 
         try {
-          const prAi = await provider.generatePr(
+          const { result: prAi } = await generatePrWithFallback(
             {
               branch: status.branch,
               baseBranch: defaultBranch,
               // Never send raw diffs (lockfiles, .env, secrets) to the AI provider
-              diff: stripLockfilesFromDiff(rawDiff),
-              diffStat,
-              commitSummary: commitSubject,
+              diff: sanitizeDiffForAI(branchDiff || rawDiff).diff,
+              diffStat: branchDiffStat,
+              commitSummary: branchCommits.length > 0 ? branchCommits.join("\n") : commitSubject,
               template: prTemplate || undefined,
               issue: options.issue,
             },
-            model,
+            options.provider as ConfigAIProvider | undefined,
+            (failure: AIAttemptFailure, next?: AIAttempt) => {
+              prSpinner.message(formatAIFallback(failure, next));
+            },
           );
           prTitle = prAi.title;
           prBody = prAi.body;
           prSpinner.stop("PR content generated.");
-        } catch {
+        } catch (err) {
           prSpinner.stop(pc.yellow("Using commit message for PR content."));
+          reportAIFailure(err, "AI Pull Request generation failed:");
         }
 
         p.note(`${pc.bold(prTitle)}\n\n${pc.dim(prBody)}`, "Proposed Pull Request");
@@ -653,6 +674,7 @@ export function registerCommitCommand(program: Command): void {
         const confirmPr = await confirmPrompt({
           message: "Create this Pull Request now on GitHub?",
           initialValue: true,
+          assumeYes: options.yes,
         });
 
         if (confirmPr) {
@@ -667,8 +689,7 @@ export function registerCommitCommand(program: Command): void {
             p.log.success(`PR URL: ${pc.bold(pc.cyan(prUrl))}`);
           } catch (err) {
             createSpinner.stop(pc.red("Failed to create PR."));
-            p.log.error(String(err));
-            process.exitCode = 1;
+            fail(String(err));
             return;
           }
         }
