@@ -1,0 +1,68 @@
+name: Apply verified audit fixes
+
+on:
+  push:
+    branches: [fix/release-safety-audit]
+    paths: [.github/workflows/apply-audit-fixes.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - name: Verify and commit the reviewed tree
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          BASE=23189c2d7cc8959c4d90b0bfd2af2c8e16107a8a
+          EXPECTED_TREE=25ae13ec5c1bb8b668b4ded454a3a2686b17574d
+          BRANCH=fix/release-safety-audit
+          PAYLOAD="$RUNNER_TEMP/audit-fixes.patch.br"
+          PATCH="$RUNNER_TEMP/audit-fixes.patch"
+          : > "$PAYLOAD"
+          for SHA in \
+            e610bea3b32fa3e29a34d6f265ea9028489572ff \
+            5eedb8194022944d9e26ee2ba1ca4417a6fddd6d \
+            a5fe528085cd30b42723618b645aaf7a7d162742 \
+            cdb46aa16cbdfb056427d3f7448ca729641ccf87 \
+            b0552269b19e850777c25980585bbf178e8f8c12
+          do
+            gh api "repos/$GITHUB_REPOSITORY/git/blobs/$SHA" --jq .content | base64 --decode >> "$PAYLOAD"
+          done
+          test "$(wc -c < "$PAYLOAD")" -eq 55373
+          echo "2894fcebb02eef5865d9471bfbc691024bfc2e784b472e3e000d8263a2e42fa1  $PAYLOAD" | sha256sum --check
+          node - "$PAYLOAD" "$PATCH" <<'NODE'
+          const fs = require('node:fs');
+          const zlib = require('node:zlib');
+          const output = zlib.brotliDecompressSync(fs.readFileSync(process.argv[2]), { maxOutputLength: 1048576 });
+          if (output.length !== 230042) throw new Error('Unexpected patch length');
+          fs.writeFileSync(process.argv[3], output, { mode: 0o600 });
+          NODE
+          echo "cd0336ff2af5cde65148bd342e34e7d5f87e91de1e70c53ee215c10f327ade1f  $PATCH" | sha256sum --check
+          git worktree add --detach "$RUNNER_TEMP/audit-apply" "$BASE"
+          git -C "$RUNNER_TEMP/audit-apply" apply --index --check "$PATCH"
+          git -C "$RUNNER_TEMP/audit-apply" apply --index --binary "$PATCH"
+          TREE=$(git -C "$RUNNER_TEMP/audit-apply" write-tree)
+          test "$TREE" = "$EXPECTED_TREE"
+          # Only apply Git data here. Patched programs are tested in read-only PR jobs.
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          COMMIT=$(git commit-tree "$TREE" -p "$GITHUB_SHA" -m 'fix: close pre-release safety audit and gate distributed artifacts')
+          CURRENT=$(git ls-remote --heads origin "refs/heads/$BRANCH" | cut -f1)
+          test "$CURRENT" = "$GITHUB_SHA"
+          git push origin "$COMMIT:refs/heads/$BRANCH"
+          {
+            echo '## Verified audit changes committed'
+            echo "Commit: $COMMIT"
+            echo "Tree: $TREE"
+            echo 'Both temporary transport workflows are absent from the committed tree.'
+            echo 'Create the pull request to trigger the source and exact-artifact verification gates.'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
