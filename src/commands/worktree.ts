@@ -15,7 +15,7 @@ import {
 } from "../services/ai/index.ts";
 import { dryRun, isDryRun } from "../utils/flags.ts";
 import { sanitizeForAI } from "../utils/diff.ts";
-import { validateBranchName } from "../utils/branch-name.ts";
+import { branchToWorktreeDirectoryName, validateBranchName } from "../utils/branch-name.ts";
 import {
   confirmOrAbort, jsonOut,
   fail,
@@ -135,10 +135,7 @@ export function registerWorktreeCommand(program: Command): void {
         return;
       }
 
-      const sanitizedDir = branchName
-        .replace(/[^a-zA-Z0-9_-]/g, "-")
-        .replace(/-+/g, "-")
-        .replace(/^-+|-+$/g, "");
+      const sanitizedDir = branchToWorktreeDirectoryName(branchName);
       const repoRoot = await getRepoRoot();
       const targetPath = join(repoRoot, ".worktrees", sanitizedDir);
       const baseBranch = options?.base || (await getCurrentBranch());

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { normalizeCloneUrl, stdinTextRequest } from "../src/services/github.ts";
+import { normalizeCloneUrl, stdinTextRequest, trimRepositorySuffix } from "../src/services/github.ts";
 
 describe("github service", () => {
   it("keeps long-form text out of the subprocess argument list", () => {
@@ -46,6 +46,11 @@ describe("github service", () => {
     expect(normalizeCloneUrl("facebook/react/", "ssh")).toBe("git@github.com:facebook/react.git");
     expect(normalizeCloneUrl("")).toBe("");
     expect(normalizeCloneUrl("   ")).toBe("");
+  });
+
+  it("trims repository suffixes in one pass for long untrusted input", () => {
+    const prefix = `owner/${"repo".repeat(10_000)}`;
+    expect(trimRepositorySuffix(`${prefix}.git${"/".repeat(10_000)}`)).toBe(prefix);
   });
 
   it("searchRepositories returns empty array on empty or whitespace query without calling gh", async () => {

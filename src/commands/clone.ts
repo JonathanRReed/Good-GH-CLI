@@ -9,6 +9,7 @@ import {
   listUserRepositories,
   normalizeCloneUrl,
   searchRepositories,
+  trimRepositorySuffix,
   type RepositoryItem,
 } from "../services/github.ts";
 import { getConfig, type CloneMode } from "../services/config.ts";
@@ -34,7 +35,7 @@ function expandPath(pathStr: string): string {
 }
 
 function extractRepoName(urlOrShorthand: string): string {
-  const clean = urlOrShorthand.trim().replace(/\/+$/, "").replace(/\.git$/, "");
+  const clean = trimRepositorySuffix(urlOrShorthand.trim());
   const parts = clean.split(/[/:]/);
   return parts[parts.length - 1] || "project";
 }

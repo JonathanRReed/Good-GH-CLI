@@ -44,6 +44,14 @@ describe("redactSecrets — token families", () => {
     expect(redactSecrets(pgp).text).toBe("[REDACTED_SECRET]");
   });
 
+  it("redacts an unterminated private key without rescanning repeated headers", () => {
+    const input = `${"-----BEGIN NOT A KEY-----\n".repeat(20_000)}-----BEGIN PRIVATE KEY-----\nsecret`;
+    const { text, redactedCount } = redactSecrets(input);
+    expect(redactedCount).toBe(1);
+    expect(text).not.toContain("secret");
+    expect(text).toEndWith("[REDACTED_SECRET]");
+  });
+
   it("keeps the key of an assignment but not the value", () => {
     const { text } = redactSecrets('DATABASE_PASSWORD="correct-horse-battery"');
     expect(text).toBe('DATABASE_PASSWORD="[REDACTED_SECRET]"');

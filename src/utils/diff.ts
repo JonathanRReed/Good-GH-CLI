@@ -68,13 +68,75 @@ const SECRET_PATTERNS = [
   /\bey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, // JWTs
   /\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis|rediss|amqps?|mssql|ftp|sftp|smtps?):\/\/[^\s:@/]+:[^\s@/]+@[^\s]+/gi, // URLs with credentials
   /https?:\/\/[^\s:@/]+:[^\s@/]+@[^\s]+/gi, // credentialed HTTP URLs
-  /-----BEGIN [A-Z ]+ PRIVATE KEY(?: BLOCK)?-----[\s\S]*?-----END [A-Z ]+ PRIVATE KEY(?: BLOCK)?-----/g,
-  /-----BEGIN PGP PRIVATE KEY BLOCK-----[\s\S]*?-----END PGP PRIVATE KEY BLOCK-----/g,
   // Quoted assignments: API_KEY: "value"
   /(password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|private[_-]?key)\s*[:=]\s*["'][^"'\s]{8,}["']/gi,
   // Bare assignments, which quoted-only matching missed: API_KEY=value, export TOKEN=value
   /(password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret)\s*[:=]\s*[^\s"'`,;)}\]]{8,}/gi,
 ];
+
+const PRIVATE_KEY_BEGIN = "-----BEGIN ";
+
+function privateKeyEndMarkerAt(text: string, begin: number): string | null {
+  const labelStart = begin + PRIVATE_KEY_BEGIN.length;
+  const limit = Math.min(text.length, labelStart + 80);
+  let labelEnd = -1;
+
+  for (let i = labelStart; i < limit; i++) {
+    const code = text.charCodeAt(i);
+    if (code === 10 || code === 13) break;
+    if (text.startsWith("-----", i)) {
+      labelEnd = i;
+      break;
+    }
+  }
+  if (labelEnd < 0) return null;
+
+  const label = text.slice(labelStart, labelEnd);
+  const namesPrivateKey =
+    label === "PRIVATE KEY" || label.endsWith(" PRIVATE KEY") || label.endsWith(" PRIVATE KEY BLOCK");
+  if (!namesPrivateKey) return null;
+
+  for (const char of label) {
+    const code = char.charCodeAt(0);
+    const allowed = code === 32 || (code >= 48 && code <= 57) || (code >= 65 && code <= 90);
+    if (!allowed) return null;
+  }
+  return `-----END ${label}-----`;
+}
+
+function redactPrivateKeyBlocks(text: string): { text: string; redactedCount: number } {
+  let output = "";
+  let emitFrom = 0;
+  let searchFrom = 0;
+  let redactedCount = 0;
+
+  while (searchFrom < text.length) {
+    const begin = text.indexOf(PRIVATE_KEY_BEGIN, searchFrom);
+    if (begin < 0) break;
+
+    const endMarker = privateKeyEndMarkerAt(text, begin);
+    if (!endMarker) {
+      searchFrom = begin + PRIVATE_KEY_BEGIN.length;
+      continue;
+    }
+
+    const end = text.indexOf(endMarker, begin + PRIVATE_KEY_BEGIN.length);
+    output += text.slice(emitFrom, begin) + "[REDACTED_SECRET]";
+    redactedCount++;
+
+    if (end < 0) {
+      emitFrom = text.length;
+      break;
+    }
+    emitFrom = end + endMarker.length;
+    searchFrom = emitFrom;
+  }
+
+  return {
+    text: output + text.slice(emitFrom),
+    redactedCount,
+  };
+}
 
 export function isIgnoredDiffFile(filePath: string): boolean {
   return IGNORED_FILE_PATTERNS.some((pattern) => pattern.test(filePath));
@@ -84,8 +146,9 @@ export function isIgnoredDiffFile(filePath: string): boolean {
  * Scans text and redacts sensitive tokens and private keys with [REDACTED_SECRET].
  */
 export function redactSecrets(text: string): { text: string; redactedCount: number } {
-  let redacted = text;
-  let count = 0;
+  const privateKeys = redactPrivateKeyBlocks(text);
+  let redacted = privateKeys.text;
+  let count = privateKeys.redactedCount;
 
   for (const pattern of SECRET_PATTERNS) {
     redacted = redacted.replace(pattern, (match) => {

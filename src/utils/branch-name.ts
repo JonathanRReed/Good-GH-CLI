@@ -50,3 +50,24 @@ export function sanitizeBranchName(raw: string, maxLength = 60): string {
   }
   return isValidBranchName(name) ? name : "";
 }
+
+/** Turns a validated branch name into one safe, readable directory segment. */
+export function branchToWorktreeDirectoryName(branch: string): string {
+  let output = "";
+  let pendingHyphen = false;
+
+  for (const char of branch) {
+    const code = char.charCodeAt(0);
+    const isLetter = (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+    const isDigit = code >= 48 && code <= 57;
+    if (isLetter || isDigit || char === "_") {
+      if (pendingHyphen && output) output += "-";
+      output += char;
+      pendingHyphen = false;
+    } else {
+      pendingHyphen = true;
+    }
+  }
+
+  return output;
+}

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { sanitizeBranchName, validateBranchName } from "../src/utils/branch-name.ts";
+import {
+  branchToWorktreeDirectoryName,
+  sanitizeBranchName,
+  validateBranchName,
+} from "../src/utils/branch-name.ts";
 
 describe("validateBranchName", () => {
   it("accepts ordinary names", () => {
@@ -38,6 +42,13 @@ describe("validateBranchName", () => {
       expect(message, JSON.stringify(name)).toBeDefined();
       expect(message, JSON.stringify(name)).toMatch(pattern);
     }
+  });
+});
+
+describe("branchToWorktreeDirectoryName", () => {
+  it("creates one bounded directory segment without repeated regex passes", () => {
+    expect(branchToWorktreeDirectoryName("feat///new---thing")).toBe("feat-new-thing");
+    expect(branchToWorktreeDirectoryName(`${"-".repeat(20_000)}safe${"-".repeat(20_000)}`)).toBe("safe");
   });
 });
 

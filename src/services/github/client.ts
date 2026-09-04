@@ -382,7 +382,7 @@ export function normalizeCloneUrl(
   }
 
   if (trimmed.includes("/")) {
-    const clean = trimmed.replace(/\/+$/, "").replace(/\.git$/, "");
+    const clean = trimRepositorySuffix(trimmed);
     if (preferredProtocol === "ssh") {
       return `git@${host}:${clean}.git`;
     }
@@ -390,6 +390,14 @@ export function normalizeCloneUrl(
   }
 
   return trimmed;
+}
+
+
+export function trimRepositorySuffix(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) end--;
+  if (end >= 4 && value.slice(end - 4, end) === ".git") end -= 4;
+  return value.slice(0, end);
 }
 
 /**

@@ -3,6 +3,15 @@
 All notable changes to this project are documented here.
 This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.4.0-beta.2 - 2026-09-04
+
+### Security
+
+- Replaced four regular-expression paths that CodeQL identified as potential
+  denial-of-service risks. Private-key redaction, clone suffix trimming, clone
+  directory extraction, and worktree directory naming now run in bounded or
+  single-pass time on untrusted input.
+
 ## 0.4.0-beta.1 - 2026-09-04
 
 ### Added
