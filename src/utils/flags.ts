@@ -17,7 +17,7 @@ export const DRY_RUN_CAPABLE = new Set([
   "rename", "stash", "pr", "issue", "stack", "repo", "changelog", "workflow",
   "label", "gist", "secret", "variable", "notifications",
   "run", "switch", "clone", "resolve", "checks", "search", "status", "triage",
-  "draft", "hook", "team", "plugin", "alias", "ignore", "api",
+  "draft", "hook", "team", "plugin", "alias", "ignore", "api", "config",
 ]);
 
 /** Commands that act on GitHub and can therefore target another repository. */
@@ -96,6 +96,7 @@ export function applyGlobalFlags(program: Command): void {
 
     setFlags({
       json: pick<boolean>("json") === true,
+      aiDisabled: pick<boolean>("ai") === false || (actionCommand.name() === "commit" && pick<string>("message") !== undefined),
       quiet: pick<boolean>("quiet") === true,
       // commander maps `--no-input` to `input: false`
       noInput: pick<boolean>("input") === false,

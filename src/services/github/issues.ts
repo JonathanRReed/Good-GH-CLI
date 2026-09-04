@@ -3,7 +3,8 @@
  */
 
 import { clampLimit, classifyGitHubError, gh, stdinTextRequest } from "./client.ts";
-import { cached, invalidateCache } from "../cache.ts";
+import { invalidateCache } from "../cache.ts";
+import { cachedGitHub } from "./cache.ts";
 
 export interface IssueItem {
   number: number;
@@ -34,9 +35,9 @@ export async function listIssues(
   const limit = clampLimit(options.limit ?? 30);
   const state = options.state ?? "open";
   const author = options.mine ? "@me" : options.author;
-  const key = `issue-list:${limit}:${state}:${options.assignee ?? ""}:${author ?? ""}:${options.label ?? ""}:${options.search ?? ""}`;
-  return cached(key, () => fetchIssues({ ...options, limit, author, state }, cwd), {
-    ttlMs: 120_000,
+  const key = `issue-list:${JSON.stringify([limit, state, options.assignee, author, options.label, options.search])}`;
+  return cachedGitHub(key, () => fetchIssues({ ...options, limit, author, state }, cwd), {
+    ttlMs: 120_000, cwd,
   });
 }
 

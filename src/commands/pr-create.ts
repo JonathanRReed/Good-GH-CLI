@@ -1,7 +1,8 @@
 import type { Command } from "commander";
 import { getFlags } from "../services/runtime.ts";
 import {
-  detectDefaultBranch,
+  detectPullRequestBase,
+  resolveBranchRef,
   findPrTemplate,
   findPrTemplateByName,
   getBranchDiff,
@@ -76,7 +77,7 @@ export function registerPrCreateCommand(pr: Command): void {
         return;
       }
 
-      const base = options.base || (await detectDefaultBranch());
+      const base = options.base || (await detectPullRequestBase());
       if (base === branch) {
         fail(`Base and head are both ${pc.bold(branch)}. Pass --base to pick a different target.`);
         return;
@@ -97,10 +98,11 @@ export function registerPrCreateCommand(pr: Command): void {
         }
       }
 
+      const comparisonBase = await resolveBranchRef(base);
       const [commits, diff, diffStat, autoTemplate, tracking] = await Promise.all([
-        getCommitsSinceBase(base),
-        getBranchDiff(base),
-        getBranchDiffStat(base),
+        getCommitsSinceBase(comparisonBase),
+        getBranchDiff(comparisonBase),
+        getBranchDiffStat(comparisonBase),
         template ? Promise.resolve(null) : findPrTemplate(),
         getRemoteTrackingBranch(process.cwd(), branch),
       ]);

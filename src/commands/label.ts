@@ -5,7 +5,7 @@ import {
   gh,
   requireAuth,
 } from "../services/github.ts";
-import { requireGitRepo } from "../services/git.ts";
+import { requireGitHubRepo } from "../services/github.ts";
 import { dryRun } from "../utils/flags.ts";
 import { failFromGitHub, header, p, pc, jsonOut, unknownAction, confirmOrAbort } from "../utils/ui.ts";
 
@@ -28,7 +28,7 @@ export function registerLabelCommand(program: Command): void {
     ) => {
       header("GitHub Labels");
 
-      if (!(await requireGitRepo())) return;
+      if (!(await requireGitHubRepo())) return;
       if (!(await requireAuth())) return;
 
       const subcommand = action?.toLowerCase();
@@ -62,7 +62,7 @@ export function registerLabelCommand(program: Command): void {
     .option("--limit <n>", "Maximum labels to list", "30")
     .action(async (options?: { limit?: string }) => {
       header("GitHub Labels");
-      if (!(await requireGitRepo())) return;
+      if (!(await requireGitHubRepo())) return;
       if (!(await requireAuth())) return;
       await listLabels(options?.limit);
     });
@@ -78,7 +78,7 @@ export function registerLabelCommand(program: Command): void {
       options?: { color?: string; description?: string; yes?: boolean },
     ) => {
       header("GitHub Labels");
-      if (!(await requireGitRepo())) return;
+      if (!(await requireGitHubRepo())) return;
       if (!(await requireAuth())) return;
       await createLabel(name, options);
     });
@@ -95,7 +95,7 @@ export function registerLabelCommand(program: Command): void {
       options?: { color?: string; description?: string; newName?: string; yes?: boolean },
     ) => {
       header("GitHub Labels");
-      if (!(await requireGitRepo())) return;
+      if (!(await requireGitHubRepo())) return;
       if (!(await requireAuth())) return;
       await editLabel(name, options);
     });
@@ -106,7 +106,7 @@ export function registerLabelCommand(program: Command): void {
     .option("-y, --yes", "Skip confirmation")
     .action(async (name: string, options?: { yes?: boolean }) => {
       header("GitHub Labels");
-      if (!(await requireGitRepo())) return;
+      if (!(await requireGitHubRepo())) return;
       if (!(await requireAuth())) return;
       await deleteLabel(name, options);
     });

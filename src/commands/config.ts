@@ -12,6 +12,7 @@ import {
   type AIProvider,
   type GoodGhConfig,
 } from "../services/config.ts";
+import { dryRun } from "../utils/flags.ts";
 import { clearCache, getCacheDir } from "../services/cache.ts";
 import { fail, header, p, pc, selectMenu, data, jsonOut } from "../utils/ui.ts";
 
@@ -63,7 +64,9 @@ export function registerConfigCommand(program: Command): void {
     .description("Delete cached GitHub responses")
     .action(() => {
       header("Clear Cache");
+      if (dryRun("clear owned GitHub cache entries")) { jsonOut({ action: "cache-clear", dryRun: true }); return; }
       const removed = clearCache();
+      if (jsonOut({ removed, directory: getCacheDir() })) return;
       p.log.success(pc.green(`Removed ${removed} cached response(s).`));
       p.log.message(pc.dim(getCacheDir()));
       p.outro("Done.");
@@ -74,11 +77,12 @@ export function registerConfigCommand(program: Command): void {
     .description("Get a specific configuration value")
     .action((key: string) => {
       const config = getConfig();
-      const val = (config as Record<string, unknown>)[key];
+      const val = isConfigKey(key) ? config[key] : undefined;
       if (val === undefined) {
         fail(`Configuration key '${key}' not found.`);
       } else {
         // Data on stdout: `MODEL=$(ggh config get codex_model)` must work.
+        if (jsonOut(val)) return;
         data(String(val));
       }
     });
@@ -100,11 +104,13 @@ export function registerConfigCommand(program: Command): void {
         fail(`${key} ${problem}.`);
         return;
       }
+      if (dryRun(`set ${key}`)) { jsonOut({ key, value: coerced, dryRun: true }); return; }
       saveConfig({ [key]: coerced });
+      if (jsonOut({ key, value: coerced })) return;
       p.log.success(`${pc.cyan(key)} set to ${pc.green(String(coerced))}`);
       if (key === "ai_provider" && coerced === "ollama" && getConfig().ai_fallback !== false) {
         p.log.info(
-          pc.dim("Tip: `ggh config set ai_fallback false` keeps every prompt on this machine if Ollama is unavailable."),
+          pc.dim("Tip: `ggh config set ai_fallback false` prevents fallback to a different provider if Ollama is unavailable."),
         );
       }
     });
@@ -117,16 +123,19 @@ export function registerConfigCommand(program: Command): void {
         fail(`Invalid configuration key. Valid keys are: ${settableKeys.join(", ")}`);
         return;
       }
+      if (dryRun(`unset ${key}`)) { jsonOut({ key, dryRun: true }); return; }
       saveConfig({ [key]: undefined });
+      if (jsonOut({ key, value: getConfig()[key] })) return;
       p.log.success(`${pc.cyan(key)} reset.`);
     });
 
   configCmd
     .command("doctor")
     .description("Check your configuration, the project .ggh.json, and every AI provider")
-    .option("--fix", "Automatically fix fixable problems (file permissions, invalid keys, default provider)")
+    .option("--fix", "Fix file permissions and invalid project keys without changing providers")
     .action(async (options?: { fix?: boolean }) => {
       header("Configuration Doctor");
+      if (options?.fix && dryRun("repair config permissions and invalid project keys")) { jsonOut({ action: "doctor", dryRun: true }); return; }
       const { getAvailableProviders, getProviderById, PROVIDER_ORDER, getConfiguredModel } = await import(
         "../services/ai/index.ts"
       );
@@ -179,14 +188,7 @@ export function registerConfigCommand(program: Command): void {
           }.`,
         );
 
-        // --fix: switch to the first available provider
-        if (options?.fix && available.size > 0) {
-          const firstAvailable = [...PROVIDER_ORDER].find((id) => available.has(id));
-          if (firstAvailable) {
-            saveConfig({ ai_provider: firstAvailable });
-            fixed.push(`Switched default provider to '${firstAvailable}' (was '${config.ai_provider}')`);
-          }
-        }
+
       }
       if (config.ai_fallback === false) {
         p.log.info(`Fallback: ${pc.yellow("off")} — only ${pc.bold(config.ai_provider ?? "codex")} is ever contacted.`);
@@ -229,6 +231,8 @@ export function registerConfigCommand(program: Command): void {
   configCmd.action(async () => {
     header("Interactive Configuration");
     const current = getConfig();
+    if (jsonOut(current)) return;
+    if (dryRun("configure user preferences interactively")) return;
 
     const provider = await selectMenu({
       message: "Select default AI Provider:",
@@ -236,7 +240,7 @@ export function registerConfigCommand(program: Command): void {
         { value: "codex" as const, label: "Codex (ChatGPT)", hint: "hosted; sends sanitized repository content" },
         { value: "grok" as const, label: "xAI Grok", hint: "hosted; sends sanitized repository content" },
         { value: "claude" as const, label: "Claude Code", hint: "hosted; sends sanitized repository content" },
-        { value: "ollama" as const, label: "Ollama (local)", hint: "runs offline, never rate limited" },
+        { value: "ollama" as const, label: "Ollama (local)", hint: "uses your Ollama server; check its model and cloud settings" },
       ],
       initialValue: current.ai_provider || "codex",
     });

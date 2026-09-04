@@ -6,6 +6,7 @@ import { GrokProvider } from "../src/services/ai/grok.ts";
 import { sanitizeDiffForAI } from "../src/utils/diff.ts";
 
 class StubProvider extends CliAIProvider {
+  lastPrompt = "";
   readonly id: AIProviderId = "codex";
   readonly displayName = "Stub";
   readonly defaultModel = "stub-1";
@@ -19,7 +20,8 @@ class StubProvider extends CliAIProvider {
     return true;
   }
 
-  protected async invoke(): Promise<string> {
+  protected async invoke(prompt: string): Promise<string> {
+    this.lastPrompt = prompt;
     return this.output;
   }
 }
@@ -169,5 +171,20 @@ describe("secret redaction before anything leaves the machine", () => {
     const { diff: safe, redactedCount } = sanitizeDiffForAI(diff);
     expect(redactedCount).toBe(0);
     expect(safe).toContain("price * quantity");
+  });
+});
+
+
+describe("last shared prompt boundary", () => {
+  it("redacts credentials in metadata as well as the diff", async () => {
+    const provider = new StubProvider('{"subject":"fix: safe","body":""}');
+    const token = "ghp_" + "a".repeat(36);
+    await provider.generateCommit({ ...COMMIT_INPUT, customGuidance: `Recent commit: ${token}` });
+    expect(provider.lastPrompt).not.toContain(token);
+  });
+  it("drops sensitive files even when a caller supplied the raw diff", async () => {
+    const provider = new StubProvider('{"subject":"fix: safe","body":""}');
+    await provider.generateCommit({ ...COMMIT_INPUT, stagedDiff: "diff --git a/.env b/.env\n+PRIVATE_FILE_CANARY" });
+    expect(provider.lastPrompt).not.toContain("PRIVATE_FILE_CANARY");
   });
 });

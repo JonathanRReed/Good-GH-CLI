@@ -61,7 +61,8 @@ flag. JSON mode does not auto-confirm.
 
 Sanitization drops known sensitive files and redacts recognizable credentials.
 It can miss proprietary code and unknown secret formats. Users who need a hard
-no-egress rule must select Ollama and set `ai_fallback=false`, or avoid AI with
+no-egress rule must use the local-only configuration and trusted-daemon checks
+in SECURITY.md, or avoid AI with
 manual flags such as `-m` and `--no-ai`.
 
 ### Plugin execution
@@ -80,8 +81,11 @@ warns before installation, and documents the privilege boundary in help output.
 
 ## Verification
 
-The release gate runs strict type checking, lint, the full test suite, generated
-man-page freshness, bundle size, startup and status budgets, a hermetic demo,
-dependency auditing, a deep source security scan, and packaged artifact checks.
-The macOS packager verifies Developer ID signatures, both CPU architectures,
-the mounted DMG, and an isolated install.
+CI runs type checking, lint, source regressions, generated man-page freshness,
+bundle/startup budgets and installation of the packed npm artifact. The release
+pipeline also runs on PRs without publishing: each native artifact is verified
+on its target OS/architecture, and POSIX binaries run the black-box regression
+suite. CodeQL runs separately. The macOS DMG packager checks Developer ID
+signatures, both architectures, mounting and isolated installation when invoked
+with the maintainer's credentials; a successful source CI run does not attest
+to notarization or live provider behavior. See RELEASE-READINESS.md.

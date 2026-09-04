@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Cuts a release: bump, changelog, commit, tag, push. The tag is what actually
+ * Cuts a release: verify, bump, changelog, commit and local tag. The tag is what actually
  * triggers publishing, so everything before the push is reversible.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -68,7 +68,11 @@ if (existsSync(changelogPath)) {
   }
 }
 
-run("git", ["add", "package.json", "CHANGELOG.md"]);
+// Generated version-bearing artifacts must be updated before the tag is cut.
+run("bun", ["run", "man"]);
+run("bun", ["run", "man", "--check"]);
+run("bun", ["run", "build"]);
+run("git", ["add", "package.json", "CHANGELOG.md", "man/ggh.1"]);
 run("git", ["commit", "-m", `chore(release): v${version}`]);
 run("git", ["tag", "-a", `v${version}`, "-m", `v${version}`]);
 

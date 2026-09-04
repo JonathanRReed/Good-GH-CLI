@@ -6,7 +6,7 @@ import { run } from "../../utils/exec.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { execGitWithRetry } from "./exec.ts";
-import { getCurrentBranch, listBranches } from "./branch.ts";
+import { getCurrentBranch, listBranches, resolveBranchRef } from "./branch.ts";
 
 export interface StackNode {
   branch: string;
@@ -230,9 +230,10 @@ export async function restackBranch(
 ): Promise<{ ok: boolean; message: string }> {
   try {
     await execGitWithRetry(["checkout", branch], { cwd });
-    const base = await getRestackBase(branch, parent, cwd);
-    await execGitWithRetry(["rebase", "--onto", parent, base, branch], { cwd });
-    await recordParentTip(branch, parent, cwd);
+    const parentRef = await resolveBranchRef(parent, cwd);
+    const base = await getRestackBase(branch, parentRef, cwd);
+    await execGitWithRetry(["rebase", "--onto", parentRef, base, branch], { cwd });
+    await recordParentTip(branch, parentRef, cwd);
     return { ok: true, message: `${branch} rebased onto ${parent}` };
   } catch (err) {
     const text = String(err);

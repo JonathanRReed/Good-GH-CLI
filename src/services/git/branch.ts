@@ -131,3 +131,16 @@ export async function getRemoteTrackingBranch(cwd = process.cwd(), branch?: stri
     return null;
   }
 }
+
+
+/** Resolve a branch for local Git operations without changing its GitHub name. */
+export async function resolveBranchRef(branch: string, cwd = process.cwd()): Promise<string> {
+  if (!branch || branch.startsWith("-") || branch.includes("\0")) throw new Error("Invalid branch reference.");
+  const refs = [`refs/heads/${branch}`,
+    ...[...new Set(["origin", ...await getRemotes(cwd)])].map((remote) => `refs/remotes/${remote}/${branch}`), branch];
+  for (const ref of refs) {
+    const result = await run("git", ["rev-parse", "--verify", "--quiet", "--end-of-options", `${ref}^{commit}`], { cwd, reject: false });
+    if (result.exitCode === 0) return ref;
+  }
+  throw new Error(`Branch/reference "${branch}" is not available locally. Fetch it before continuing.`);
+}

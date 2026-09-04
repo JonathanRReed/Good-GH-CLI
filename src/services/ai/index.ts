@@ -1,3 +1,4 @@
+import { getFlags } from "../runtime.ts";
 import { getConfig, saveConfig, type AIProvider as ConfigAIProvider } from "../config.ts";
 import { CodexProvider } from "./codex.ts";
 import { GrokProvider } from "./grok.ts";
@@ -292,6 +293,9 @@ export async function runAIWithFallback<T>(
   task: (provider: AIProvider, model: string) => Promise<T>,
   options: FallbackOptions = {},
 ): Promise<AIRunResult<T>> {
+  if (getFlags().aiDisabled || getFlags().dryRun) {
+    throw new Error("AI invocation is disabled for this operation (--no-ai, -m, or --dry-run).");
+  }
   const timeoutMs = getConfig().ai_timeout_ms || DEFAULT_AI_TIMEOUT_MS;
   const chain = options.chain ?? buildAttemptChain(options.explicitProvider);
   const failures: AIAttemptFailure[] = [];

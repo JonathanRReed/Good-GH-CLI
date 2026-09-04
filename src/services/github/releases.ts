@@ -4,7 +4,8 @@
 
 import { clampLimit, classifyGitHubError, gh, stdinTextRequest } from "./client.ts";
 import { run } from "../../utils/exec.ts";
-import { cached, invalidateCache } from "../cache.ts";
+import { invalidateCache } from "../cache.ts";
+import { cachedGitHub } from "./cache.ts";
 
 export interface ReleaseItem {
   name: string;
@@ -17,7 +18,7 @@ export interface ReleaseItem {
 
 export async function listReleases(limit = 30, cwd = process.cwd()): Promise<ReleaseItem[]> {
   const n = clampLimit(limit);
-  return cached(`release-list:${n}`, () => fetchReleases(n, cwd), { ttlMs: 300_000 });
+  return cachedGitHub(`release-list:${n}`, () => fetchReleases(n, cwd), { ttlMs: 300_000, cwd });
 }
 
 async function fetchReleases(limit: number, cwd = process.cwd()): Promise<ReleaseItem[]> {

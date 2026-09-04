@@ -1,16 +1,33 @@
 import { Command } from "commander";
 import { getFlags } from "../services/runtime.ts";
-import { existsSync, readFileSync, writeFileSync, readdirSync, unlinkSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, readdirSync, renameSync, rmSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { getRepoRoot, requireGitRepo } from "../services/git.ts";
+import { checkLargeFiles, getGitPath, getStagedDiff, getStatus, requireGitRepo } from "../services/git.ts";
+import { scanCodeHygiene } from "../utils/diff.ts";
 import { emitJson, fail, header, p, pc, selectMenu, jsonOut, unknownAction, confirmOrAbort } from "../utils/ui.ts";
 import { dryRun } from "../utils/flags.ts";
 
-const IS_WINDOWS = process.platform === "win32";
-
-/** Reject hook names that could traverse out of .git/hooks. */
+/** Hooks are executable files, never paths supplied by a caller. */
 function safeHookName(name: string): boolean {
-  return !(/[\\/]/.test(name) || name.includes("..")) && name.length > 0 && !name.includes(" ");
+  return /^[A-Za-z0-9][A-Za-z0-9-]*$/.test(name);
+}
+
+/** Atomic replacement avoids following a symlink or leaving a partial script. */
+function writeHook(hooksDir: string, name: string, script: string): void {
+  mkdirSync(hooksDir, { recursive: true });
+  const target = join(hooksDir, name);
+  if (existsSync(target) && !lstatSync(target).isFile()) {
+    throw new Error(`Refusing to replace non-regular hook: ${name}`);
+  }
+  const temporary = mkdtempSync(join(hooksDir, ".ggh-write-"));
+  try {
+    const file = join(temporary, "hook");
+    writeFileSync(file, script, { mode: 0o755, flag: "wx" });
+    chmodSync(file, 0o755);
+    renameSync(file, target);
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
 }
 
 const KNOWN_HOOKS = [
@@ -25,35 +42,29 @@ const KNOWN_HOOKS = [
 ] as const;
 
 function buildHookScript(command: string): string {
-  if (IS_WINDOWS) {
-    // Windows: use a batch wrapper. Git for Windows executes hooks via sh,
-    // but a .sh shebang is more portable across Git installations.
-    return `#!/bin/sh
-# Installed by \`ggh hook install\` on Windows.
-# Git for Windows bundles a shell that can run this.
-exec ggh ${command}
-`;
+  const normalized = command.trim().replace(/^ggh\s+/, "");
+  if (!normalized || /[\r\n\0]/.test(normalized)) {
+    throw new Error("Hook command must be a nonempty single line.");
   }
   return `#!/bin/sh
-# Installed by \`ggh hook install\` — runs \`${command}\` before each commit.
-# Edit with \`ggh hook edit <name>\` or remove with \`ggh hook remove <name>\`.
-exec ggh ${command}
+# Installed by ggh hook install. Custom commands run with your privileges.
+exec ggh ${normalized} "$@"
 `;
 }
 
-const DEFAULT_COMMAND = "commit --review --no-ai";
+const DEFAULT_COMMAND = "hook check";
 
 export function registerHookCommand(program: Command): void {
   const hook = program
     .command("hook [action] [name]")
     .description("Install, list, edit, and remove git hooks")
-    .option("-c, --command <cmd>", "Custom command for the hook (default: ggh commit --review --no-ai)")
+    .option("-c, --command <cmd>", "Custom command for the hook (default: ggh hook check)")
     .option("-y, --yes", "Skip confirmation prompts")
     .addHelpText("after", `
 Examples:
   ggh hook list
   ggh hook install pre-commit
-  ggh hook edit pre-commit --command "ggh commit --review"
+  ggh hook edit pre-commit --command "ggh hook check"
   ggh hook remove pre-commit -y`)
     .action(async (
       action?: string,
@@ -64,8 +75,7 @@ Examples:
 
       if (!(await requireGitRepo())) return;
 
-      const root = await getRepoRoot();
-      const hooksDir = join(root, ".git", "hooks");
+      const hooksDir = await getGitPath("hooks");
 
       const subcommand = action?.toLowerCase();
 
@@ -92,10 +102,26 @@ Examples:
       unknownAction("hook", action, ["list", "install", "remove", "edit"]);
     });
 
+  hook.command("check")
+    .description("Check staged content only; never commit, stage, prompt, or invoke AI")
+    .action(async () => {
+      if (!(await requireGitRepo())) return;
+      const status = await getStatus();
+      const issues = scanCodeHygiene(await getStagedDiff());
+      const large = await checkLargeFiles(status.staged);
+      const ok = status.conflicts.length === 0 && issues.length === 0 && large.blocked.length === 0;
+      if (!ok) process.exitCode = 1;
+      if (jsonOut({ ok, conflicts: status.conflicts, issues, ...large })) return;
+      for (const issue of issues) p.log.error(issue.message);
+      for (const file of large.blocked) p.log.error(`Staged file is too large: ${file.path} (${file.sizeMB} MiB)`);
+      if (status.conflicts.length) p.log.error("Resolve staged conflicts before committing.");
+      if (!ok) p.log.error("Staged checks failed. Fix the staged content, or deliberately bypass the hook with git commit --no-verify.");
+    });
+
   async function useHooksDir(): Promise<string | null> {
     header("Git Hooks");
     if (!(await requireGitRepo())) return null;
-    return join(await getRepoRoot(), ".git", "hooks");
+    return getGitPath("hooks");
   }
 
   hook
@@ -110,7 +136,7 @@ Examples:
   hook
     .command("install [name]")
     .description("Install a git hook (prompts when name omitted)")
-    .option("-c, --command <cmd>", "Custom command for the hook (default: ggh commit --review --no-ai)")
+    .option("-c, --command <cmd>", "Custom command for the hook (default: ggh hook check)")
     .option("-y, --yes", "Skip confirmation prompts")
     .action(async (name?: string, options?: { command?: string; yes?: boolean }) => {
       const hooksDir = await useHooksDir();
@@ -147,7 +173,7 @@ Examples:
       return;
     }
 
-    const files = readdirSync(hooksDir).filter((f) => !f.endsWith(".sample"));
+    const files = readdirSync(hooksDir).filter((f) => safeHookName(f) && !f.endsWith(".sample") && lstatSync(join(hooksDir, f)).isFile());
     if (files.length === 0) {
       if (jsonOut([])) return;
       p.log.info(pc.dim("No git hooks installed."));
@@ -217,7 +243,7 @@ Examples:
       if (!(await confirmOrAbort(`Hook "${hookName}" already exists. Overwrite?`, { assumeYes: options?.yes, initialValue: false }))) return;
     }
 
-    writeFileSync(hookPath, script, { mode: 0o755 });
+    writeHook(hooksDir, hookName, script);
     if (jsonOut({ action: "install", name: hookName, command: options?.command || DEFAULT_COMMAND })) return;
     p.log.success(pc.green(`Hook "${hookName}" installed.`));
     p.log.info(pc.dim(`Runs: ggh ${options?.command || DEFAULT_COMMAND}`));
@@ -239,6 +265,10 @@ Examples:
       return;
     }
 
+    if (!safeHookName(name)) {
+      fail(`"${name}" is not a valid hook name.`);
+      return;
+    }
     const hookPath = join(hooksDir, name);
     if (!existsSync(hookPath)) {
       fail(`Hook "${name}" is not installed.`);
@@ -260,6 +290,10 @@ Examples:
     name: string,
     options?: { command?: string; yes?: boolean },
   ): Promise<void> {
+    if (!safeHookName(name)) {
+      fail(`"${name}" is not a valid hook name.`);
+      return;
+    }
     const hookPath = join(hooksDir, name);
     if (!existsSync(hookPath)) {
       fail(`Hook "${name}" is not installed. Use \`ggh hook install ${name}\` first.`);
@@ -274,14 +308,18 @@ Examples:
         return;
       }
       const script = buildHookScript(options.command);
-      writeFileSync(hookPath, script, { mode: 0o755 });
+      writeHook(hooksDir, name, script);
       if (jsonOut({ action: "edit", name, command: options.command })) return;
       p.log.success(pc.green(`Hook "${name}" updated to run: ${options.command}`));
       p.outro("Done.");
       return;
     }
 
-    // Show current content
+    // Do not read arbitrary files through a hook symlink.
+    if (!lstatSync(hookPath).isFile()) {
+      fail("Refusing to read a non-regular hook.");
+      return;
+    }
     const content = readFileSync(hookPath, "utf-8");
     if (jsonOut({ name, content })) return;
     p.note(content, `Hook: ${name}`);

@@ -1,6 +1,6 @@
 import { commandExists, run } from "../../utils/exec.ts";
-import { existsSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { CliAIProvider } from "./base.ts";
 import type { AIProviderId } from "./provider.ts";
@@ -25,11 +25,17 @@ export class ClaudeProvider extends CliAIProvider {
   }
 
   protected async invoke(prompt: string, model: string, timeoutMs: number): Promise<string> {
-    const { stdout } = await run(
-      "claude",
-      ["--print", "--model", model, "--permission-mode", "plan"],
-      { input: prompt, timeoutMs },
-    );
-    return stdout;
+    const cwd = mkdtempSync(join(tmpdir(), "good-gh-claude-"));
+    try {
+      const { stdout } = await run(
+        "claude",
+        ["--print", "--model", model, "--safe-mode", "--tools", "", "--disallowedTools", "*",
+          "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--no-session-persistence"],
+        { input: prompt, timeoutMs, cwd },
+      );
+      return stdout;
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   }
 }

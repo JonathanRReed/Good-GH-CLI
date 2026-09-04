@@ -3,7 +3,8 @@
  */
 
 import { GitHubError, clampLimit, classifyGitHubError, getCurrentRepositoryNameWithOwner, gh, ghApi, parseRepoFlag, stdinTextRequest } from "./client.ts";
-import { cached, invalidateCache } from "../cache.ts";
+import { invalidateCache } from "../cache.ts";
+import { cachedGitHub } from "./cache.ts";
 
 export interface PullRequestItem {
   number: number;
@@ -34,9 +35,9 @@ export async function listPullRequests(
   const limit = clampLimit(options.limit ?? 30);
   const state = options.state ?? "open";
   const author = options.mine ? "@me" : options.author;
-  const key = `pr-list:${limit}:${state}:${author ?? ""}:${options.label ?? ""}:${options.search ?? ""}:${options.head ?? ""}:${options.base ?? ""}`;
-  return cached(key, () => fetchPullRequests({ ...options, limit, author, state }, cwd), {
-    ttlMs: 120_000,
+  const key = `pr-list:${JSON.stringify([limit, state, author, options.label, options.search, options.head, options.base])}`;
+  return cachedGitHub(key, () => fetchPullRequests({ ...options, limit, author, state }, cwd), {
+    ttlMs: 120_000, cwd,
   });
 }
 

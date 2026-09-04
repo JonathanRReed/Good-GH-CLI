@@ -1,12 +1,12 @@
 import { run } from "../utils/exec.ts";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { ChangedFile } from "../utils/diff.ts";
 
 
 // Domain modules. git.ts is the facade: everything stays importable from here,
 // but stash/stack/worktree/branch/exec live in ./git/ next to this file.
+export { getGitPath } from "./git/paths.ts";
 export { NON_INTERACTIVE_ENV, execGitWithRetry } from "./git/exec.ts";
 export type { BranchInfo } from "./git/branch.ts";
 export {
@@ -46,6 +46,7 @@ export {
   countUniqueCommits,
   deleteLocalBranch,
   detectDefaultBranch,
+  detectComparisonBase, detectPullRequestBase,
   discardFiles,
   fetchPrune,
   getAheadBehind,
@@ -456,6 +457,8 @@ export async function applyPatch(patch: string, cwd = process.cwd()): Promise<vo
 
 
 export interface CommitOptions {
+  /** Internal alternate-index environment for snapshot-preserving split commits. */
+  env?: NodeJS.ProcessEnv;
   noVerify?: boolean;
   gpgSign?: boolean;
   signoff?: boolean;
@@ -475,28 +478,36 @@ export async function checkLargeFiles(
   files: ChangedFile[],
   cwd = process.cwd(),
 ): Promise<LargeFileCheckResult> {
-  const repoRoot = await getRepoRoot(cwd);
-  const blocked: Array<{ path: string; sizeMB: number }> = [];
-  const warnings: Array<{ path: string; sizeMB: number }> = [];
-
-  await Promise.all(
-    files.map(async (file) => {
-      if (file.status === "deleted") return;
-      const fullPath = join(repoRoot, file.path);
-
-      try {
-        const stats = await stat(fullPath);
-        const sizeMB = Math.round((stats.size / (1024 * 1024)) * 10) / 10;
-        if (stats.size >= 100 * 1024 * 1024) {
-          blocked.push({ path: file.path, sizeMB });
-        } else if (stats.size >= 50 * 1024 * 1024) {
-          warnings.push({ path: file.path, sizeMB });
-        }
-      } catch {
-        // File missing or unreadable; ignore
-      }
-    }),
-  );
+  const blocked: LargeFileCheckResult["blocked"] = [];
+  const warnings: LargeFileCheckResult["warnings"] = [];
+  const wanted = new Set(files.filter((f) => f.status !== "deleted").map((f) => f.path));
+  if (wanted.size === 0) return { blocked, warnings };
+  const { stdout } = await run("git", ["ls-files", "--stage", "-z"], { cwd });
+  const entries: Array<{ path: string; oid: string }> = [];
+  for (const record of stdout.split("\0")) {
+    if (!record) continue;
+    const match = /^(\d+) ([a-f0-9]+) ([0-3])\t([\s\S]*)$/.exec(record);
+    if (!match || !wanted.has(match[4]!)) continue;
+    if (match[3] !== "0") throw new Error("Cannot inspect an unmerged index.");
+    wanted.delete(match[4]!);
+    if (match[1] !== "160000") entries.push({ path: match[4]!, oid: match[2]! });
+  }
+  if (wanted.size) throw new Error(`Files are missing from the staged index: ${[...wanted].join(", ")}`);
+  if (entries.length === 0) return { blocked, warnings };
+  const objects = await run("git", ["cat-file", "--batch-check=%(objectname) %(objecttype) %(objectsize)"], {
+    cwd, input: entries.map((e) => e.oid).join("\n") + "\n",
+  });
+  const sizes = objects.stdout.trim().split("\n");
+  for (const [i, entry] of entries.entries()) {
+    const fields = sizes[i]?.split(" ");
+    const size = Number(fields?.[2]);
+    if (fields?.[0] !== entry.oid || fields[1] !== "blob" || !Number.isSafeInteger(size) || size < 0) {
+      throw new Error(`Cannot determine staged object size for ${entry.path}.`);
+    }
+    const item = { path: entry.path, sizeMB: Math.round(size / (1024 * 1024) * 10) / 10 };
+    if (size >= 100 * 1024 * 1024) blocked.push(item);
+    else if (size >= 50 * 1024 * 1024) warnings.push(item);
+  }
 
   return { blocked, warnings };
 }
@@ -591,7 +602,7 @@ export async function commit(
   if (options.signoff) {
     args.push("-s");
   }
-  const { stdout } = await execGitWithRetry(args, { cwd });
+  const { stdout } = await execGitWithRetry(args, { cwd, env: options.env });
   return stdout;
 }
 
@@ -623,3 +634,5 @@ export async function gitPassthrough(args: string[], cwd = process.cwd()): Promi
  * `branch.<name>.gh-merge-base`. Read together, those pointers form a tree —
  * which is exactly the data structure a stacked-pull-request workflow needs.
  * ------------------------------------------------------------------ */
+
+export { resolveBranchRef } from "./git/branch.ts";

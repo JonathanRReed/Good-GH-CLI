@@ -99,7 +99,7 @@ let cachedHost: string | undefined;
 
 
 export function getActiveHost(): string {
-  return cachedHost || process.env.GH_HOST || "github.com";
+  return process.env.GH_HOST || cachedHost || "github.com";
 }
 
 
@@ -111,44 +111,38 @@ export interface RepoRef {
   repoArg: string;
 }
 
-let cachedRepoFlag: RepoRef | null | undefined;
-
-
+/** Parse every invocation independently; a server may change targets between calls. */
 export function parseRepoFlag(repo = getFlags().repo): RepoRef | null {
-  if (!repo) return null;
-  if (cachedRepoFlag !== undefined && repo === getFlags().repo) return cachedRepoFlag;
-  const trimmed = repo.trim().replace(/\.git$/, "").replace(/\/+$/, "");
-  const parts = trimmed.split("/");
-  if (parts.length === 3) {
-    // split() always yields strings, but the type is string|undefined —
-    // default rather than assert so malformed input behaves as before.
-    const host = parts[0] ?? "";
-    const owner = parts[1] ?? "";
-    const repoName = parts[2] ?? "";
-    cachedRepoFlag = {
-      host,
-      owner,
-      repo: repoName,
-      nameWithOwner: `${owner}/${repoName}`,
-      repoArg: `${host}/${owner}/${repoName}`,
-    };
-    return cachedRepoFlag;
+  if (repo === undefined) return null;
+  let value = repo.trim();
+  if (value.startsWith("https://")) {
+    const url = new URL(value);
+    if (url.username || url.password || url.search || url.hash) throw new Error("Invalid --repo URL.");
+    value = `${url.host}${url.pathname}`;
   }
-  if (parts.length === 2) {
-    const owner = parts[0] ?? "";
-    const repoName = parts[1] ?? "";
-    const host = getActiveHost();
-    cachedRepoFlag = {
-      host,
-      owner,
-      repo: repoName,
-      nameWithOwner: `${owner}/${repoName}`,
-      repoArg: host !== "github.com" ? `${host}/${owner}/${repoName}` : `${owner}/${repoName}`,
-    };
-    return cachedRepoFlag;
+  const parts = value.replace(/\/+$/, "").replace(/\.git$/, "").split("/");
+  const explicitHost = parts.length === 3;
+  const host = explicitHost ? parts.shift()! : getActiveHost();
+  const [owner, name] = parts;
+  if (parts.length !== 2 || !owner || !name ||
+      !/^[A-Za-z0-9][A-Za-z0-9-]*$/.test(owner) ||
+      !/^[A-Za-z0-9_.-]+$/.test(name) || name === "." || name === ".." ||
+      !/^[A-Za-z0-9][A-Za-z0-9.-]*(?::[0-9]+)?$/.test(host)) {
+    throw new Error("Invalid --repo. Use [HOST/]OWNER/REPO or an HTTPS repository URL.");
   }
-  cachedRepoFlag = null;
-  return null;
+  const normalizedHost = host.toLowerCase();
+  const nameWithOwner = `${owner}/${name}`;
+  return {
+    host: normalizedHost, owner, repo: name, nameWithOwner,
+    repoArg: explicitHost || normalizedHost !== "github.com" ? `${normalizedHost}/${nameWithOwner}` : nameWithOwner,
+  };
+}
+
+/** Remote-only operations do not require a local checkout when a target is explicit. */
+export async function requireGitHubRepo(): Promise<boolean> {
+  if (parseRepoFlag() || (process.env.GH_REPO && parseRepoFlag(process.env.GH_REPO))) return true;
+  const { requireGitRepo } = await import("../git.ts");
+  return requireGitRepo();
 }
 
 function mergeEnv(options?: RunOptions): NodeJS.ProcessEnv | undefined {
@@ -198,7 +192,7 @@ export async function ghApi(args: string[], options: RunOptions = {}): Promise<R
   const extra: NodeJS.ProcessEnv = {};
   if (parsed) {
     extra.GH_REPO = parsed.nameWithOwner;
-    if (parsed.host !== "github.com") extra.GH_HOST = parsed.host;
+    extra.GH_HOST = parsed.host;
   } else {
     const host = getActiveHost();
     if (host !== "github.com") extra.GH_HOST = host;
@@ -232,14 +226,15 @@ async function paginateGhEndpoint<T>(
   for (let page = 1; page <= maxPages; page++) {
     const separator = endpoint.includes("?") ? "&" : "?";
     const url = `${endpoint}${separator}per_page=${perPage}&page=${page}`;
-    const runner = global ? ghGlobal : ghApi;
-    const { stdout } = await runner([url, ...params]);
+    const { stdout } = global
+      ? await ghGlobal(["api", url, ...params])
+      : await ghApi([url, ...params]);
     let batch: T[];
     try {
       const parsed = JSON.parse(stdout);
       batch = Array.isArray(parsed) ? parsed : [parsed];
     } catch {
-      break;
+      throw new Error(`GitHub returned invalid JSON for page ${page}; results are incomplete.`);
     }
     if (batch.length === 0) break;
     results.push(...batch);
@@ -262,32 +257,27 @@ export async function ghApiPassthrough(endpoint: string[], cwd = process.cwd()):
  * The detected host is cached so subsequent `gh` invocations can set `GH_HOST`.
  */
 
-const authCache = new Map<string, Promise<GitHubAccount>>();
+const authCache = new Map<string, { at: number; result: Promise<GitHubAccount> }>();
 
-export async function getGitHubAuthStatus(host = getActiveHost()): Promise<GitHubAccount> {
+export async function getGitHubAuthStatus(host = getActiveHost(), refresh = false): Promise<GitHubAccount> {
   const key = host || "github.com";
   const hit = authCache.get(key);
-  if (hit) return hit;
-  const pending = fetchAuthStatus(host);
-  authCache.set(key, pending);
-  return pending;
+  if (!refresh && hit && Date.now() - hit.at < 5_000) return hit.result;
+  const result = fetchAuthStatus(key);
+  authCache.set(key, { at: Date.now(), result });
+  return result;
 }
 
 async function fetchAuthStatus(host: string): Promise<GitHubAccount> {
   const args = ["auth", "status", "--json", "hosts"];
-  if (host && host !== "github.com") args.push("--hostname", host);
+  args.push("--hostname", host || "github.com");
   try {
     const { stdout } = await ghGlobal(args);
     if (stdout && stdout.trim()) {
       const parsed = JSON.parse(stdout);
       const hostsObj = parsed?.hosts;
       if (hostsObj && typeof hostsObj === "object") {
-        const hostKeys = Object.keys(hostsObj);
-        const hostKey =
-          (host && hostsObj[host] ? host : undefined) ||
-          (hostsObj["github.com"] ? "github.com" : hostKeys[0]) ||
-          host ||
-          "github.com";
+        const hostKey = host || "github.com";
         const accounts = hostsObj[hostKey];
         const accountList = (Array.isArray(accounts) ? accounts : accounts ? [accounts] : []).filter(
           (acc: unknown): acc is Record<string, unknown> => typeof acc === "object" && acc !== null,
@@ -339,7 +329,7 @@ async function fetchAuthStatus(host: string): Promise<GitHubAccount> {
 
 
 export async function requireAuth(): Promise<boolean> {
-  const auth = await getGitHubAuthStatus();
+  const auth = await getGitHubAuthStatus(parseRepoFlag()?.host ?? getActiveHost());
   if (auth.authenticated) return true;
   const { fail } = await import("../../utils/ui.ts");
   fail(

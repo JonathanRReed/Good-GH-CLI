@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { getFlags } from "../services/runtime.ts";
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { getConfigDir } from "../services/config.ts";
 import { emitJson, fail, header, p, pc, jsonOut, unknownAction, confirmOrAbort } from "../utils/ui.ts";
 import { dryRun } from "../utils/flags.ts";
@@ -10,7 +11,7 @@ import { dryRun } from "../utils/flags.ts";
  * `ggh plugin` — community extensions.
  *
  * Plugins are TypeScript or JavaScript files that register additional
- * commands. They're stored in `~/.config/ggh/plugins/` and loaded at startup.
+ * commands. They're stored in `~/.config/good-gh/plugins/` and loaded at startup.
  *
  * A plugin file must export a `register(program: Command): void` function.
  *
@@ -39,7 +40,8 @@ function readManifest(): PluginManifest[] {
   if (!existsSync(path)) return [];
   try {
     const raw = JSON.parse(readFileSync(path, "utf-8"));
-    return Array.isArray(raw) ? (raw as PluginManifest[]) : [];
+    return Array.isArray(raw) ? raw.filter((item): item is PluginManifest =>
+      item !== null && typeof item === "object" && typeof item.name === "string" && /^[A-Za-z0-9_-]+$/.test(item.name)) : [];
   } catch {
     return [];
   }
@@ -272,14 +274,15 @@ Examples:
  * Called from index.ts at startup.
  */
 export async function loadPlugins(program: Command): Promise<void> {
+  if (process.env.GGH_NO_PLUGINS === "1") return;
   const plugins = readManifest();
   for (const plugin of plugins) {
     const pluginPath = resolvePluginPath(plugin.name) ?? getPluginPath(plugin.name);
     if (!existsSync(pluginPath)) continue;
     try {
-      const mod = await import(`file://${pluginPath}`);
+      const mod = await import(pathToFileURL(pluginPath).href);
       if (typeof mod.register === "function") {
-        mod.register(program);
+        await mod.register(program);
       }
     } catch (err) {
       // Don't let a broken plugin crash ggh

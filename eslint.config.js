@@ -13,7 +13,7 @@ export default tseslint.config(
   },
   {
     // The npm launcher is CommonJS on purpose: it must run under plain Node.
-    files: ["bin/ggh.cjs"],
+    files: ["bin/ggh.cjs", "scripts/*.cjs"],
     languageOptions: {
       sourceType: "commonjs",
       globals: { require: "readonly", __dirname: "readonly", process: "readonly", console: "readonly", Bun: "readonly" }
