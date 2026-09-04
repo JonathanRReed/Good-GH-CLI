@@ -1,218 +1,280 @@
 name: Release
 
-# Tagging is the trigger. `bun run release 0.2.0` bumps, tags, and pushes;
-# everything below is what happens after the tag lands.
+# The preparation script does not push. Only pushing a tag or an explicit
+# manual invocation publishes artifacts. npm is an explicit repository opt-in.
 on:
   push:
     tags: ["v*"]
+  pull_request:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing tag to build a release for
+        description: Existing version tag to build
         required: true
+        type: string
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
+
+env:
+  BUN_VERSION: 1.4.0
 
 jobs:
   verify:
-    name: Verify before releasing
+    name: Verify the exact tag
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      sha: ${{ steps.identity.outputs.sha }}
+      version: ${{ steps.identity.outputs.version }}
+      tag: ${{ steps.identity.outputs.tag }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          bun-version: latest
-      - run: bun install --frozen-lockfile
-      - name: Configure git identity for tests
+          ref: ${{ github.event_name == 'pull_request' && github.sha || format('refs/tags/{0}', inputs.tag || github.ref_name) }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+      - name: Resolve immutable release identity
+        id: identity
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        shell: bash
         run: |
-          git config --global user.name "CI"
-          git config --global user.email "ci@example.com"
+          set -euo pipefail
+          VERSION=$(node -p 'require("./package.json").version')
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then TAG="v$VERSION"; fi
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]] || { echo "Invalid version tag"; exit 1; }
+          VERSION=$(node -p 'require("./package.json").version')
+          test "$TAG" = "v$VERSION"
+          SHA=$(git rev-parse HEAD)
+          if [ "$GITHUB_EVENT_NAME" != pull_request ]; then test "$SHA" = "$(git rev-parse "refs/tags/$TAG^{commit}")"; fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          printf 'Release %s from commit %s\n' "$TAG" "$SHA" >> "$GITHUB_STEP_SUMMARY"
+      - run: bun install --frozen-lockfile
+      - name: Configure test identity
+        run: |
+          git config --global user.name CI
+          git config --global user.email ci@example.invalid
           git config --global init.defaultBranch main
       - run: bun run typecheck
       - run: bun run lint
       - run: bun test --timeout 30000
-      - name: Tag must match package.json version
+      - run: bun run build
+      - run: bun run man --check
+      - name: Package and test the exact npm tarball
+        shell: bash
         run: |
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          PKG="v$(bun -e 'console.log(require("./package.json").version)')"
-          if [ "$TAG" != "$PKG" ]; then
-            echo "Tag $TAG does not match package.json $PKG"; exit 1
-          fi
-
-      - name: Bundle shell completions and man page
-        # Platform-independent text, generated once from the real command tree.
-        # Lands in the release next to the binaries via artifacts/* below.
-        run: |
-          bun run man --check
+          set -euo pipefail
           mkdir -p dist-extra
+          npm pack --ignore-scripts --pack-destination dist-extra
+          PACKAGE=$(find "$PWD/dist-extra" -maxdepth 1 -name '*.tgz' -print)
+          test -f "$PACKAGE"
+          npm install --prefix "$RUNNER_TEMP/package-smoke" --ignore-scripts --no-audit --no-fund "$PACKAGE"
+          test "$(node "$RUNNER_TEMP/package-smoke/node_modules/good-gh-cli/bin/ggh.cjs" --version)" = "${{ steps.identity.outputs.version }}"
           bun run bin/ggh.ts completion bash > dist-extra/ggh.bash
           bun run bin/ggh.ts completion zsh > dist-extra/_ggh
           bun run bin/ggh.ts completion fish > dist-extra/ggh.fish
           cp man/ggh.1 dist-extra/
-
-      - uses: actions/upload-artifact@v7
+          cd dist-extra
+          for file in *; do sha256sum "$file" > "$file.sha256"; done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: dist-extra
+          name: release-extra
           path: dist-extra/
           retention-days: 7
 
   binaries:
-    name: ${{ matrix.target }}
+    name: Compile ${{ matrix.asset }}
     needs: verify
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
         include:
-          - target: bun-linux-x64
+          - os: ubuntu-latest
+            target: bun-linux-x64
             asset: ggh-linux-x64
-          - target: bun-linux-arm64
+          - os: ubuntu-latest
+            target: bun-linux-arm64
             asset: ggh-linux-arm64
-          - target: bun-darwin-x64
+          - os: macos-15-intel
+            target: bun-darwin-x64
             asset: ggh-darwin-x64
-          - target: bun-darwin-arm64
+          - os: macos-latest
+            target: bun-darwin-arm64
             asset: ggh-darwin-arm64
-          - target: bun-windows-x64
+          - os: ubuntu-latest
+            target: bun-windows-x64
             asset: ggh-windows-x64.exe
-
     steps:
-      - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          bun-version: latest
+          ref: ${{ needs.verify.outputs.sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-
-      - name: Compile standalone binary
+      - name: Build and checksum
         run: |
-          bun build bin/ggh.ts \
-            --compile \
-            --minify \
-            --target=${{ matrix.target }} \
-            --outfile ${{ matrix.asset }}
-
-      - name: Checksum
-        run: sha256sum ${{ matrix.asset }} > ${{ matrix.asset }}.sha256
-
-      - uses: actions/upload-artifact@v7
+          bun build bin/ggh.ts --compile --minify --target=${{ matrix.target }} --outfile ${{ matrix.asset }}
+          if [ "$RUNNER_OS" = macOS ]; then
+            codesign --force --sign - ${{ matrix.asset }}
+            codesign --verify --strict ${{ matrix.asset }}
+          fi
+          bun -e 'import {createHash} from "node:crypto"; import {readFileSync,writeFileSync} from "node:fs"; const p=process.argv[1]; writeFileSync(p+".sha256",createHash("sha256").update(readFileSync(p)).digest("hex")+"  "+p+"\n")' ${{ matrix.asset }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: ${{ matrix.asset }}
+          name: release-${{ matrix.asset }}
           path: |
             ${{ matrix.asset }}
             ${{ matrix.asset }}.sha256
           retention-days: 7
 
-  windows-smoke:
-    name: Smoke test Windows standalone binary
-    needs: verify
-    runs-on: windows-latest
-    defaults:
-      run:
-        shell: bash
+  smoke:
+    name: Verify distributed ${{ matrix.asset }}
+    needs: [verify, binaries]
+    timeout-minutes: 15
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset: ggh-linux-x64
+          - os: ubuntu-24.04-arm
+            asset: ggh-linux-arm64
+          - os: macos-15-intel
+            asset: ggh-darwin-x64
+          - os: macos-latest
+            asset: ggh-darwin-arm64
+          - os: windows-latest
+            asset: ggh-windows-x64.exe
     steps:
-      - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          bun-version: latest
-      - run: bun install --frozen-lockfile
-      - name: Compile and run the Windows release shape
-        run: |
-          bun build bin/ggh.ts --compile --minify --target=bun-windows-x64 --outfile ggh-windows-x64.exe
-          ./ggh-windows-x64.exe --version
-          ./ggh-windows-x64.exe --help > /dev/null
-          ./ggh-windows-x64.exe completion bash | head -1
-
-  release:
-    name: Publish GitHub Release
-    needs: [binaries, windows-smoke]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
+          ref: ${{ needs.verify.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          fetch-depth: 0
-
-      - uses: actions/download-artifact@v8
+          node-version: 22
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          path: artifacts
-          merge-multiple: true
-
-      - name: Assemble release notes
-        id: notes
-        run: |
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          {
-            # Prefer the hand-written entry; fall back to the commit list.
-            if [ -f CHANGELOG.md ] && grep -q "^## ${TAG#v}" CHANGELOG.md; then
-              awk -v v="## ${TAG#v}" '$0 ~ v {f=1; next} /^## / && f {exit} f' CHANGELOG.md
-            else
-              PREV=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)
-              if [ -n "$PREV" ]; then
-                git log --pretty='- %s' "$PREV..$TAG"
-              else
-                git log --pretty='- %s' -n 30
-              fi
-            fi
-
-            echo ""
-            echo "### Install"
-            echo ""
-            echo '```bash'
-            echo "bun add -g good-gh-cli@${TAG#v}"
-            echo '```'
-            echo ""
-            echo "Or download a standalone binary below. The signed universal macOS DMG is the recommended Mac install."
-          } > RELEASE_NOTES.md
-          cat RELEASE_NOTES.md
-
-      - name: Create the release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          EXTRA=()
-          if [[ "$TAG" == *-* ]]; then EXTRA+=(--prerelease); fi
-          gh release create "$TAG" \
-            --title "$TAG" \
-            --notes-file RELEASE_NOTES.md \
-            "${EXTRA[@]}" \
-            --verify-tag \
-            artifacts/*
+          name: release-${{ matrix.asset }}
+          path: native
+      - name: Checksum and real Git operations without rebuilding
+        run: node scripts/smoke-artifact.cjs native/${{ matrix.asset }} ${{ needs.verify.outputs.version }}
+      - name: Native regression suite
+        if: runner.os != 'Windows'
+        run: python3 scripts/audit-regressions.py --binary "$PWD/native/${{ matrix.asset }}" --results regressions.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always() && runner.os != 'Windows'
+        with:
+          name: regression-results-${{ matrix.asset }}
+          path: regressions.json
+          retention-days: 7
 
   npm:
-    name: Publish to npm
-    needs: [binaries, windows-smoke]
+    name: Publish verified tarball to npm (explicit opt-in)
+    needs: [verify, smoke]
+    if: github.event_name != 'pull_request' && vars.PUBLISH_NPM == 'true'
     runs-on: ubuntu-latest
-    # Skips cleanly when NPM_TOKEN is not configured, so the rest of the release
-    # still succeeds on a repository that only ships binaries. Declared at job
-    # level because a step's own `env` is not visible to its `if`.
-    env:
-      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+    timeout-minutes: 10
     permissions:
       contents: read
       id-token: write
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      VERSION: ${{ needs.verify.outputs.version }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
-
-      - run: bun install --frozen-lockfile
-      - run: bun run build
-
-      - name: Publish
-        if: env.NODE_AUTH_TOKEN != ''
+      - name: Require configured publication credentials
         run: |
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          if [[ "$TAG" == *-* ]]; then
-            npm publish --provenance --access public --tag beta
-          else
-            npm publish --provenance --access public
-          fi
+          test -n "$NODE_AUTH_TOKEN" || { echo "PUBLISH_NPM=true requires a valid NPM_TOKEN; publication did not occur."; exit 1; }
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-extra
+          path: package
+      - name: Publish, then verify registry version and dist-tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd package
+          sha256sum -c "good-gh-cli-$VERSION.tgz.sha256"
+          DIST_TAG=latest
+          [[ "$VERSION" != *-* ]] || DIST_TAG=beta
+          npm publish "good-gh-cli-$VERSION.tgz" --ignore-scripts --provenance --access public --tag "$DIST_TAG"
+          ACTUAL=$(npm view "good-gh-cli@$VERSION" version)
+          test "$ACTUAL" = "$VERSION"
+          test "$(npm view good-gh-cli "dist-tags.$DIST_TAG")" = "$VERSION"
+          echo "Published and verified good-gh-cli@$VERSION ($DIST_TAG)." >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Explain a skipped publish
-        if: env.NODE_AUTH_TOKEN == ''
-        run: echo "NPM_TOKEN is not set; skipping npm publish. Binaries were still released."
+  release:
+    name: Publish verified GitHub assets
+    needs: [verify, binaries, smoke, npm]
+    if: always() && github.event_name != 'pull_request' && needs.verify.result == 'success' && needs.binaries.result == 'success' && needs.smoke.result == 'success' && (needs.npm.result == 'success' || needs.npm.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ needs.verify.outputs.tag }}
+      VERSION: ${{ needs.verify.outputs.version }}
+      SOURCE_SHA: ${{ needs.verify.outputs.sha }}
+      NPM_RESULT: ${{ needs.npm.result }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: release-*
+          path: artifacts
+          merge-multiple: true
+      - name: Validate assets and assemble accurate release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd artifacts; for checksum in *.sha256; do sha256sum -c "$checksum"; done)
+          for asset in ggh-linux-x64 ggh-linux-arm64 ggh-darwin-x64 ggh-darwin-arm64 ggh-windows-x64.exe "good-gh-cli-$VERSION.tgz"; do test -s "artifacts/$asset"; done
+          {
+            awk -v v="## $VERSION " 'index($0,v)==1 {f=1; next} /^## / && f {exit} f' CHANGELOG.md
+            printf '\nSource commit: `%s`\n\n' "$SOURCE_SHA"
+            echo 'Download the native executable for your operating system and verify its accompanying SHA-256 checksum.'
+            echo 'The macOS executables are not Developer-ID signed or notarized by this workflow. Signed DMGs are a separate packaging step.'
+            echo ''
+            if [ "$NPM_RESULT" = success ]; then
+              echo "npm publication verified: \`bun add -g good-gh-cli@$VERSION\`. Node 22+ and Bun 1.4+ are required."
+            else
+              echo 'npm publication was explicitly disabled (PUBLISH_NPM is not true). No registry availability is claimed.'
+              echo "The attached package can be installed with \`bun add -g ./good-gh-cli-$VERSION.tgz\` (Node 22+ and Bun 1.4+)."
+            fi
+          } > RELEASE_NOTES.md
+          cat RELEASE_NOTES.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXTRA=()
+          [[ "$TAG" != *-* ]] || EXTRA+=(--prerelease)
+          gh release create "$TAG" --title "$TAG" --notes-file RELEASE_NOTES.md --verify-tag "${EXTRA[@]}" artifacts/*
