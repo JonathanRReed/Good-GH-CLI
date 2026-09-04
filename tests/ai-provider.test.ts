@@ -188,3 +188,17 @@ describe("last shared prompt boundary", () => {
     expect(provider.lastPrompt).not.toContain("PRIVATE_FILE_CANARY");
   });
 });
+
+
+describe("reviewed split response contract", () => {
+  it("normalizes an omitted optional body without dropping the commit", async () => {
+    const provider = new StubProvider(JSON.stringify({ commits: [{ subject: "feat: one", files: ["a.ts"] }] }));
+    expect((await provider.generateSplit(COMMIT_INPUT)).commits).toEqual([{ subject: "feat: one", body: "", files: ["a.ts"] }]);
+  });
+  for (const body of [null, 42, [], {}]) {
+    it(`rejects invalid body ${JSON.stringify(body)}`, async () => {
+      const provider = new StubProvider(JSON.stringify({ commits: [{ subject: "feat: one", body, files: ["a.ts"] }] }));
+      await expect(provider.generateSplit(COMMIT_INPUT)).rejects.toThrow("invalid split plan");
+    });
+  }
+});

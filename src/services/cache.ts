@@ -27,6 +27,17 @@ function cacheDir(): string | null {
   }
 }
 
+/** Detect directory replacement across an asynchronous fetch. Not a same-UID sandbox. */
+function directoryIdentity(dir: string): string | null {
+  try {
+    const st = lstatSync(dir);
+    if (!st.isDirectory() || st.isSymbolicLink() || (process.getuid && st.uid !== process.getuid())) return null;
+    return `${st.dev}:${st.ino}`;
+  } catch {
+    return null;
+  }
+}
+
 function entryName(key: string): string {
   return `entry-v2-${createHash("sha256").update(key).digest("hex")}.json`;
 }
@@ -80,6 +91,8 @@ export async function cached<T>(key: string, fetcher: () => Promise<T>, options:
   const ttlMs = options.ttlMs ?? 60_000;
   const dir = cacheDir();
   if (!dir || ttlMs <= 0) return fetcher();
+  const identity = directoryIdentity(dir);
+  if (!identity) return fetcher();
   const name = entryName(key);
   if (!options.refresh) {
     const entry = readEntry<T>(dir, name);
@@ -87,6 +100,7 @@ export async function cached<T>(key: string, fetcher: () => Promise<T>, options:
     if (entry && entry.key === key && age >= 0 && age < ttlMs) return entry.value;
   }
   const value = await fetcher();
+  if (directoryIdentity(dir) !== identity) return value;
   try {
     atomicWrite(dir, name, JSON.stringify({ version: CACHE_VERSION, key, at: Date.now(), value }));
   } catch {

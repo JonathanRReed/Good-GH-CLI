@@ -18,7 +18,7 @@ export interface StagedSnapshot {
   indexPath: string;
   indexBytes: Buffer;
   head: string | null;
-  branch: string;
+  branch: string | null;
   tree: string;
   files: ChangedFile[];
   entries: Map<string, IndexEntry>;
@@ -29,11 +29,19 @@ async function headAt(cwd: string): Promise<string | null> {
   return result.exitCode === 0 ? result.stdout.trim() : null;
 }
 
+/** Detached HEAD is a valid local commit target, not a symbolic-ref failure. */
+async function branchAt(cwd: string): Promise<string | null> {
+  const result = await run("git", ["symbolic-ref", "--quiet", "HEAD"], { cwd, reject: false });
+  if (result.exitCode === 0) return result.stdout.trim();
+  if (result.exitCode === 1) return null;
+  throw new Error(result.stderr.trim() || "Could not determine the current Git branch.");
+}
+
 /** Capture the staged tree before the model runs. Working-tree bytes are never read. */
 export async function captureStagedSnapshot(cwd = process.cwd()): Promise<StagedSnapshot> {
   const indexPath = await getGitPath("index", cwd);
   const head = await headAt(cwd);
-  const { stdout: branch } = await run("git", ["symbolic-ref", "--quiet", "HEAD"], { cwd });
+  const branch = await branchAt(cwd);
   const { stdout: tree } = await run("git", ["write-tree"], { cwd });
   const indexBytes = readFileSync(indexPath);
   const { stdout: listing } = await run("git", ["ls-files", "--stage", "-z"], { cwd });
@@ -53,10 +61,10 @@ export async function captureStagedSnapshot(cwd = process.cwd()): Promise<Staged
     files.push({ path, staged: true, status: status === "D" ? "deleted" : status === "A" ? "added" : "modified" });
   }
   if (!files.length) throw new Error("Nothing staged to split.");
-  if (await headAt(cwd) !== head || !readFileSync(indexPath).equals(indexBytes)) {
+  if (await branchAt(cwd) !== branch || await headAt(cwd) !== head || !readFileSync(indexPath).equals(indexBytes)) {
     throw new Error("Repository changed while capturing staged content. Retry the split.");
   }
-  return { cwd, indexPath, indexBytes, head, branch: branch.trim(), tree: tree.trim(), files, entries };
+  return { cwd, indexPath, indexBytes, head, branch, tree: tree.trim(), files, entries };
 }
 
 /** The model must partition exactly the allowed paths, not choose new files. */
@@ -108,7 +116,7 @@ export async function executeSplitCommits(
   let success = false;
   try {
     writeFileSync(lock, JSON.stringify({ operation: "ggh split", pid: process.pid, head: snapshot.head }));
-    const currentBranch = (await run("git", ["symbolic-ref", "--quiet", "HEAD"], { cwd })).stdout.trim();
+    const currentBranch = await branchAt(cwd);
     if (currentBranch !== snapshot.branch || await headAt(cwd) !== snapshot.head || !readFileSync(indexPath).equals(snapshot.indexBytes)) {
       throw new Error("Repository or index changed after AI planning. Retry without discarding your changes.");
     }

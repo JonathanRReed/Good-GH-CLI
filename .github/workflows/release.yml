@@ -255,8 +255,8 @@ jobs:
           set -euo pipefail
           (cd artifacts; for checksum in *.sha256; do sha256sum -c "$checksum"; done)
           for asset in ggh-linux-x64 ggh-linux-arm64 ggh-darwin-x64 ggh-darwin-arm64 ggh-windows-x64.exe "good-gh-cli-$VERSION.tgz"; do test -s "artifacts/$asset"; done
+          node scripts/release-notes.cjs CHANGELOG.md "$VERSION" > RELEASE_NOTES.md
           {
-            awk -v v="## $VERSION " 'index($0,v)==1 {f=1; next} /^## / && f {exit} f' CHANGELOG.md
             printf '\nSource commit: `%s`\n\n' "$SOURCE_SHA"
             echo 'Download the native executable for your operating system and verify its accompanying SHA-256 checksum.'
             echo 'The macOS executables are not Developer-ID signed or notarized by this workflow. Signed DMGs are a separate packaging step.'
@@ -267,7 +267,7 @@ jobs:
               echo 'npm publication was explicitly disabled (PUBLISH_NPM is not true). No registry availability is claimed.'
               echo "The attached package can be installed with \`bun add -g ./good-gh-cli-$VERSION.tgz\` (Node 22+ and Bun 1.4+)."
             fi
-          } > RELEASE_NOTES.md
+          } >> RELEASE_NOTES.md
           cat RELEASE_NOTES.md >> "$GITHUB_STEP_SUMMARY"
       - name: Create release
         env:

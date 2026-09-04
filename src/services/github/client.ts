@@ -112,7 +112,7 @@ export interface RepoRef {
 }
 
 /** Parse every invocation independently; a server may change targets between calls. */
-export function parseRepoFlag(repo = getFlags().repo): RepoRef | null {
+export function parseRepoFlag(repo = getFlags().repo ?? process.env.GH_REPO): RepoRef | null {
   if (repo === undefined) return null;
   let value = repo.trim();
   if (value.startsWith("https://")) {
@@ -140,7 +140,7 @@ export function parseRepoFlag(repo = getFlags().repo): RepoRef | null {
 
 /** Remote-only operations do not require a local checkout when a target is explicit. */
 export async function requireGitHubRepo(): Promise<boolean> {
-  if (parseRepoFlag() || (process.env.GH_REPO && parseRepoFlag(process.env.GH_REPO))) return true;
+  if (parseRepoFlag()) return true;
   const { requireGitRepo } = await import("../git.ts");
   return requireGitRepo();
 }

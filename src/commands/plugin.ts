@@ -41,7 +41,9 @@ function readManifest(): PluginManifest[] {
   try {
     const raw = JSON.parse(readFileSync(path, "utf-8"));
     return Array.isArray(raw) ? raw.filter((item): item is PluginManifest =>
-      item !== null && typeof item === "object" && typeof item.name === "string" && /^[A-Za-z0-9_-]+$/.test(item.name)) : [];
+      item !== null && typeof item === "object" && typeof item.name === "string" && /^[A-Za-z0-9_-]+$/.test(item.name) &&
+      typeof item.installedAt === "string" && Number.isFinite(Date.parse(item.installedAt)) &&
+      ["version", "description", "source"].every((key) => item[key] === undefined || typeof item[key] === "string")) : [];
   } catch {
     return [];
   }
