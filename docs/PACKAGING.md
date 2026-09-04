@@ -18,7 +18,7 @@ completions, the npm tarball, and a Developer-ID-signed universal macOS DMG.
 
 ## Build
 
-Build dependency: Bun >= 1.1 (`bun install` fetches exactly two runtime
+Build dependency: Bun >= 1.4 (`bun install` fetches exactly two runtime
 dependencies — `commander`, `picocolors` — pinned in `bun.lock`).
 
 ```bash
