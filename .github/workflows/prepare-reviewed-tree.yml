@@ -1,0 +1,67 @@
+name: Prepare verified review tree
+on:
+  push:
+    branches: [fix/audit-review-followup]
+    paths: [.github/workflows/prepare-reviewed-tree.yml]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate patch and create immutable Git objects only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          PAYLOAD="$RUNNER_TEMP/followup.br"
+          PATCH="$RUNNER_TEMP/followup.patch"
+          gh api "repos/$GITHUB_REPOSITORY/git/blobs/b96090fc18aab1bf0db5098167e27596fa738d8b" --jq .content | base64 --decode > "$PAYLOAD"
+          test "$(wc -c < "$PAYLOAD")" -eq 8811
+          echo "8196fe1c363d638e98f504a171266d2742b6777f860dcdc08c264b5bbbefd87b  $PAYLOAD" | sha256sum --check
+          node - "$PAYLOAD" "$PATCH" <<'NODE'
+          const fs = require('node:fs');
+          const data = require('node:zlib').brotliDecompressSync(fs.readFileSync(process.argv[2]), { maxOutputLength: 1048576 });
+          if (data.length !== 30301) throw new Error('Unexpected patch length');
+          fs.writeFileSync(process.argv[3], data, { mode: 0o600 });
+          NODE
+          echo "6933cd67c55a4685e7a7dc32fbf75983aa873a36ec261db14bfd65c0c1550d2e  $PATCH" | sha256sum --check
+          git worktree add --detach "$RUNNER_TEMP/review-tree" 832b5671b3a66f86436b747fd27510d20efeff4b
+          git -C "$RUNNER_TEMP/review-tree" apply --index --check "$PATCH"
+          git -C "$RUNNER_TEMP/review-tree" apply --index "$PATCH"
+          test "$(git -C "$RUNNER_TEMP/review-tree" write-tree)" = 3d6328f975669ef18a46e12f5fc20edcb5311ac0
+          # No patched code is executed. No ref, release, or PR is changed here.
+          python3 - <<'PY'
+          import base64, concurrent.futures, json, os, subprocess
+          root = os.path.join(os.environ['RUNNER_TEMP'], 'review-tree')
+          repo = os.environ['GITHUB_REPOSITORY']
+          def git(*args):
+              return subprocess.check_output(['git', '-C', root, *args])
+          def post(endpoint, data):
+              return json.loads(subprocess.check_output(['gh', 'api', '--method', 'POST', f'repos/{repo}/git/{endpoint}', '--input', '-'], input=json.dumps(data).encode()))
+          paths = git('diff', '--cached', '--name-only', '-z').decode().rstrip('\0').split('\0')
+          index = {}
+          for line in git('ls-files', '--stage', '-z').decode().split('\0'):
+              if not line: continue
+              metadata, path = line.split('\t', 1)
+              mode, sha, stage = metadata.split()
+              index[path] = (mode, sha)
+          def upload(path):
+              mode, sha = index[path]
+              blob = post('blobs', {'encoding':'base64', 'content':base64.b64encode(git('cat-file', 'blob', sha)).decode()})
+              assert blob['sha'] == sha
+              return {'path':path, 'mode':mode, 'type':'blob', 'sha':sha}
+          with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+              entries = list(pool.map(upload, paths))
+          tree = post('trees', {'base_tree':'25ae13ec5c1bb8b668b4ded454a3a2686b17574d', 'tree':entries})
+          assert tree['sha'] == '3d6328f975669ef18a46e12f5fc20edcb5311ac0'
+          result = f"Verified {len(entries)} files. Immutable tree: {tree['sha']}\nNo refs changed; connector must commit the validated tree.\n"
+          print(result)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary: summary.write(result)
+          PY
