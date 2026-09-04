@@ -3,7 +3,7 @@
  */
 
 import { run } from "../../utils/exec.ts";
-import { existsSync, appendFileSync, readFileSync, copyFileSync } from "node:fs";
+import { existsSync, appendFileSync, readFileSync, copyFileSync, realpathSync } from "node:fs";
 import { join, isAbsolute, relative } from "node:path";
 import { execGitWithRetry } from "./exec.ts";
 import { getCurrentBranch, getRepoRoot, hasBranch, hasCommits } from "./branch.ts";
@@ -73,8 +73,9 @@ export async function worktreeAdd(
 
   // If destination folder exists on disk, check if it's an orphaned worktree directory
   if (existsSync(resolvedPath)) {
+    const canonicalPath = realpathSync(resolvedPath);
     // Never recursively delete anything outside the repository
-    const rel = relative(repoRoot, resolvedPath);
+    const rel = relative(repoRoot, canonicalPath);
     if (!rel || rel.startsWith("..") || isAbsolute(rel)) {
       throw new Error(
         `Refusing to clean up '${resolvedPath}': it is outside the repository root '${repoRoot}'.`,
@@ -82,7 +83,10 @@ export async function worktreeAdd(
     }
 
     const activeTrees = await worktreeList(repoRoot);
-    const isActive = activeTrees.some((w) => w.path === resolvedPath);
+    const isActive = activeTrees.some((w) => {
+      if (!existsSync(w.path)) return false;
+      return realpathSync(w.path) === canonicalPath;
+    });
     if (isActive) {
       throw new Error(`Worktree directory '${resolvedPath}' is already an active worktree.`);
     }

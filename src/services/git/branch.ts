@@ -3,6 +3,7 @@
  */
 
 import { run } from "../../utils/exec.ts";
+import { realpathSync } from "node:fs";
 
 export interface BranchInfo {
   name: string;
@@ -13,7 +14,9 @@ export interface BranchInfo {
 
 export async function getRepoRoot(cwd = process.cwd()): Promise<string> {
   const { stdout } = await run("git", ["rev-parse", "--show-toplevel"], { cwd });
-  return stdout.trim();
+  // Git for Windows can expand an 8.3 path such as RUNNER~1 to its long form.
+  // Canonicalising here keeps later containment and equality checks reliable.
+  return realpathSync(stdout.trim());
 }
 
 

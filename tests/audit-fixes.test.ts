@@ -76,14 +76,18 @@ describe("audit regression fixes", () => {
   }, 20000);
 
   it("listBranches parses branch names containing pipe characters", async () => {
-    await execa("git", ["branch", "weird|pipe"], { cwd: tempRepo });
+    // A pipe is a valid Git ref character but cannot appear in an NTFS filename.
+    // A packed ref represents it portably without creating a loose ref file.
+    const sha = (await execa("git", ["rev-parse", "HEAD"], { cwd: tempRepo })).stdout.trim();
+    writeFileSync(
+      join(tempRepo, ".git", "packed-refs"),
+      `# pack-refs with: peeled fully-peeled sorted\n${sha} refs/heads/weird|pipe\n`,
+    );
 
     const branches = await listBranches(tempRepo);
     const names = branches.map((b) => b.name);
     expect(names).toContain("weird|pipe");
     expect(names).toContain("main");
-
-    await execa("git", ["branch", "-D", "weird|pipe"], { cwd: tempRepo });
   }, 20000);
 
   it("detectDefaultBranch prefers recorded merge base, then main, then master", async () => {
