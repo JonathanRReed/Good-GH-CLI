@@ -3,7 +3,8 @@
  */
 
 import { clampLimit, classifyGitHubError, gh } from "./client.ts";
-import { cached, invalidateCache } from "../cache.ts";
+import { invalidateCache } from "../cache.ts";
+import { cachedGitHub } from "./cache.ts";
 
 export interface WorkflowRun {
   databaseId: number;
@@ -31,8 +32,8 @@ export async function listWorkflowRuns(
   cwd = process.cwd(),
 ): Promise<WorkflowRun[]> {
   const limit = clampLimit(options.limit ?? 30);
-  const key = `run-list:${limit}:${options.branch ?? ""}:${options.status ?? ""}:${options.workflow ?? ""}`;
-  return cached(key, () => fetchWorkflowRuns({ ...options, limit }, cwd), { ttlMs: 60_000 });
+  const key = `run-list:${JSON.stringify([limit, options.branch, options.status, options.workflow])}`;
+  return cachedGitHub(key, () => fetchWorkflowRuns({ ...options, limit }, cwd), { ttlMs: 60_000, cwd });
 }
 
 async function fetchWorkflowRuns(

@@ -1,3 +1,4 @@
+import { getFlags } from "../runtime.ts";
 import {
   AIGenerationError,
   classifyAIFailure,
@@ -31,6 +32,7 @@ import {
   type TriageItem,
   type TriageResult,
 } from "./prompt.ts";
+import { sanitizeForAI, sanitizeDiffForAI } from "../../utils/diff.ts";
 import { sanitizeBranchName } from "../../utils/branch-name.ts";
 
 /** Upper bound for a single provider invocation. Overridable via config `ai_timeout_ms`. */
@@ -55,9 +57,10 @@ export abstract class CliAIProvider implements AIProvider {
 
   /** Wraps `invoke` so every failure surfaces as a classified AIGenerationError. */
   protected async runPrompt(prompt: string, model: string): Promise<string> {
+    if (getFlags().aiDisabled || getFlags().dryRun) throw new Error("AI invocation is disabled for this operation.");
     let raw: string;
     try {
-      raw = await this.invoke(prompt, model, this.timeoutMs);
+      raw = await this.invoke(sanitizeForAI(prompt, 80_000).text, model, this.timeoutMs);
     } catch (err) {
       if (err instanceof AIGenerationError) throw err;
       throw new AIGenerationError(this.id, model, classifyAIFailure(err), extractFailureDetail(err));
@@ -74,7 +77,7 @@ export abstract class CliAIProvider implements AIProvider {
     input: CommitPromptInput,
     model = this.defaultModel,
   ): Promise<CommitMessageResult> {
-    const raw = await this.runPrompt(buildCommitPrompt(input), model);
+    const raw = await this.runPrompt(buildCommitPrompt({ ...input, stagedDiff: sanitizeDiffForAI(input.stagedDiff).diff }), model);
     const lines = raw.split("\n");
     const parsed = parseJsonResponse<CommitMessageResult>(raw, {
       subject: lines[0]?.slice(0, 72) || "update files",
@@ -90,7 +93,7 @@ export abstract class CliAIProvider implements AIProvider {
   }
 
   async generatePr(input: PrPromptInput, model = this.defaultModel): Promise<PrContentResult> {
-    const raw = await this.runPrompt(buildPrPrompt(input), model);
+    const raw = await this.runPrompt(buildPrPrompt({ ...input, diff: sanitizeDiffForAI(input.diff).diff }), model);
     const lines = raw.split("\n");
     const parsed = parseJsonResponse<PrContentResult>(raw, {
       title: lines[0]?.slice(0, 72) || "Update repository",
@@ -137,7 +140,7 @@ export abstract class CliAIProvider implements AIProvider {
   }
 
   async generateReview(input: ReviewPromptInput, model = this.defaultModel): Promise<ReviewResult> {
-    const raw = await this.runPrompt(buildReviewPrompt(input), model);
+    const raw = await this.runPrompt(buildReviewPrompt({ ...input, diff: sanitizeDiffForAI(input.diff).diff }), model);
     const parsed = parseJsonResponse<ReviewResult>(raw, { summary: raw.slice(0, 800), findings: [] });
 
     // Drop anything malformed rather than posting a comment with a bad anchor.
@@ -204,34 +207,25 @@ export abstract class CliAIProvider implements AIProvider {
   }
 
   async generateSplit(input: SplitPromptInput, model = this.defaultModel): Promise<SplitResult> {
-    const raw = await this.runPrompt(buildSplitPrompt(input), model);
+    const raw = await this.runPrompt(buildSplitPrompt({ ...input, stagedDiff: sanitizeDiffForAI(input.stagedDiff).diff }), model);
     const parsed = parseJsonResponse<SplitResult>(raw, { commits: [] });
 
-    const commits = Array.isArray(parsed.commits)
-      ? parsed.commits.filter(
-          (c) =>
-            c &&
-            typeof c.subject === "string" &&
-            c.subject.trim().length > 0 &&
-            Array.isArray(c.files) &&
-            c.files.length > 0,
-        )
-      : [];
-
-    return {
-      commits: commits.map((c) => ({
-        subject: String(c.subject).replace(/\.$/, "").trim(),
-        body: String(c.body ?? "").trim(),
-        files: c.files.map(String).filter(Boolean),
-      })),
-    };
+    // Reject the entire proposal. Silently dropping malformed groups or coercing
+    // filenames can turn an invalid model response into an unintended commit.
+    if (!parsed || !Array.isArray(parsed.commits) || !parsed.commits.length ||
+        parsed.commits.some((c) => !c || typeof c.subject !== "string" || !c.subject.trim() ||
+          typeof c.body !== "string" || !Array.isArray(c.files) || !c.files.length ||
+          c.files.some((file) => typeof file !== "string" || !file))) {
+      throw new AIGenerationError(this.id, model, "empty_response", "invalid split plan; no commits were attempted");
+    }
+    return parsed;
   }
 
   async generateIssueFromDiff(
     input: IssueFromDiffPromptInput,
     model = this.defaultModel,
   ): Promise<IssueFromDiffResult> {
-    const raw = await this.runPrompt(buildIssueFromDiffPrompt(input), model);
+    const raw = await this.runPrompt(buildIssueFromDiffPrompt({ ...input, diff: sanitizeDiffForAI(input.diff).diff }), model);
     const lines = raw.split("\n");
     const parsed = parseJsonResponse<IssueFromDiffResult>(raw, {
       title: lines[0]?.slice(0, 72) || "New issue",

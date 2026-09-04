@@ -6,6 +6,8 @@
 export interface RuntimeFlags {
   /** Emit machine-readable JSON on stdout and suppress all chrome. */
   json: boolean;
+  /** Explicit --no-ai or a supplied commit message denies provider invocation. */
+  aiDisabled: boolean;
   /** Suppress chrome, but not errors. */
   quiet: boolean;
   /** Never prompt; fail with instructions instead. */
@@ -18,6 +20,7 @@ export interface RuntimeFlags {
 
 const defaults: RuntimeFlags = {
   json: false,
+  aiDisabled: false,
   quiet: false,
   noInput: false,
   dryRun: false,

@@ -22,7 +22,7 @@ const IGNORED_FILE_PATTERNS = [
   /mix\.lock$/,
   /packages\.lock\.json$/,
   // Environment & Sensitive files
-  /\.env(\.[a-zA-Z0-9_-]+)?$/i,
+  /\.env(?:\.[^/]*)?$/i,
   /(^|\/)id_(rsa|dsa|ecdsa|ed25519)(\.pub)?$/i,
   /\.(pem|key|p12|pfx|jks|keystore|mobileprovision|asc|gpg|kdbx|ppk|crt|cer|der)$/i,
   /credentials(\.json)?$/i,
@@ -191,6 +191,57 @@ export interface SanitizedDiff {
   strippedBlocks: number;
 }
 
+/** Decode Git's C-quoted path syntax, including UTF-8 octal escapes. */
+function decodeDiffPath(raw: string): string | null {
+  if (!raw.startsWith('"')) return raw.includes("\0") ? null : raw;
+  if (!raw.endsWith('"')) return null;
+  const bytes: number[] = [];
+  const escapes: Record<string, number> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, "\\": 92 };
+  for (let i = 1; i < raw.length - 1; i++) {
+    const char = raw[i]!;
+    if (char !== "\\") {
+      if (char === '"') return null;
+      const point = raw.codePointAt(i)!;
+      bytes.push(...new TextEncoder().encode(String.fromCodePoint(point)));
+      if (point > 0xffff) i++;
+      continue;
+    }
+    const escaped = raw[++i];
+    if (escaped === undefined) return null;
+    if (escaped in escapes) bytes.push(escapes[escaped]!);
+    else if (/[0-7]/.test(escaped)) {
+      const octal = raw.slice(i, i + 3);
+      if (!/^[0-7]{3}$/.test(octal) || parseInt(octal, 8) > 255) return null;
+      bytes.push(parseInt(octal, 8)); i += 2;
+    } else return null;
+  }
+  try {
+    const path = new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(bytes));
+    return path.includes("\0") ? null : path;
+  } catch { return null; }
+}
+
+/** Metadata precedes the first hunk; content inside a hunk is never a path. */
+function diffPaths(block: string): string[] | null {
+  const metadata = block.split(/^@@/m, 1)[0] ?? "";
+  const paths: string[] = [];
+  for (const line of metadata.split("\n")) {
+    const marker = /^(?:--- |\+\+\+ |rename from |rename to |copy from |copy to )/.exec(line);
+    if (!marker) continue;
+    const decoded = decodeDiffPath(line.slice(marker[0].length).split("\t")[0]!);
+    if (decoded === null) return null;
+    if (decoded !== "/dev/null") paths.push(decoded.replace(/^[ab]\//, ""));
+  }
+  if (paths.length) return paths;
+  // Empty files / mode-only changes may have no ---/+++ pair.
+  const header = block.split("\n", 1)[0] ?? "";
+  const match = /^diff --git ("(?:[^"\\]|\\.)*"|a\/.+?) ("(?:[^"\\]|\\.)*"|b\/.+)$/.exec(header);
+  if (!match) return null;
+  const left = decodeDiffPath(match[1]!); const right = decodeDiffPath(match[2]!);
+  if (left === null || right === null || !left.startsWith("a/") || !right.startsWith("b/")) return null;
+  return [left.slice(2), right.slice(2)];
+}
+
 /**
  * Single sanitisation pass over a raw diff: drops lockfile, binary, bundle, and
  * sensitive-file blocks, then redacts any secrets left in the remaining hunks.
@@ -205,12 +256,9 @@ export function sanitizeDiffForAI(rawDiff: string): SanitizedDiff {
       return false;
     }
 
-    const match = block.match(/^diff --git a\/(.+?) b\/(.+?)$/m);
-    if (!match) return true;
-    // Groups always participate when the overall match succeeds.
-    const pathA = match[1] ?? "";
-    const pathB = match[2] ?? "";
-    return !isIgnoredDiffFile(pathA) && !isIgnoredDiffFile(pathB);
+    const paths = diffPaths(block);
+    // Unknown file identity must not disable whole-file secret filtering.
+    return paths !== null && paths.length > 0 && paths.every((path) => !isIgnoredDiffFile(path));
   });
 
   const joined = filteredBlocks.join("").trim();

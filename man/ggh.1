@@ -1,4 +1,4 @@
-.TH ggh 1 "" "ggh 0.4.0-beta.2"
+.TH ggh 1 "" "ggh 0.4.0-beta.3"
 .SH NAME
 ggh \- Git and GitHub in one CLI
 .SH SYNOPSIS
@@ -563,6 +563,11 @@ Remove an alias
 Install, list, edit, and remove git hooks
 .RS
 .TP
+\fBcheck\fR
+Check staged content only; never commit, stage, prompt, or invoke AI
+.RE
+.RS
+.TP
 \fBlist\fR
 Show installed git hooks
 .RE
@@ -697,10 +702,10 @@ Respected for config, plugins, aliases, and cache.
 Print git-forwarding and alias-expansion decisions to stderr.
 .SH FILES
 .TP
-\fI~/.config/ggh/config.json\fR
+\fI~/.config/good-gh/config.json\fR
 User configuration (see \fBggh config\fR).
 .TP
-\fI~/.config/ggh/aliases.json\fR, \fI~/.config/ggh/plugins/\fR
+\fI~/.config/good-gh/aliases.json\fR, \fI~/.config/good-gh/plugins/\fR
 Aliases and community plugins. Plugins run with full process privileges; install only from sources you trust.
 .TP
 \fI.ggh.json\fR (repository root)

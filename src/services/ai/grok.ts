@@ -52,11 +52,11 @@ export class GrokProvider extends CliAIProvider {
           model,
           "--output-format",
           "plain",
-          // Single-turn text generation: no tools, no web, no subagents.
+          // Disable web/subagents; the vendor CLI remains a trusted executable.
           "--no-subagents",
           "--disable-web-search",
         ],
-        { timeoutMs },
+        { timeoutMs, cwd: tmpDir },
       );
       return stdout;
     } finally {

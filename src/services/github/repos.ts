@@ -3,7 +3,8 @@
  */
 
 import { clampLimit, classifyGitHubError, ghApi, ghGlobal, parseRepoFlag } from "./client.ts";
-import { cached, invalidateCache } from "../cache.ts";
+import { invalidateCache } from "../cache.ts";
+import { cachedGitHub } from "./cache.ts";
 
 export interface RepositoryItem {
   nameWithOwner: string;
@@ -18,11 +19,11 @@ export async function listUserRepositories(
   refresh = false,
 ): Promise<RepositoryItem[]> {
   const limit = clampLimit(options.limit ?? 30);
-  const key = `repo-list:${options.owner ?? "@me"}:${limit}:${options.fork ?? false}:${options.source ?? false}:${options.archived ?? false}:${options.language ?? ""}`;
-  return cached(
+  const key = `repo-list:${JSON.stringify([options.owner ?? "@me", limit, options.fork, options.source, options.archived, options.language])}`;
+  return cachedGitHub(
     key,
     () => fetchUserRepositories({ ...options, limit }),
-    { ttlMs: 300_000, refresh },
+    { ttlMs: 300_000, refresh, scope: "account" },
   );
 }
 
@@ -47,7 +48,7 @@ async function fetchUserRepositories(
 
 export async function listStarredRepositories(limit = 30, refresh = false): Promise<RepositoryItem[]> {
   const n = clampLimit(limit);
-  return cached(`starred:${n}`, () => fetchStarredRepositories(n), { ttlMs: 900_000, refresh });
+  return cachedGitHub(`starred:${n}`, () => fetchStarredRepositories(n), { ttlMs: 900_000, refresh, scope: "account" });
 }
 
 async function fetchStarredRepositories(limit: number): Promise<RepositoryItem[]> {

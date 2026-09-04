@@ -6,6 +6,7 @@ import {
   listPullRequests,
   mergePullRequest,
   requireAuth,
+  requireGitHubRepo,
   setPullRequestState,
   viewPullRequest,
   viewPullRequestInBrowser,
@@ -54,9 +55,10 @@ export function registerPrCommand(program: Command): void {
     }) => {
       header("GitHub Pull Requests");
 
-      const [isRepo, authed] = await Promise.all([requireGitRepo(), requireAuth()]);
+      const [isRepo, authed] = await Promise.all([requireGitHubRepo(), requireAuth()]);
       if (!isRepo || !authed) return;
 
+      if ((options?.checkout || options?.worktree) && !(await requireGitRepo())) return;
       if (prNumber) {
         const num = parseInt(prNumber, 10);
         if (isNaN(num)) {
@@ -124,7 +126,7 @@ export function registerPrCommand(program: Command): void {
       author?: string; label?: string; state?: string; search?: string; mine?: boolean; limit?: string;
     }) => {
       header("GitHub Pull Requests");
-      const [isRepo, authed] = await Promise.all([requireGitRepo(), requireAuth()]);
+      const [isRepo, authed] = await Promise.all([requireGitHubRepo(), requireAuth()]);
       if (!isRepo || !authed) return;
       await listPullRequestsInteractive(options);
     });
@@ -133,7 +135,7 @@ export function registerPrCommand(program: Command): void {
     .description("Show the diff for a pull request")
     .action(async (prNumber: string) => {
       header("Pull Request Diff");
-      if (!(await requireGitRepo())) return;
+      if (!(await requireGitHubRepo())) return;
       const num = parseInt(prNumber, 10);
       if (isNaN(num)) {
         fail(`Invalid PR number: ${prNumber}`);
@@ -160,7 +162,7 @@ export function registerPrCommand(program: Command): void {
     .description("Check out a pull request locally")
     .action(async (prNumber: string) => {
       header("Checkout Pull Request");
-      if (!(await requireGitRepo())) return;
+      if (!(await requireGitHubRepo())) return;
       const num = parseInt(prNumber, 10);
       if (isNaN(num)) {
         fail(`Invalid PR number: ${prNumber}`);

@@ -1,9 +1,12 @@
+import { captureStagedSnapshot, executeSplitCommits, validateSplitPlan } from "../services/git/split.ts";
+import { getFlags } from "../services/runtime.ts";
 import { Command } from "commander";
 import {
   checkLargeFiles,
   checkSubmodules,
   commit,
-  detectDefaultBranch,
+  detectPullRequestBase,
+  resolveBranchRef,
   findPrTemplate,
   getBranchDiff,
   getBranchDiffStat,
@@ -22,7 +25,6 @@ import {
   stageAll,
   stageFiles,
   switchBranch,
-  unstageAll,
 } from "../services/git.ts";
 import {
   type AIAttempt,
@@ -121,7 +123,7 @@ export function registerCommitCommand(program: Command): void {
       message?: string;
       all?: boolean;
       amend?: boolean;
-      noVerify?: boolean;
+      verify?: boolean;
       gpgSign?: boolean;
       signoff?: boolean;
       issue?: string;
@@ -141,8 +143,10 @@ export function registerCommitCommand(program: Command): void {
 
       if (!(await requireGitRepo())) return;
 
-      // Hoisted once — reused in both the AI generation loop and the PR creation block.
-      const cachedActivePr = await getActivePullRequest();
+      if (options.split && (options.ai === false || options.message !== undefined || options.amend || options.fixup)) {
+        fail("--split cannot be combined with --no-ai, --message, --amend, or --fixup.");
+        return;
+      }
 
       if (options.message !== undefined && options.message.trim().length === 0) {
         fail("Commit message cannot be empty.");
@@ -377,7 +381,7 @@ export function registerCommitCommand(program: Command): void {
         fixupSpinner.start("Creating fixup commit...");
         try {
           await commit("fixup", "", {
-            noVerify: options.noVerify,
+            noVerify: options.verify === false,
             gpgSign: options.gpgSign,
             signoff: options.signoff,
             fixup: options.fixup,
@@ -392,7 +396,10 @@ export function registerCommitCommand(program: Command): void {
         return;
       }
 
-      // --split: AI proposes commit boundaries, then commits each group.
+      let commitSubject = options.message;
+      let commitBody = "";
+
+      // --split: AI partitions the immutable staged snapshot, never the working tree.
       if (options.split) {
         if (status.staged.length === 0) {
           fail("Nothing staged to split. Use `ggh c -a --split` to stage everything first.");
@@ -404,7 +411,8 @@ export function registerCommitCommand(program: Command): void {
           if (dryRun(`split ${status.staged.length} staged file(s) into multiple commits`)) return;
         }
 
-        await ensureFirstRunSetup(promptFirstRunProvider);
+        const snapshot = await captureStagedSnapshot();
+        if (!options.provider) await ensureFirstRunSetup(promptFirstRunProvider);
 
         const splitDiffStat = diffStat;
         const { diff: splitSanitizedDiff, redactedCount: splitRedacted } = sanitizeDiffForAI(rawDiff);
@@ -424,7 +432,7 @@ export function registerCommitCommand(program: Command): void {
           const { result, providerName, model } = await generateSplitWithFallback(
             {
               branch: status.branch,
-              stagedFiles: status.staged,
+              stagedFiles: snapshot.files,
               stagedDiff: splitSanitizedDiff,
               diffStat: splitDiffStat,
               style: activeStyle,
@@ -437,74 +445,33 @@ export function registerCommitCommand(program: Command): void {
         } catch (err) {
           splitSpinner.stop(pc.red("AI split failed."));
           reportAIFailure(err, "Could not propose a split:");
+          process.exitCode = 1;
           return;
         }
 
-        if (splitResult.commits.length === 0) {
-          fail("AI could not propose a split. Try committing normally with `ggh c`.");
-          return;
+        let plan;
+        try { plan = validateSplitPlan(splitResult, snapshot); }
+        catch (err) { fail(String(err)); return; }
+        if (options.closes) {
+          const last = plan.at(-1)!;
+          last.body = `${last.body.trim()}\n\nCloses #${options.closes.replace(/^#/, "")}`.trim();
         }
-
-        if (splitResult.commits.length === 1) {
-          p.log.info(pc.dim("AI suggests a single commit — no split needed."));
-          const onlyCommit = splitResult.commits.at(0);
-          if (!onlyCommit) {
-            fail("AI could not propose a split. Try committing normally with `ggh c`.");
-            return;
-          }
-          p.note(`${pc.bold(onlyCommit.subject)}\n${onlyCommit.body ? pc.dim(`\n${onlyCommit.body}`) : ""}`, "Proposed Commit");
-          p.log.info("Falling back to normal commit flow.");
-        } else {
-          p.log.step(`Proposed ${splitResult.commits.length} commits:`);
-          for (const [i, c] of splitResult.commits.entries()) {
-            p.log.message(`  ${pc.bold(String(i + 1))} ${pc.cyan(c.subject)}`);
-            p.log.message(`    ${pc.dim(c.files.join(", "))}`);
-          }
-
-          if (!(await confirmOrAbort(`Create ${splitResult.commits.length} commits in sequence?`, { assumeYes: options.yes, cancelText: "Split cancelled." }))) return;
-
-          if (dryRun(`create ${splitResult.commits.length} commits`)) return;
-
-          // Unstage everything, then stage and commit each group.
-          await unstageAll();
-
-          for (const [i, c] of splitResult.commits.entries()) {
-            const cSpinner = p.spinner();
-            cSpinner.start(`Commit ${i + 1}/${splitResult.commits.length}: ${pc.cyan(c.subject)}`);
-            try {
-              await stageFiles(c.files);
-              await commit(c.subject, c.body, {
-                noVerify: options.noVerify,
-                gpgSign: options.gpgSign,
-                signoff: options.signoff,
-              });
-              cSpinner.stop(pc.green(`Commit ${i + 1}/${splitResult.commits.length} created.`));
-            } catch (err) {
-              cSpinner.stop(pc.red(`Commit ${i + 1} failed.`));
-              fail(String(err));
-              return;
-            }
-          }
-
-          p.log.success(pc.green(`Created ${splitResult.commits.length} commits!`));
-          if (options.push || options.pr) {
-            p.log.info(pc.dim("Pushing split commits..."));
-            try {
-              await push({ branch: status.branch, noVerify: options.noVerify, forceWithLease: options.forceWithLease });
-              p.log.success(pc.green("Pushed."));
-            } catch (err) {
-              p.log.warn(pc.yellow(`Push failed: ${String(err)}`));
-            }
-          }
-          p.outro("Done.");
-          return;
+        p.log.step(`Proposed ${plan.length} snapshot-preserving commits:`);
+        for (const group of plan) {
+          p.log.message(`  ${pc.cyan(group.subject)} ${pc.dim(group.files.join(", "))}`);
         }
-      }
+        if (!(await confirmOrAbort(`Create ${plan.length} commits from the staged snapshot?`, { assumeYes: options.yes }))) return;
+        try {
+          const completed = await executeSplitCommits(snapshot, plan, {
+            noVerify: options.verify === false, gpgSign: options.gpgSign, signoff: options.signoff,
+          });
+          p.log.success(`Created ${completed.length} commits. Unstaged content was not added.`);
+        } catch (err) { fail(String(err)); return; }
+        commitSubject = plan[0]!.subject;
+        commitBody = plan.map((group) => `- ${group.subject}`).join("\n");
+      } else {
 
       // Resolve Commit Message
-      let commitSubject = options.message;
-      let commitBody = "";
-
       if (!commitSubject && options.ai === false) {
         try {
           const wizardResult = await promptConventionalCommitWizard();
@@ -586,7 +553,7 @@ export function registerCommitCommand(program: Command): void {
           }
 
           // If automated flags were provided on CLI, break immediately
-          if (options.push || options.pr) {
+          if (options.yes || options.push || options.pr) {
             break;
           }
 
@@ -596,7 +563,7 @@ export function registerCommitCommand(program: Command): void {
             "Proposed Commit Message",
           );
 
-          const activePr = cachedActivePr;
+          const activePr = await getActivePullRequest();
           const prLabel = activePr
             ? `Commit & Push to PR #${activePr.number}`
             : "Commit, Push & Open PR";
@@ -678,7 +645,7 @@ export function registerCommitCommand(program: Command): void {
       commitSpinner.start(options.amend ? "Amending commit..." : "Creating commit...");
       try {
         await commit(commitSubject, commitBody, {
-          noVerify: options.noVerify,
+          noVerify: options.verify === false,
           gpgSign: options.gpgSign,
           signoff: options.signoff,
           amend: options.amend,
@@ -690,6 +657,8 @@ export function registerCommitCommand(program: Command): void {
         const output = execErr.stderr || execErr.stdout || String(err);
         fail(output);
         return;
+      }
+
       }
 
       // Protected Branch Direct Push Guard
@@ -722,7 +691,7 @@ export function registerCommitCommand(program: Command): void {
 
         const remotes = await getRemotes();
         if (remotes.length === 0) {
-          p.log.warn("No git remote configured. Commit was created locally, but cannot push to remote.");
+          fail("No git remote configured. Commit was created locally, but cannot push to remote.");
           p.log.info(`Add a remote with \`git remote add origin <url>\` and push with \`git push -u origin ${status.branch}\`.`);
           options.push = false;
           options.pr = false;
@@ -732,7 +701,7 @@ export function registerCommitCommand(program: Command): void {
         const pushSpinner = p.spinner();
         pushSpinner.start(`Pushing to remote branch ${pc.cyan(status.branch)}...`);
         try {
-          await push({ branch: status.branch, noVerify: options.noVerify, forceWithLease: options.forceWithLease });
+          await push({ branch: status.branch, noVerify: options.verify === false, forceWithLease: options.forceWithLease });
           pushSpinner.stop(pc.green("Pushed to remote successfully!"));
         } catch (err) {
           pushSpinner.stop(pc.yellow("Push failed or was rejected."));
@@ -744,7 +713,7 @@ export function registerCommitCommand(program: Command): void {
             try {
               await pullRebase();
               rebaseSpinner.stop(pc.green("Rebase completed. Retrying push..."));
-              await push({ branch: status.branch, noVerify: options.noVerify, forceWithLease: options.forceWithLease });
+              await push({ branch: status.branch, noVerify: options.verify === false, forceWithLease: options.forceWithLease });
               p.log.success(pc.green("Pushed to remote successfully!"));
             } catch (rebaseErr) {
               rebaseSpinner.stop(pc.red("Rebase or push failed. Please resolve conflicts manually."));
@@ -762,7 +731,7 @@ export function registerCommitCommand(program: Command): void {
       if (options.pr) {
         if (!(await requireAuth())) return;
 
-        const activePr = cachedActivePr;
+        const activePr = await getActivePullRequest();
         if (activePr) {
           p.log.success(pc.green(`Pushed updates to active Pull Request #${activePr.number}: ${pc.bold(pc.cyan(activePr.url))}`));
           p.outro(pc.green("All operations completed successfully!"));
@@ -770,26 +739,27 @@ export function registerCommitCommand(program: Command): void {
         }
 
         const prSpinner = p.spinner();
-        prSpinner.start("Generating AI Pull Request content...");
+        prSpinner.start("Preparing Pull Request content...");
 
-        const [prTemplate, defaultBranch] = await Promise.all([findPrTemplate(), detectDefaultBranch()]);
+        const [prTemplate, defaultBranch] = await Promise.all([findPrTemplate(), detectPullRequestBase()]);
 
         // The staged diff is empty now that the commit exists; a PR is the whole
         // branch, so describe it from base...HEAD instead.
+        const comparisonBase = await resolveBranchRef(defaultBranch);
         const [branchDiff, branchDiffStat, branchCommits] = await Promise.all([
-          getBranchDiff(defaultBranch),
-          getBranchDiffStat(defaultBranch),
-          getCommitsSinceBase(defaultBranch),
+          getBranchDiff(comparisonBase),
+          getBranchDiffStat(comparisonBase),
+          getCommitsSinceBase(comparisonBase),
         ]);
 
         if (prTemplate) {
           p.log.info(pc.dim("Detected repository PR template in .github/"));
         }
 
-        let prTitle = commitSubject;
+        let prTitle = commitSubject ?? "Update branch";
         let prBody = commitBody;
 
-        try {
+        if (!getFlags().aiDisabled) try {
           const { result: prAi } = await generatePrWithFallback(
             {
               branch: status.branch,
@@ -814,6 +784,8 @@ export function registerCommitCommand(program: Command): void {
           reportAIFailure(err, "AI Pull Request generation failed:");
         }
 
+        if (getFlags().aiDisabled) prSpinner.stop("Using the supplied commit message; AI is disabled.");
+
         p.note(`${pc.bold(prTitle)}\n\n${pc.dim(prBody)}`, "Proposed Pull Request");
 
         const confirmPr = await confirmOrAbort("Create this Pull Request now on GitHub?", { assumeYes: options.yes, cancelText: null });
@@ -825,6 +797,7 @@ export function registerCommitCommand(program: Command): void {
             const prUrl = await createPullRequest({
               title: prTitle,
               body: prBody,
+              base: defaultBranch,
             });
             createSpinner.stop(pc.green("Pull Request created!"));
             p.log.success(`PR URL: ${pc.bold(pc.cyan(prUrl))}`);

@@ -25,22 +25,34 @@ $ ggh commit
 
 ## Install
 
-Requires [Bun](https://bun.sh). `gh` is needed for the GitHub commands, and at
-least one of `codex`, `grok`, `claude`, or `ollama` for the AI ones.
+Download a standalone binary for your platform from
+[Releases](https://github.com/JonathanRReed/Good-GH-CLI/releases), verify its
+SHA-256 file, and place it on your PATH as `ggh`. Standalone binaries require
+Git, but not Bun or Node. GitHub operations additionally require `gh`; local
+explicit-message commits do not. AI commands need a supported, configured
+provider CLI.
+
+Package installs require **Node 22+ and Bun 1.4+**, as well as Git. Releases
+include an installable tarball even when npm registry publication is disabled:
 
 ```bash
-bun add -g good-gh-cli
+bun add -g ./good-gh-cli-<version>.tgz
 ```
 
-Or take a standalone binary from
-[Releases](https://github.com/JonathanRReed/Good-GH-CLI/releases) — no Bun
-required. macOS users can use the Developer-ID-signed universal DMG.
+When a release's notes explicitly confirm npm publication, use its exact
+version (`bun add -g good-gh-cli@<version>`). Prereleases use the `beta` dist-tag;
+do not assume the default npm tag contains the current candidate.
+
+The code on `main` is the **0.4.0-beta.3 candidate**. A tag/release is a separate
+step. Signed/notarized macOS DMGs are separately built and uploaded; bare macOS
+binaries have ad-hoc signatures, not Developer ID notarization. See
+[packaging and release checks](docs/PACKAGING.md).
 
 From source:
 
 ```bash
 git clone https://github.com/JonathanRReed/Good-GH-CLI.git
-cd Good-GH-CLI && bun install && bun link
+cd Good-GH-CLI && bun install --frozen-lockfile && bun run build && bun link
 ```
 
 `ggh status` will tell you what it found.
@@ -59,8 +71,20 @@ ggh c -m "fix: parser" -y   # fully non-interactive
 
 On `main` it offers to move you to a feature branch first. It reads your last ten
 commits to match the style already in the repo, blocks files over GitHub's 100 MB
-limit before they poison your history, and refuses to commit on top of unresolved
+limit using the actual staged blobs, and refuses to commit on top of unresolved
 conflicts.
+
+### Splitting staged changes safely
+
+`ggh c --split` proposes file-based groups from a snapshot of the index. It
+validates every group before committing, preserves unstaged bytes, and rejects
+extra, duplicated, or missing paths. It cannot be combined with `--no-ai`, `-m`,
+`--amend`, or `--fixup`.
+
+On partial failure, already-created commits remain and the original index is
+preserved, leaving the remaining changes staged. The error identifies a private
+recovery checkpoint. Inspect `git status` and `git log` before retrying. There is
+no automatic reset and no promise to undo side effects of your own Git hooks.
 
 ## Pull requests
 
@@ -264,8 +288,8 @@ ggh ignore --remove "*.log"
 ggh ignore "*.key" --local  # .git/info/exclude instead
 
 ggh hook list
-ggh hook install pre-commit # run `ggh commit --review` before each commit
-ggh hook edit pre-commit --command "ggh commit --review"
+ggh hook install pre-commit # check staged files without starting another commit
+ggh hook edit pre-commit --command "hook check"
 ggh hook remove pre-commit
 
 ggh alias ci "commit --pr --yes"
@@ -301,7 +325,7 @@ ggh status    # confirms the host and account
 
 ## Scripting
 
-Every command follows the same rules. Typo a command and `ggh` suggests the
+Shared flags follow these rules where advertised by a command. Typo a command and `ggh` suggests the
 real one (`ggh prr` → `ggh pr`) instead of forwarding you to git's
 irrelevant guesses — unless the typo is git's word or one of your git
 aliases, which always win.
@@ -371,8 +395,8 @@ gets:
    default.
 2. The remaining Codex tiers (`gpt-5.6-terra`, `gpt-5.6-luna`), so one model
    being unavailable never costs you the whole provider.
-3. Grok, then Claude Code, then **Ollama running locally** — which needs no
-   account and no credits, so the chain has a floor it cannot fall through.
+3. Grok, then Claude Code, then **Ollama running locally**. This requires a running local daemon and a
+   downloaded local model; missing models or a stopped daemon still fail.
 
 A provider that reports an account-wide usage limit is dropped for the rest of
 the run: retrying its other tiers only wastes your time. Codex runs with
@@ -408,7 +432,32 @@ ggh config set ai_provider ollama
 ggh config set ai_fallback false
 ```
 
+The Ollama adapter accepts only a loopback HTTP endpoint and a model whose
+resolved Modelfile identifies local weights. Remote endpoints, cloud aliases,
+and unverifiable model definitions are refused before sending the prompt. Also
+disable cloud features in the **running Ollama daemon**, restart it, and verify
+its settings when enforcing an organizational no-egress policy. ggh does not
+sandbox a provider CLI or a locally modified daemon.
+
+Claude runs in an isolated working directory with safe mode, built-in and MCP
+tools disabled, and no session persistence. Update older Claude CLIs that do not
+support those flags; ggh does not retry with weaker permissions.
+
 [SECURITY.md](SECURITY.md) has the full list and limits.
+
+## Recovery and verification
+
+A broken trusted plugin can be bypassed without deleting its files:
+
+```bash
+GGH_NO_PLUGINS=1 ggh plugin list
+GGH_NO_PLUGINS=1 ggh plugin remove <name> -y
+```
+
+`ggh config doctor` reports configuration problems; `ggh config cache-clear`
+removes only recognized ggh cache entries. Cache failures disable caching rather
+than broadening filesystem access. See [release readiness](docs/RELEASE-READINESS.md)
+for the regression commands and the checks that require real external accounts.
 
 ## Shell completion
 

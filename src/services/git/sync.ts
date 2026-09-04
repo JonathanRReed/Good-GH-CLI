@@ -8,7 +8,7 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import type { CloneMode } from "../config.ts";
 import { execGitWithRetry } from "./exec.ts";
-import { getCurrentBranch, getRemoteTrackingBranch, getRemotes, getRepoRoot, hasBranch, isDetachedHead } from "./branch.ts";
+import { getCurrentBranch, getRemoteTrackingBranch, getRemotes, getRepoRoot, hasBranch, isDetachedHead, resolveBranchRef } from "./branch.ts";
 import { getBranchMergeBase } from "./stack.ts";
 
 export async function push(
@@ -141,7 +141,7 @@ export async function getAheadBehind(
 }
 
 /**
- * Detects the repository's default branch: recorded merge-base first, then main/master fallback.
+ * Counts commits relative to the repository default, not the stack parent.
  */
 
 
@@ -162,7 +162,7 @@ export async function getAheadOfDefault(
 
     const { stdout } = await run(
       "git",
-      ["rev-list", "--count", `${actualDefault}..HEAD`],
+      ["rev-list", "--count", `${await resolveBranchRef(actualDefault, cwd)}..HEAD`],
       { cwd },
     );
     return parseInt(stdout.trim(), 10) || 0;
@@ -172,22 +172,38 @@ export async function getAheadOfDefault(
 }
 
 
+/** Repository default is independent of the current feature branch's parent. */
 export async function detectDefaultBranch(cwd = process.cwd()): Promise<string> {
-  try {
-    const current = await getCurrentBranch(cwd);
-    const recordedBase = await getBranchMergeBase(current, cwd);
-    if (recordedBase && (await hasBranch(recordedBase, cwd))) {
-      return recordedBase;
+  const remotes = await getRemotes(cwd);
+  for (const remote of [...new Set(["origin", ...remotes])]) {
+    const result = await run("git", ["symbolic-ref", "--quiet", `refs/remotes/${remote}/HEAD`], { cwd, reject: false });
+    const prefix = `refs/remotes/${remote}/`;
+    if (result.exitCode === 0 && result.stdout.trim().startsWith(prefix)) {
+      const name = result.stdout.trim().slice(prefix.length);
+      return name;
     }
-  } catch {
-    // Fall through to main/master detection
   }
-
   const [hasMain, hasMaster] = await Promise.all([hasBranch("main", cwd), hasBranch("master", cwd)]);
   if (hasMain) return "main";
   if (hasMaster) return "master";
-  return "main";
+  const configured = await run("git", ["config", "--get", "init.defaultBranch"], { cwd, reject: false });
+  if (configured.stdout.trim() && await hasBranch(configured.stdout.trim(), cwd)) return configured.stdout.trim();
+  const roots = await run("git", ["for-each-ref", "--format=%(refname:short)", "refs/heads"], { cwd });
+  const branches = roots.stdout.trim().split("\n").filter(Boolean);
+  if (branches.length === 1) return branches[0]!;
+  throw new Error("Cannot determine the repository default branch. Fetch the remote HEAD or configure it with `git remote set-head origin <branch>`.");
 }
+
+/** A PR/branch diff may compare against its recorded stack parent instead. */
+export async function detectPullRequestBase(cwd = process.cwd()): Promise<string> {
+  const recorded = await getBranchMergeBase(await getCurrentBranch(cwd), cwd);
+  return recorded && await hasBranch(recorded, cwd) ? recorded : detectDefaultBranch(cwd);
+}
+
+export async function detectComparisonBase(cwd = process.cwd()): Promise<string> {
+  return resolveBranchRef(await detectPullRequestBase(cwd), cwd);
+}
+
 
 
 export async function clone(

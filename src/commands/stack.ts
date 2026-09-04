@@ -127,8 +127,13 @@ export function registerStackCommand(program: Command): void {
         fail("A branch cannot be stacked on itself.");
         return;
       }
+      const graph = await getStackGraph();
+      const invalidName = validateBranchName(parent);
+      if (invalidName || !graph.has(parent)) { fail(invalidName || `Parent branch "${parent}" does not exist locally.`); return; }
+      if (getStackAncestors(graph, parent).includes(current)) { fail("Recording this parent would create a stack cycle."); return; }
       if (dryRun(`record ${current} as stacked on ${parent}`)) return;
       await setBranchMergeBase(current, parent);
+      if (jsonOut({ branch: current, parent })) return;
       p.log.success(pc.green(`${pc.bold(current)} is now stacked on ${pc.bold(parent)}.`));
       p.outro("Done.");
     });
@@ -138,7 +143,7 @@ export function registerStackCommand(program: Command): void {
     .description("Rebase a branch and everything above it onto their recorded parents")
     .option("-y, --yes", "Skip the confirmation prompt")
     .option("--continue", "Continue a rebase in progress, then finish restacking")
-    .option("--abort", "Abort a rebase in progress, then finish restacking")
+    .option("--abort", "Abort the current rebase without restacking other branches")
     .action(async (branch?: string, options?: { yes?: boolean; continue?: boolean; abort?: boolean }) => {
       header("Restack");
       if (!(await requireGitRepo())) return;
@@ -164,10 +169,13 @@ export function registerStackCommand(program: Command): void {
           return;
         }
 
+        if (dryRun(options?.abort ? "abort the active rebase" : "continue the active rebase and restack descendants")) return;
+
         if (options?.abort) {
           try {
             await execGitWithRetry(["rebase", "--abort"]);
-            p.log.warn("Rebase aborted.");
+            p.log.warn("Rebase aborted. No further branches were changed.");
+            return;
           } catch (err) {
             fail(`Failed to abort rebase: ${String(err)}`);
             return;

@@ -42,29 +42,50 @@ credentials, and quoted or bare assignments to names like `password`,
   recognisable prefix in a file that is not on the ignore list will be sent.
 - **Proprietary source code.** Redaction removes credentials, not your code. If
   your employer forbids sending source to third parties, use `ggh commit -m`,
-  `--no-ai`, or set `ai_provider` to `ollama` so nothing leaves the machine.
+  `--no-ai`, or follow the local-only configuration and daemon checks below.
 - **The vendor's retention policy.** That is between you and whichever CLI you
   signed in to.
 
-If you want the AI features with none of the network exposure, run a local model:
+To use the local Ollama adapter without falling back to a hosted provider:
 
 ```bash
 ggh config set ai_provider ollama
 ggh config set ai_fallback false
 ```
 
+The local adapter refuses non-loopback HTTP endpoints and model definitions
+that do not identify a local weights blob, including cloud aliases. It inspects
+metadata without a repository prompt before invoking the model. This is not a
+sandbox: the Ollama executable and daemon must be trusted. For no-egress use,
+disable cloud features in the daemon's `~/.ollama/server.json` with
+`{"disable_ollama_cloud":true}` (or start the daemon with `OLLAMA_NO_CLOUD=1`),
+restart it, and verify its logs. Setting an environment variable only on an
+already-running client's invocation does not reconfigure its daemon.
+
 Repository `.ggh.json` files cannot set the provider, fallback, model, or consent
 because a cloned repository is untrusted input.
 
 ## Other things worth knowing
 
-- **Prompts are written to a `0600` temp file**, not passed as an argument, so a
-  diff never appears in `ps` output. The file is removed after the call.
+- **Prompts use stdin or a private `0600` temporary file**, not process arguments.
+  Temporary provider directories are removed after the call.
 - **Secrets and long-form GitHub bodies use stdin**, not process arguments.
 - **`ggh` never asks for or stores an API key.** It drives CLIs you have already
   signed in to, and reads only whether an auth file exists.
-- **Codex runs with `--ignore-user-config`**, so your MCP servers, hooks, and
-  custom instructions are not loaded into commit-message generation.
+- **Coding clients run outside the repository directory.** Codex also uses
+  `--ignore-user-config` and its read-only sandbox. Claude uses `--safe-mode`,
+  `--tools ""`, `--disallowedTools "*"`, an empty strict MCP configuration, and
+  no session persistence. Grok disables web search and subagents. These clients
+  remain trusted executables, not a ggh-controlled OS sandbox; vendor behavior
+  and new CLI versions need separate compatibility checks.
+- **AI deny flags are checked at the shared provider boundary.** `--no-ai`,
+  an explicit commit message, and dry-run cannot invoke an AI client.
+- **Captured subprocess output is bounded** and piped operations have a deadline.
+  Interactive Git passthrough retains native terminal behavior.
+- **Cache entries are private and namespaced** by host, account, repository and
+  checkout. Environment-token sessions bypass disk caching. Cache failures do
+  not fall back to shared temporary-directory cleanup.
+- **Trusted plugins can be bypassed** with `GGH_NO_PLUGINS=1` for recovery.
 - **Destructive commands refuse to guess.** Without a terminal, `ggh` cancels and
   exits non-zero rather than auto-answering a prompt. `--yes` is the only way to
   confirm non-interactively, and `--dry-run` previews without touching anything.

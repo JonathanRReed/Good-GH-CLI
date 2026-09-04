@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { getFlags } from "../services/runtime.ts";
 import { existsSync, appendFileSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { getRepoRoot, requireGitRepo } from "../services/git.ts";
+import { getRepoRoot, getGitPath, requireGitRepo } from "../services/git.ts";
 import { emitJson, fail, failFromGitHub, header, p, pc, jsonOut } from "../utils/ui.ts";
 import { dryRun } from "../utils/flags.ts";
 
@@ -85,7 +85,7 @@ Examples:
     if (!(await requireGitRepo())) return null;
     const root = await getRepoRoot();
     return {
-      path: local ? join(root, ".git", "info", "exclude") : join(root, ".gitignore"),
+      path: local ? await getGitPath("info/exclude") : join(root, ".gitignore"),
       label: local ? ".git/info/exclude" : ".gitignore",
     };
   }
@@ -137,12 +137,6 @@ Examples:
   }
 
   async function addIgnores(targetPath: string, label: string, patterns: string[]): Promise<void> {
-    // Ensure the directory exists (for .git/info/exclude)
-    const dir = dirname(targetPath);
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-    }
-
     // Read existing content to avoid duplicates
     const existing = existsSync(targetPath) ? readFileSync(targetPath, "utf-8") : "";
     const existingLines = new Set(existing.split("\n").map((l) => l.trim()));
@@ -161,6 +155,7 @@ Examples:
       return;
     }
 
+    mkdirSync(dirname(targetPath), { recursive: true });
     const addition = (existing && !existing.endsWith("\n") ? "\n" : "") + toAdd.join("\n") + "\n";
     try {
       appendFileSync(targetPath, addition);

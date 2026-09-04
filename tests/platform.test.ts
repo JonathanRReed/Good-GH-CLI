@@ -154,6 +154,7 @@ describe("runtime flags", () => {
       noInput: false,
       dryRun: false,
       repo: undefined,
+      aiDisabled: false,
     });
   });
 });

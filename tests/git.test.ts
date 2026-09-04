@@ -310,6 +310,7 @@ describe("git service", () => {
   it("checks large files correctly (blocking >=100MB, warning >=50MB)", async () => {
     // Normal file
     writeFileSync(join(tempRepo, "small.txt"), "hello small");
+    await stageFiles(["small.txt"], tempRepo);
     const result = await checkLargeFiles([{ path: "small.txt", status: "added", staged: true }], tempRepo);
     expect(result.blocked.length).toBe(0);
     expect(result.warnings.length).toBe(0);

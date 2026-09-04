@@ -58,7 +58,7 @@ export class CodexProvider extends CliAIProvider {
           outputPath,
           "-",
         ],
-        { input: prompt, timeoutMs },
+        { input: prompt, timeoutMs, cwd: tmpDir },
       );
 
       if (!existsSync(outputPath)) {

@@ -3,6 +3,46 @@
 All notable changes to this project are documented here.
 This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Fixed
+
+- Confine cache cleanup to validated, owned entries; disable caching on unsafe
+  roots and isolate responses by repository, host, and authenticated account.
+  Environment-token sessions bypass disk caching.
+- Split commits now validate the complete AI proposal and commit exact staged
+  blobs through a private index. Unstaged edits remain untouched; partial
+  failures retain completed commits, remaining staged work, and a checkpoint.
+- Enforce AI deny/dry-run flags, forward `--no-verify`, and allow local explicit
+  commits without gh. AI split failures now return a nonzero status.
+- Replace recursive pre-commit workflows with a noninteractive `hook check`;
+  resolve hooks and local excludes through Git, including linked worktrees
+  and custom hooks paths. Validate hook edits as well as installation.
+- Separate repository-default, PR-base, and local comparison references. Fix
+  deep-stack submission, reject invalid/cyclic parent pointers, and ensure
+  restack continuation/abort previews never modify a rebase.
+- Check the staged object rather than its working copy for large-file limits.
+- Preserve API argument boundaries, fix notification API routing, support
+  explicit remote targets for PR/label/workflow reads, emit JSON for config
+  values, and reject malformed numeric configuration.
+- Validate and bound MCP envelopes, input lines, tool parameters and responses;
+  implement the declared protocol's ping and initialization lifecycle.
+- Decode quoted Git paths before sensitive-file filtering and fail closed on
+  unparseable file identity. Bound subprocess output and preserve inherited
+  environment keys when callers supply overrides.
+
+### Hardened
+
+- Refuse remote/cloud Ollama endpoints and unverified model aliases before
+  sending prompts. Isolate coding-client working directories and disable Claude
+  tools, MCP discovery, customizations and session persistence.
+- Add plugin-disabled recovery with GGH_NO_PLUGINS=1 and portable plugin URLs.
+- Add native regression cases and cross-platform index-transaction tests.
+- Build releases from one immutable tag commit with pinned Bun and action SHAs;
+  verify the actual native binaries and packed npm artifact before publishing.
+- Make npm publication explicit and independently verified. Remove unchecked
+  post-merge lockfile changes; dependency PRs must include a frozen-valid lock.
+
 ## 0.4.0-beta.2 - 2026-09-04
 
 ### Security

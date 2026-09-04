@@ -106,10 +106,10 @@ async function generate(): Promise<string> {
   L.push(`Print git-forwarding and alias-expansion decisions to stderr.`);
   L.push(`.SH FILES`);
   L.push(`.TP`);
-  L.push(`\\fI~/.config/ggh/config.json\\fR`);
+  L.push(`\\fI~/.config/good-gh/config.json\\fR`);
   L.push(`User configuration (see \\fBggh config\\fR).`);
   L.push(`.TP`);
-  L.push(`\\fI~/.config/ggh/aliases.json\\fR, \\fI~/.config/ggh/plugins/\\fR`);
+  L.push(`\\fI~/.config/good-gh/aliases.json\\fR, \\fI~/.config/good-gh/plugins/\\fR`);
   L.push(`Aliases and community plugins. Plugins run with full process privileges; install only from sources you trust.`);
   L.push(`.TP`);
   L.push(`\\fI.ggh.json\\fR (repository root)`);

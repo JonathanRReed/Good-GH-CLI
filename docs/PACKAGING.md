@@ -7,19 +7,45 @@ tree at build time.
 
 ## Shapes
 
-| Shape | Artifact | Size | Runtime deps |
-| --- | --- | --- | --- |
-| Standalone (`make install`) | `bun build --compile` binary | ~64 MB (Bun runtime inside) | `git` (+ `gh` for GitHub commands) |
-| Lean (`make install-lean`) | 340 KB JS bundle + sh wrapper | ~340 KB | `bun`, `git` (+ `gh`) |
+| Shape | Artifact | Runtime requirements |
+| --- | --- | --- |
+| Standalone | Native executable with Bun embedded | Git; gh for GitHub operations |
+| Lean | Minified JS bundle and shell wrapper | Bun 1.4+, Git; gh for GitHub operations |
+| npm tarball | Node launcher, bundle, source, package metadata | Node 22+, Bun 1.4+, Git; gh for GitHub operations |
 
-Upstream releases ship five standalone binaries (linux x64/arm64, darwin
-x64/arm64, windows x64) with sha256 sums, plus `ggh.1`, bash/zsh/fish
-completions, the npm tarball, and a Developer-ID-signed universal macOS DMG.
+The release workflow produces five standalone binaries (Linux x64/arm64,
+macOS x64/arm64, Windows x64), an npm tarball, completions, a man page, and
+SHA-256 files. macOS binaries are ad-hoc signed before hashing; that is not a
+Developer ID signature or notarization. A Developer-ID-signed universal DMG
+is a separate local packaging operation requiring the maintainer's signing
+identity and, for notarization, Keychain profile.
+
+### Release gates
+
+Pull requests run the same artifact build/install/smoke pipeline without
+publishing. Manual releases resolve `refs/tags/<tag>` once, verify its package
+version, and pass that immutable commit SHA to every build. Bun is pinned to
+1.4.0. Native jobs download and test the exact artifacts that will be uploaded,
+including checksums, a real commit, and an installed pre-commit hook. POSIX
+artifacts additionally run `scripts/audit-regressions.py`.
+
+npm publication is explicitly opt-in: set the repository variable
+`PUBLISH_NPM=true` and configure a valid `NPM_TOKEN`. Missing credentials then
+fail the job rather than quietly succeeding. With publication disabled, release
+notes state that no npm version was published and document tarball installation.
+The publish job uses the already-tested tarball, then checks the exact registry
+version and intended `beta`/`latest` dist-tag. Do not infer registry publication
+from a GitHub asset release alone.
+
+`bun run release <version>` verifies the tree, bumps the package/changelog,
+regenerates the versioned man page, rebuilds, commits, and creates a **local**
+tag. It does not push. Review the commit before pushing the tag.
 
 ## Build
 
-Build dependency: Bun >= 1.4 (`bun install` fetches exactly two runtime
-dependencies — `commander`, `picocolors` — pinned in `bun.lock`).
+Build dependencies: Bun 1.4.0, Git, and the dependencies pinned in `bun.lock`.
+Use `bun install --frozen-lockfile`; the two runtime dependencies are commander
+and picocolors. CI also installs the packed package under Node 22.
 
 ```bash
 make check      # typecheck + lint + full test suite + man freshness
@@ -45,7 +71,7 @@ for local developer builds.
 - **No network at runtime** except to github.com (via the `gh` CLI it shells
   out to) and, for AI features only, to whichever AI CLI the user configured.
   There is no telemetry, no update check, no phone-home of any kind — verify
-  with `grep -rn "fetch(" src/services/`.
+  with process/network tracing appropriate to the configured external tools.
 - **Graceful without its friends.** No `git` → clear error. No `gh` →
   `ggh status` says so with install instructions. No AI CLI → AI features
   explain themselves and every value has a `-m`/`--no-ai`/manual fallback.
@@ -56,8 +82,8 @@ for local developer builds.
   `--json` output stays parseable; prompts never guess without a TTY.
 - **Plugins run with full process privileges** (they are imported TS/JS).
   This is documented in `ggh plugin --help` and the man page. A distro that
-  wants a locked-down build can patch out `loadPlugins`, but upstream will
-  not — it is the extension story.
+  needs recovery can run with `GGH_NO_PLUGINS=1`; this skips plugin execution
+  while leaving management commands available.
 
 ## Example: Arch PKGBUILD sketch (standalone shape)
 

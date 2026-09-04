@@ -110,3 +110,23 @@ That bumps `package.json`, writes a `CHANGELOG.md` entry with `ggh changelog`,
 commits, tags, and pushes. The tag triggers the release workflow, which verifies
 again, compiles standalone binaries for five targets, publishes a GitHub Release,
 and publishes to npm if `NPM_TOKEN` is set.
+
+
+## Release-safety regressions
+
+Use Bun 1.4.0 and `bun install --frozen-lockfile`. Dependency changes must include
+an updated `bun.lock` on the reviewed branch; no workflow rewrites main's lock
+file after merge. Regenerate it with `bun install`, then run the frozen install
+and full checks before committing.
+
+On Linux/macOS, compile the executable and run the black-box suite:
+
+```sh
+bun build bin/ggh.ts --compile --minify --outfile /tmp/ggh-audit
+python3 scripts/audit-regressions.py --binary /tmp/ggh-audit --results /tmp/ggh-audit-results.json
+```
+
+The suite uses disposable repositories and mocked GitHub/model CLIs. Never point
+it at a production checkout or replace its mocks with authenticated live clients.
+The source tests in `tests/split-safety.test.ts` also cover index transactions on
+Windows. See `docs/RELEASE-READINESS.md` before tagging.

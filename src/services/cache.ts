@@ -1,135 +1,126 @@
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { chmodSync, closeSync, constants, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { homedir, tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { join } from "node:path";
 
-/**
- * Short-lived disk cache for read-only `gh` responses. `ggh clone` was fetching
- * 100 repositories plus 30 starred on every invocation before it could draw a
- * menu; that round trip dominates the perceived speed of the whole tool.
- */
-function cacheDir(): string {
-  const base = process.env.XDG_CACHE_HOME || join(homedir(), ".cache");
-  const dir = join(base, "good-gh");
+const CACHE_VERSION = 2;
+const ENTRY_NAME = /^entry-v2-[a-f0-9]{64}\.json$/;
+const MAX_ENTRY_BYTES = 16 * 1024 * 1024;
+
+/** The intended location, even when caching is disabled by a filesystem error. */
+export function getCacheDir(): string {
+  return join(process.env.XDG_CACHE_HOME || join(homedir(), ".cache"), "good-gh");
+}
+
+/** Failure disables caching; it must never widen cleanup into a shared directory. */
+function cacheDir(): string | null {
+  const dir = getCacheDir();
   try {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const st = lstatSync(dir);
+    if (!st.isDirectory() || st.isSymbolicLink()) return null;
+    if (process.getuid && st.uid !== process.getuid()) return null;
+    if (process.platform !== "win32") chmodSync(dir, 0o700);
     return dir;
   } catch {
-    return tmpdir();
+    return null;
   }
 }
 
-function keyPath(key: string): string {
-  return join(cacheDir(), `${createHash("sha256").update(key).digest("hex").slice(0, 32)}.json`);
+function entryName(key: string): string {
+  return `entry-v2-${createHash("sha256").update(key).digest("hex")}.json`;
 }
 
 export interface CacheOptions {
-  /** How long the entry stays fresh, in milliseconds. */
   ttlMs?: number;
-  /** Ignore any existing entry and refetch. */
   refresh?: boolean;
 }
-
 interface CacheEntry<T> {
+  version: number;
   key: string;
   at: number;
   value: T;
 }
 
-function atomicWrite(file: string, data: string): void {
-  const tmp = `${file}.${process.pid}.tmp`;
-  writeFileSync(tmp, data, { encoding: "utf-8", mode: 0o600 });
-  chmodSync(tmp, 0o600);
-  renameSync(tmp, file);
+/** Only an owned, regular, bounded file with a matching envelope is a cache entry. */
+function readEntry<T>(dir: string, name: string): CacheEntry<T> | null {
+  if (!ENTRY_NAME.test(name)) return null;
+  let fd: number | undefined;
+  try {
+    const file = join(dir, name);
+    const st = lstatSync(file);
+    if (!st.isFile() || st.isSymbolicLink() || st.size > MAX_ENTRY_BYTES) return null;
+    if (process.getuid && st.uid !== process.getuid()) return null;
+    fd = openSync(file, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+    const entry = JSON.parse(readFileSync(fd, "utf8")) as CacheEntry<T>;
+    if (!entry || entry.version !== CACHE_VERSION || typeof entry.key !== "string" ||
+        entryName(entry.key) !== name || !Number.isFinite(entry.at) || entry.at < 0 ||
+        !Object.prototype.hasOwnProperty.call(entry, "value")) return null;
+    return entry;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
 }
 
-/**
- * Returns the cached value when it is still fresh, otherwise calls `fetcher`
- * and stores the result. A cache failure is never fatal: a read or write error
- * simply means the value is fetched live.
- */
-export async function cached<T>(
-  key: string,
-  fetcher: () => Promise<T>,
-  options: CacheOptions = {},
-): Promise<T> {
-  const ttlMs = options.ttlMs ?? 60_000;
-  const file = keyPath(key);
-
-  if (!options.refresh && ttlMs > 0) {
-    try {
-      if (existsSync(file)) {
-        const entry = JSON.parse(readFileSync(file, "utf-8")) as CacheEntry<T>;
-        if (Date.now() - entry.at < ttlMs) return entry.value;
-      }
-    } catch {
-      // Corrupt or unreadable entry: fall through and refetch.
-    }
-  }
-
-  const value = await fetcher();
-
+function atomicWrite(dir: string, name: string, data: string): void {
+  if (Buffer.byteLength(data) > MAX_ENTRY_BYTES) return;
+  const temporary = mkdtempSync(join(dir, ".write-"));
   try {
-    atomicWrite(file, JSON.stringify({ key, at: Date.now(), value } as CacheEntry<T>));
-  } catch {
-    // Read-only cache directory; the value is still correct.
+    const file = join(temporary, "entry");
+    writeFileSync(file, data, { encoding: "utf8", mode: 0o600, flag: "wx" });
+    renameSync(file, join(dir, name));
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
   }
+}
 
+export async function cached<T>(key: string, fetcher: () => Promise<T>, options: CacheOptions = {}): Promise<T> {
+  const ttlMs = options.ttlMs ?? 60_000;
+  const dir = cacheDir();
+  if (!dir || ttlMs <= 0) return fetcher();
+  const name = entryName(key);
+  if (!options.refresh) {
+    const entry = readEntry<T>(dir, name);
+    const age = entry ? Date.now() - entry.at : -1;
+    if (entry && entry.key === key && age >= 0 && age < ttlMs) return entry.value;
+  }
+  const value = await fetcher();
+  try {
+    atomicWrite(dir, name, JSON.stringify({ version: CACHE_VERSION, key, at: Date.now(), value }));
+  } catch {
+    // A cache write is optional; the fresh response remains usable.
+  }
   return value;
 }
 
-/** Removes every cached response. Exposed as `ggh config cache-clear`. */
-export function clearCache(): number {
+function removeEntries(matches: (key: string) => boolean): number {
   const dir = cacheDir();
+  if (!dir) return 0;
   let removed = 0;
   try {
     for (const name of readdirSync(dir)) {
-      if (!name.endsWith(".json")) continue;
-      rmSync(join(dir, name), { force: true });
-      removed++;
-    }
-  } catch {
-    // Nothing to clear
-  }
-  return removed;
-}
-
-export function getCacheDir(): string {
-  return cacheDir();
-}
-
-/**
- * Drops every cache entry whose key starts with `prefix`. Called after mutations
- * so the next list or view sees the change rather than a stale cached page.
- */
-export function invalidateCache(prefix: string): number {
-  const dir = cacheDir();
-  let removed = 0;
-  try {
-    for (const name of readdirSync(dir)) {
-      if (!name.endsWith(".json")) continue;
-      const path = join(dir, name);
+      const entry = readEntry(dir, name);
+      if (!entry || !matches(entry.key)) continue;
       try {
-        const entry = JSON.parse(readFileSync(path, "utf-8")) as { key?: string };
-        if (entry.key && String(entry.key).startsWith(prefix)) {
-          rmSync(path, { force: true });
-          removed++;
-        }
+        rmSync(join(dir, name), { force: true });
+        removed++;
       } catch {
-        // Corrupt or unreadable entry: leave it for clearCache.
+        // An unreadable entry must not prevent cleanup of other owned entries.
       }
     }
   } catch {
-    // Nothing to clear
+    // Disabled or unreadable cache.
   }
   return removed;
+}
+
+export function clearCache(): number {
+  return removeEntries(() => true);
+}
+
+/** Evict this request family across namespaces; never return another namespace's data. */
+export function invalidateCache(prefix: string): number {
+  return removeEntries((key) => key.startsWith(prefix));
 }

@@ -1,47 +1,9 @@
 import { Command } from "commander";
-import { createInterface } from "node:readline";
+import { serveMcp, type McpTool } from "../services/mcp.ts";
 import packageJson from "../../package.json";
 import { header, p, pc } from "../utils/ui.ts";
 
-/**
- * `ggh mcp` — exposes ggh as a Model Context Protocol (MCP) server over stdio.
- *
- * Other AI tools (Claude Code, Cursor, etc.) can connect to ggh as a tool
- * provider and get structured access to PRs, issues, stacks, and AI features
- * without reimplementing the `gh` wrapper.
- *
- * The protocol is JSON-RPC 2.0 over stdio. We implement the core MCP methods:
- * - initialize: handshake
- * - tools/list: enumerate available tools
- * - tools/call: execute a tool
- *
- * No external MCP SDK dependency — the protocol is simple enough to implement
- * directly, keeping ggh's dependency surface minimal.
- */
-
-interface JsonRpcRequest {
-  jsonrpc: "2.0";
-  id: number | string;
-  method: string;
-  params?: Record<string, unknown>;
-}
-
-interface JsonRpcResponse {
-  jsonrpc: "2.0";
-  id: number | string;
-  result?: unknown;
-  error?: { code: number; message: string };
-}
-
-interface McpTool {
-  name: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
-  handler: (args: Record<string, unknown>) => Promise<unknown>;
-}
-
-const PROTOCOL_VERSION = "2024-11-05";
-
+/** Read-only tools over the explicitly supported MCP 2024-11-05 stdio protocol. */
 function getTools(): McpTool[] {
   return [
     {
@@ -86,7 +48,7 @@ function getTools(): McpTool[] {
       inputSchema: {
         type: "object",
         properties: {
-          number: { type: "number", description: "PR number (omit for current branch's PR)" },
+          number: { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER, description: "PR number (omit for current branch's PR)" },
         },
       },
       handler: async (args) => {
@@ -106,8 +68,8 @@ function getTools(): McpTool[] {
       inputSchema: {
         type: "object",
         properties: {
-          limit: { type: "number", description: "Maximum PRs to return (default 30)" },
-          state: { type: "string", description: "open, closed, or all (default open)" },
+          limit: { type: "integer", minimum: 1, maximum: 1000, description: "Maximum PRs to return (default 30)" },
+          state: { type: "string", enum: ["open", "closed", "all"], description: "open, closed, or all (default open)" },
         },
       },
       handler: async (args) => {
@@ -124,8 +86,8 @@ function getTools(): McpTool[] {
       inputSchema: {
         type: "object",
         properties: {
-          limit: { type: "number", description: "Maximum issues (default 30)" },
-          state: { type: "string", description: "open, closed, or all (default open)" },
+          limit: { type: "integer", minimum: 1, maximum: 1000, description: "Maximum issues (default 30)" },
+          state: { type: "string", enum: ["open", "closed", "all"], description: "open, closed, or all (default open)" },
         },
       },
       handler: async (args) => {
@@ -142,7 +104,7 @@ function getTools(): McpTool[] {
       inputSchema: {
         type: "object",
         properties: {
-          number: { type: "number", description: "Issue number" },
+          number: { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER, description: "Issue number" },
         },
         required: ["number"],
       },
@@ -188,7 +150,7 @@ function getTools(): McpTool[] {
       inputSchema: {
         type: "object",
         properties: {
-          limit: { type: "number", description: "Maximum notifications (default 30)" },
+          limit: { type: "integer", minimum: 1, maximum: 1000, description: "Maximum notifications (default 30)" },
         },
       },
       handler: async (args) => {
@@ -207,7 +169,7 @@ function getTools(): McpTool[] {
       inputSchema: {
         type: "object",
         properties: {
-          count: { type: "number", description: "Number of commits (default 10)" },
+          count: { type: "integer", minimum: 1, maximum: 1000, description: "Number of commits (default 10)" },
         },
       },
       handler: async (args) => {
@@ -221,7 +183,7 @@ function getTools(): McpTool[] {
       inputSchema: {
         type: "object",
         properties: {
-          type: { type: "string", description: "staged or branch (default staged)" },
+          type: { type: "string", enum: ["staged", "branch"], description: "staged or branch (default staged)" },
         },
       },
       handler: async (args) => {
@@ -255,104 +217,6 @@ export function registerMcpCommand(program: Command): void {
         return;
       }
 
-      // Run as MCP server over stdio
-      const rl = createInterface({ input: process.stdin, terminal: false });
-      const tools = getTools();
-      const toolMap = new Map(tools.map((t) => [t.name, t]));
-
-      const send = (response: JsonRpcResponse) => {
-        process.stdout.write(JSON.stringify(response) + "\n");
-      };
-
-      rl.on("line", (line: string) => {
-        let request: JsonRpcRequest;
-        try {
-          request = JSON.parse(line);
-        } catch {
-          return; // ignore malformed lines
-        }
-
-        const { method, params, id } = request;
-
-        switch (method) {
-          case "initialize":
-            send({
-              jsonrpc: "2.0",
-              id,
-              result: {
-                protocolVersion: PROTOCOL_VERSION,
-                capabilities: { tools: {} },
-                serverInfo: { name: "ggh", version: packageJson.version },
-              },
-            });
-            break;
-
-          case "tools/list":
-            send({
-              jsonrpc: "2.0",
-              id,
-              result: {
-                tools: tools.map((t) => ({
-                  name: t.name,
-                  description: t.description,
-                  inputSchema: t.inputSchema,
-                })),
-              },
-            });
-            break;
-
-          case "tools/call": {
-            const toolName = params?.name as string;
-            const args = (params?.arguments as Record<string, unknown>) || {};
-            const tool = toolMap.get(toolName);
-            if (!tool) {
-              send({
-                jsonrpc: "2.0",
-                id,
-                error: { code: -32601, message: `Unknown tool: ${toolName}` },
-              });
-              break;
-            }
-            tool
-              .handler(args)
-              .then((result) => {
-                send({
-                  jsonrpc: "2.0",
-                  id,
-                  result: {
-                    content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-                  },
-                });
-              })
-              .catch((err: unknown) => {
-                send({
-                  jsonrpc: "2.0",
-                  id,
-                  error: {
-                    code: -32603,
-                    message: err instanceof Error ? err.message : String(err),
-                  },
-                });
-              });
-            break;
-          }
-
-          case "notifications/initialized":
-            // No response needed for notifications
-            break;
-
-          default:
-            send({
-              jsonrpc: "2.0",
-              id,
-              error: { code: -32601, message: `Unknown method: ${method}` },
-            });
-        }
-      });
-
-      // Keep the process alive until stdin closes; let pending tool calls drain.
-      rl.on("close", () => {
-        process.exitCode = 0;
-      });
+      await serveMcp(getTools(), packageJson.version);
     });
 }

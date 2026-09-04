@@ -98,7 +98,7 @@ export function validateConfigValue(key: string, raw: unknown): { value?: unknow
         ? { value: raw }
         : { problem: `must be one of ${COMMIT_STYLES.join(", ")}` };
     case "ai_timeout_ms": {
-      const n = typeof raw === "number" ? raw : Number.parseInt(String(raw), 10);
+      const n = typeof raw === "number" ? raw : typeof raw === "string" && /^\d+$/.test(raw) ? Number(raw) : NaN;
       if (!Number.isInteger(n) || n < MIN_AI_TIMEOUT_MS || n > MAX_AI_TIMEOUT_MS) {
         return { problem: `must be an integer between ${MIN_AI_TIMEOUT_MS} and ${MAX_AI_TIMEOUT_MS}` };
       }

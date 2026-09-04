@@ -7,7 +7,7 @@ import {
   ghApi,
   requireAuth,
 } from "../services/github.ts";
-import { requireGitRepo } from "../services/git.ts";
+import { requireGitHubRepo } from "../services/github.ts";
 import { invalidateCache } from "../services/cache.ts";
 import { dryRun } from "../utils/flags.ts";
 import { fail, failFromGitHub, header, p, pc, jsonOut, unknownAction, confirmOrAbort } from "../utils/ui.ts";
@@ -22,7 +22,7 @@ export function registerWorkflowCommand(program: Command): void {
     .action(async (action?: string, id?: string, options?: { limit?: string; yes?: boolean }) => {
       header("GitHub Actions Workflows");
 
-      if (!(await requireGitRepo())) return;
+      if (!(await requireGitHubRepo())) return;
       if (!(await requireAuth())) return;
 
       const subcommand = action?.toLowerCase();
@@ -61,7 +61,7 @@ export function registerWorkflowCommand(program: Command): void {
     .option("--limit <n>", "Maximum workflows to list", "30")
     .action(async (options?: { limit?: string }) => {
       header("GitHub Actions Workflows");
-      if (!(await requireGitRepo())) return;
+      if (!(await requireGitHubRepo())) return;
       if (!(await requireAuth())) return;
       await listWorkflows(options?.limit);
     });
@@ -71,7 +71,7 @@ export function registerWorkflowCommand(program: Command): void {
     .description("View a workflow")
     .action(async (id: string) => {
       header("GitHub Actions Workflows");
-      if (!(await requireGitRepo())) return;
+      if (!(await requireGitHubRepo())) return;
       if (!(await requireAuth())) return;
       await viewWorkflow(id);
     });
@@ -82,7 +82,7 @@ export function registerWorkflowCommand(program: Command): void {
     .option("-y, --yes", "Skip confirmation for mutating actions")
     .action(async (id: string, options?: { yes?: boolean }) => {
       header("GitHub Actions Workflows");
-      if (!(await requireGitRepo())) return;
+      if (!(await requireGitHubRepo())) return;
       if (!(await requireAuth())) return;
       await runWorkflow(id, options);
     });
@@ -93,7 +93,7 @@ export function registerWorkflowCommand(program: Command): void {
     .option("-y, --yes", "Skip confirmation for mutating actions")
     .action(async (id: string, options?: { yes?: boolean }) => {
       header("GitHub Actions Workflows");
-      if (!(await requireGitRepo())) return;
+      if (!(await requireGitHubRepo())) return;
       if (!(await requireAuth())) return;
       await toggleWorkflow("enable", id, options);
     });
@@ -104,7 +104,7 @@ export function registerWorkflowCommand(program: Command): void {
     .option("-y, --yes", "Skip confirmation for mutating actions")
     .action(async (id: string, options?: { yes?: boolean }) => {
       header("GitHub Actions Workflows");
-      if (!(await requireGitRepo())) return;
+      if (!(await requireGitHubRepo())) return;
       if (!(await requireAuth())) return;
       await toggleWorkflow("disable", id, options);
     });

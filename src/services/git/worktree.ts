@@ -1,3 +1,4 @@
+import { getGitPath } from "./paths.ts";
 /**
  * Worktree management. Depends on exec/branch/stack only.
  */
@@ -116,7 +117,7 @@ export async function worktreeAdd(
   }
 
   // Ensure .worktrees is ignored in .git/info/exclude
-  const excludePath = join(repoRoot, ".git", "info", "exclude");
+  const excludePath = await getGitPath("info/exclude", repoRoot);
   if (existsSync(excludePath)) {
     const content = readFileSync(excludePath, "utf-8");
     if (!content.includes(".worktrees")) {
