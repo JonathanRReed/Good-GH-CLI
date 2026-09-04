@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
-      - name: Verify and commit the reviewed tree
+      - name: Verify and commit reviewed source without workflow changes
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -52,17 +52,21 @@ jobs:
           git -C "$RUNNER_TEMP/audit-apply" apply --index --binary "$PATCH"
           TREE=$(git -C "$RUNNER_TEMP/audit-apply" write-tree)
           test "$TREE" = "$EXPECTED_TREE"
-          # Only apply Git data here. Patched programs are tested in read-only PR jobs.
+          # GITHUB_TOKEN cannot update workflows. Leave those exactly unchanged;
+          # the authorized connector will apply and verify them separately.
+          git -C "$RUNNER_TEMP/audit-apply" restore --source="$GITHUB_SHA" --staged --worktree -- .github/workflows
+          TREE=$(git -C "$RUNNER_TEMP/audit-apply" write-tree)
+          test -z "$(git diff --name-only "$GITHUB_SHA" "$TREE" -- .github/workflows)"
+          # Never execute patched source in this privileged transport job.
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          COMMIT=$(git commit-tree "$TREE" -p "$GITHUB_SHA" -m 'fix: close pre-release safety audit and gate distributed artifacts')
+          COMMIT=$(git commit-tree "$TREE" -p "$GITHUB_SHA" -m 'fix: close pre-release safety audit with behavioral regressions')
           CURRENT=$(git ls-remote --heads origin "refs/heads/$BRANCH" | cut -f1)
           test "$CURRENT" = "$GITHUB_SHA"
           git push origin "$COMMIT:refs/heads/$BRANCH"
           {
-            echo '## Verified audit changes committed'
+            echo '## Verified audit source committed'
             echo "Commit: $COMMIT"
             echo "Tree: $TREE"
-            echo 'Both temporary transport workflows are absent from the committed tree.'
-            echo 'Create the pull request to trigger the source and exact-artifact verification gates.'
+            echo 'Workflow changes are deferred to the authorized GitHub connector.'
           } | tee -a "$GITHUB_STEP_SUMMARY"
