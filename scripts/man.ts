@@ -142,7 +142,9 @@ if (check) {
   } catch {
     // missing counts as stale
   }
-  if (current !== text) {
+  // Git may check text files out with CRLF on Windows. Freshness is about the
+  // generated content, not the checkout's line-ending convention.
+  if (current.replace(/\r\n/g, "\n") !== text) {
     console.error("man/ggh.1 is stale. Regenerate with `bun run man`.");
     process.exit(1);
   }
