@@ -20,7 +20,6 @@ import {
   getRepoRoot,
   getStagedDiffStat,
   getStatus,
-  getUnmergedCommits,
   hasBranch,
   hasCommits,
   isGitRepo,
@@ -42,6 +41,7 @@ import {
   worktreeList,
   worktreeRemove,
 } from "../src/services/git.ts";
+import { getUnmergedCommits } from "./git-helpers.ts";
 
 describe("git service", () => {
   let tempRepo: string;
@@ -142,19 +142,16 @@ describe("git service", () => {
     rmSync(join(tempRepo, ".env"), { force: true });
   });
 
-  it("safely cleans up orphaned directories when creating a worktree", async () => {
-    const { mkdirSync, existsSync } = await import("node:fs");
+  it("refuses to delete an existing directory when creating a worktree", async () => {
+    const { mkdirSync, readFileSync } = await import("node:fs");
     const orphanPath = join(tempRepo, ".worktrees", "feat-orphan");
     mkdirSync(orphanPath, { recursive: true });
     writeFileSync(join(orphanPath, "abandoned.txt"), "leftover");
 
-    // Creating worktree should safely clean up the orphaned directory
-    await worktreeAdd("feat-orphan", orphanPath, "main", tempRepo);
-    const list = await worktreeList(tempRepo);
-    expect(list.some((w) => w.branch === "feat-orphan")).toBe(true);
-
-    await worktreeRemove(orphanPath, true, tempRepo);
-    expect(existsSync(orphanPath)).toBe(false);
+    await expect(worktreeAdd("feat-orphan", orphanPath, "main", tempRepo)).rejects.toThrow(
+      "Refusing to replace existing directory",
+    );
+    expect(readFileSync(join(orphanPath, "abandoned.txt"), "utf-8")).toBe("leftover");
   });
 
   it("supports undoCommit to reset HEAD~1 while preserving staged changes", async () => {
@@ -250,7 +247,7 @@ describe("git service", () => {
 
     const list = await stashList(tempRepo);
     expect(list.length).toBeGreaterThan(0);
-    expect(list[0].message).toContain("test stash message");
+    expect(list.at(0)?.message).toContain("test stash message");
 
     const diff = await stashDiff("stash@{0}", tempRepo);
     expect(diff).toContain("stash-me.txt");

@@ -1,12 +1,13 @@
 import { Command } from "commander";
+import { getFlags } from "../services/runtime.ts";
 import {
   getActivePullRequest,
-  getGitHubAuthStatus,
   getPullRequestChecks,
+  requireAuth,
 } from "../services/github.ts";
-import { getCurrentBranch, isGitRepo } from "../services/git.ts";
-import { emitJson, fail, header, p, pc } from "../utils/ui.ts";
-import { getFlags } from "../services/runtime.ts";
+import { getCurrentBranch, requireGitRepo } from "../services/git.ts";
+import { emitJson, header, p, pc } from "../utils/ui.ts";
+import { isDryRun } from "../utils/flags.ts";
 
 export function registerChecksCommand(program: Command): void {
   program
@@ -14,24 +15,13 @@ export function registerChecksCommand(program: Command): void {
     .description("CI status for this branch's pull request")
     .option("-w, --watch", "Continuously watch checks until completion")
     .option("--timeout <seconds>", "Give up watching after this long", "1800")
-    .action(async (options?: { watch?: boolean; timeout?: string }) => {
+    .option("--dry-run", "Show what would be checked without watching")
+    .action(async (options?: { watch?: boolean; timeout?: string; dryRun?: boolean }) => {
       header("CI Status Checks");
 
-      if (!(await isGitRepo())) {
-        fail("Not a git repository.");
-        return;
-      }
+      if (!(await requireGitRepo())) return;
 
-      const ghAuth = await getGitHubAuthStatus();
-      if (!ghAuth.authenticated) {
-        p.log.warn(
-          ghAuth.notInstalled
-            ? "GitHub CLI (`gh`) is not installed. Install it from https://cli.github.com to view CI checks."
-            : "GitHub CLI is not authenticated. Run `gh auth login`.",
-        );
-        process.exitCode = 1;
-        return;
-      }
+      if (!(await requireAuth())) return;
 
       const currentBranch = await getCurrentBranch();
       const s = p.spinner();
@@ -83,6 +73,19 @@ export function registerChecksCommand(program: Command): void {
       }
 
       const initial = await displayChecks();
+
+      // --dry-run forces a single fetch and never enters the watch loop.
+      if (isDryRun()) {
+        if (initial.allPassed) {
+          p.outro(pc.green("All CI checks passed!"));
+        } else if (initial.allDone) {
+          process.exitCode = 1;
+          p.outro(pc.red("Some CI checks failed."));
+        } else {
+          p.outro(pc.yellow("CI checks are still in progress (dry run: not watching)."));
+        }
+        return;
+      }
 
       if (!options?.watch || initial.allDone) {
         if (initial.allPassed) {

@@ -24,6 +24,13 @@ process.on("SIGINT", () => onInterrupt("SIGINT"));
 process.on("SIGTERM", () => onInterrupt("SIGTERM"));
 process.on("exit", restoreTerminal);
 
+/**
+ * A closed pipe (`ggh log --oneline | head -2`) is not a failure: the consumer
+ * got what it wanted. ripgrep and fzf exit 0 here; dying of SIGPIPE would
+ * punish `set -o pipefail` scripts for succeeding.
+ */
+process.on("SIGPIPE", () => process.exit(0));
+
 runCli(process.argv).catch((err) => {
   restoreTerminal();
   killAllChildren();

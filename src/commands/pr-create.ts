@@ -1,24 +1,26 @@
 import type { Command } from "commander";
+import { getFlags } from "../services/runtime.ts";
 import {
   detectDefaultBranch,
   findPrTemplate,
+  findPrTemplateByName,
   getBranchDiff,
   getBranchDiffStat,
   getCommitsSinceBase,
   getCurrentBranch,
   getRemoteTrackingBranch,
-  isGitRepo,
+  listPrTemplates,
   push,
+  requireGitRepo,
 } from "../services/git.ts";
-import { createPullRequest, getActivePullRequest, getGitHubAuthStatus } from "../services/github.ts";
+import { createPullRequest, getActivePullRequest, requireAuth } from "../services/github.ts";
 import { generatePrWithFallback, type AIAttempt, type AIAttemptFailure } from "../services/ai/index.ts";
 import { sanitizeDiffForAI } from "../utils/diff.ts";
-import { isDryRun } from "../utils/flags.ts";
-import { getFlags } from "../services/runtime.ts";
+import { dryRun } from "../utils/flags.ts";
 import {
-  confirmPrompt,
-  emitJson,
+  confirmOrAbort, jsonOut,
   fail,
+  failFromGitHub,
   formatAIFallback,
   header,
   p,
@@ -26,6 +28,12 @@ import {
   promptInput,
   reportAIFailure,
 } from "../utils/ui.ts";
+
+/** Strips control characters and newlines from PR titles. */
+function sanitizePrTitle(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/[\x00-\x1f\x7f]/g, "").trim();
+}
 
 /**
  * `ggh pr create` — the missing half of the pull request story. Everything before
@@ -43,40 +51,26 @@ export function registerPrCreateCommand(pr: Command): void {
     .option("-i, --issue <issue>", "Link the Pull Request to an issue number")
     .option("-y, --yes", "Skip the confirmation prompt")
     .option("--no-ai", "Use the commit history for the title and body instead of AI")
+    .option("--template <name>", "Use a specific PR template from .github/PULL_REQUEST_TEMPLATE/")
     .action(async (options: {
       title?: string; body?: string; base?: string; draft?: boolean;
       web?: boolean; issue?: string; yes?: boolean; ai?: boolean;
+      template?: string;
     }) => {
       header("Create Pull Request");
 
-      if (!(await isGitRepo())) {
-        fail("Not a git repository.");
-        return;
-      }
+      const [isRepo, authed] = await Promise.all([requireGitRepo(), requireAuth()]);
+      if (!isRepo || !authed) return;
 
-      const auth = await getGitHubAuthStatus();
-      if (!auth.authenticated) {
-        fail(
-          auth.notInstalled
-            ? "GitHub CLI (`gh`) is not installed. Install it from https://cli.github.com."
-            : "GitHub CLI is not authenticated. Run `gh auth login`.",
-        );
-        return;
-      }
-
-      const branch = await getCurrentBranch();
+      const [branch, existing] = await Promise.all([getCurrentBranch(), getActivePullRequest()]);
       if (!branch || branch === "HEAD") {
         fail("Cannot open a Pull Request from a detached HEAD. Check out a branch first.");
         return;
       }
 
-      const existing = await getActivePullRequest();
       if (existing) {
         p.log.info(`Branch ${pc.cyan(branch)} already has Pull Request #${existing.number}.`);
-        if (getFlags().json) {
-          emitJson(existing);
-          return;
-        }
+        if (jsonOut(existing)) return;
         p.log.message(`  ${pc.bold(pc.cyan(existing.url))}`);
         p.outro("Nothing to do.");
         return;
@@ -88,12 +82,29 @@ export function registerPrCreateCommand(pr: Command): void {
         return;
       }
 
-      const [commits, diff, diffStat, template] = await Promise.all([
+      // If --template is specified, use that specific template; otherwise auto-detect.
+      let template: string | null = null;
+      if (options.template) {
+        template = await findPrTemplateByName(options.template);
+        if (!template) {
+          const available = await listPrTemplates();
+          if (available.length > 0) {
+            fail(`Template "${options.template}" not found. Available: ${available.map((t) => t.name).join(", ")}`);
+          } else {
+            fail(`Template "${options.template}" not found. No PR templates detected in this repo.`);
+          }
+          return;
+        }
+      }
+
+      const [commits, diff, diffStat, autoTemplate, tracking] = await Promise.all([
         getCommitsSinceBase(base),
         getBranchDiff(base),
         getBranchDiffStat(base),
-        findPrTemplate(),
+        template ? Promise.resolve(null) : findPrTemplate(),
+        getRemoteTrackingBranch(process.cwd(), branch),
       ]);
+      template = template ?? autoTemplate;
 
       if (commits.length === 0) {
         fail(`Branch ${pc.bold(branch)} has no commits that ${pc.bold(base)} does not already have.`);
@@ -103,9 +114,9 @@ export function registerPrCreateCommand(pr: Command): void {
       p.log.step(`${commits.length} commit(s) on ${pc.cyan(branch)} against ${pc.cyan(base)}`);
 
       // A branch that was never pushed cannot be the head of a Pull Request.
-      if (!(await getRemoteTrackingBranch(process.cwd(), branch))) {
-        if (isDryRun()) {
-          p.log.warn(`${pc.yellow("dry run")} ${pc.dim("·")} would push ${branch} to origin`);
+      if (!tracking) {
+        if (dryRun(`push ${branch} to origin`)) {
+          // dry run announced; skip the actual push
         } else {
           const pushSpinner = p.spinner();
           pushSpinner.start(`Pushing ${pc.cyan(branch)} to origin...`);
@@ -149,8 +160,13 @@ export function registerPrCreateCommand(pr: Command): void {
         }
       }
 
-      title = title || commits[commits.length - 1] || `Changes from ${branch}`;
-      body = body || commits.map((c) => `- ${c}`).join("\n");
+      title = sanitizePrTitle(title || commits[commits.length - 1] || `Changes from ${branch}`).slice(0, 256);
+      body = (body || commits.map((c) => `- ${c}`).join("\n")).trim();
+
+      if (dryRun(`open a Pull Request ${pc.cyan(base)} ← ${pc.cyan(branch)}`)) {
+        p.outro("Nothing was created.");
+        return;
+      }
 
       if (!options.title && !getFlags().json) {
         const edited = await promptInput({ message: "Pull Request title:", defaultValue: title });
@@ -158,26 +174,12 @@ export function registerPrCreateCommand(pr: Command): void {
           p.cancel("Cancelled.");
           return;
         }
-        title = edited;
+        title = sanitizePrTitle(edited).slice(0, 256);
       }
 
       p.note(`${pc.bold(title)}\n\n${pc.dim(body)}`, options.draft ? "Draft Pull Request" : "Pull Request");
 
-      if (isDryRun()) {
-        p.log.warn(`${pc.yellow("dry run")} ${pc.dim("·")} would open a Pull Request ${pc.cyan(base)} ← ${pc.cyan(branch)}`);
-        p.outro("Nothing was created.");
-        return;
-      }
-
-      const confirmed = await confirmPrompt({
-        message: `Open this Pull Request against ${pc.bold(base)}?`,
-        initialValue: true,
-        assumeYes: options.yes,
-      });
-      if (!confirmed) {
-        p.cancel("Cancelled.");
-        return;
-      }
+      if (!(await confirmOrAbort(`Open this Pull Request against ${pc.bold(base)}?`, { assumeYes: options.yes }))) return;
 
       const createSpinner = p.spinner();
       createSpinner.start("Opening Pull Request...");
@@ -190,15 +192,12 @@ export function registerPrCreateCommand(pr: Command): void {
           base,
         });
         createSpinner.stop(pc.green("Pull Request opened."));
-        if (getFlags().json) {
-          emitJson({ url, title, body, base, head: branch, draft: Boolean(options.draft) });
-          return;
-        }
+        if (jsonOut({ url, title, body, base, head: branch, draft: Boolean(options.draft) })) return;
         p.log.success(`${pc.bold(pc.cyan(url))}`);
         p.outro("Done.");
       } catch (err) {
         createSpinner.stop(pc.red("Failed to open the Pull Request."));
-        fail(String(err));
+        failFromGitHub(err);
       }
     });
 }

@@ -1,13 +1,15 @@
 import { Command } from "commander";
-import { getCurrentBranch, hasCommits, isDetachedHead, isGitRepo, undoCommit } from "../services/git.ts";
+import { getFlags } from "../services/runtime.ts";
+import { getCurrentBranch, hasCommits, isDetachedHead, requireGitRepo, undoCommit } from "../services/git.ts";
 import {
-  confirmPrompt,
+  confirmOrAbort,
+  emitJson,
   fail,
   header,
   p,
   pc,
 } from "../utils/ui.ts";
-import { isDryRun } from "../utils/flags.ts";
+import { dryRun } from "../utils/flags.ts";
 
 export function registerUndoCommand(program: Command): void {
   program
@@ -17,10 +19,7 @@ export function registerUndoCommand(program: Command): void {
     .action(async (options: { yes?: boolean }) => {
       header("Undo Last Commit");
 
-      if (!(await isGitRepo())) {
-        fail("Not a git repository.");
-        return;
-      }
+      if (!(await requireGitRepo())) return;
 
       if (!(await hasCommits())) {
         p.log.warn("Repository has no commits to undo.");
@@ -31,21 +30,21 @@ export function registerUndoCommand(program: Command): void {
       const rawBranch = await getCurrentBranch();
       const targetDesc = isDetached ? pc.yellow("HEAD (detached)") : `branch ${pc.cyan(rawBranch)}`;
 
-      if (isDryRun()) {
-        p.log.warn(`${pc.yellow("dry run")} ${pc.dim("·")} would soft-reset the last commit on ${targetDesc}`);
-        return;
-      }
+      if (dryRun(`soft-reset the last commit on ${targetDesc}`)) return;
 
       if (!options.yes) {
-        const confirmUndo = await confirmPrompt({
-          message: `Undo the latest commit on ${targetDesc}? (Changes will remain staged)`,
-          initialValue: true,
-        });
+        if (!(await confirmOrAbort(`Undo the latest commit on ${targetDesc}? (Changes will remain staged)`, { cancelText: "Undo cancelled." }))) return;
+      }
 
-        if (!confirmUndo) {
-          p.cancel("Undo cancelled.");
-          return;
+      if (getFlags().json) {
+        try {
+          await undoCommit();
+          emitJson({ undone: true, branch: isDetached ? "HEAD" : rawBranch, detached: isDetached });
+        } catch (err) {
+          emitJson({ undone: false, error: String(err) });
+          fail(String(err));
         }
+        return;
       }
 
       const s = p.spinner();

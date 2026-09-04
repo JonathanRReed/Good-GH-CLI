@@ -23,14 +23,20 @@ jobs:
       matrix:
         # ggh shells out to git constantly; platform differences show up there,
         # not in the TypeScript.
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    defaults:
+      run:
+        # Git for Windows ships bash, keeping the same commands on all three
+        # platforms while still exercising Windows process APIs.
+        shell: bash
 
     steps:
       - uses: actions/checkout@v7
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.1.0
 
       - name: Install dependencies
         # Dependabot cannot maintain bun.lock, so its PRs arrive with a stale one.
@@ -68,6 +74,17 @@ jobs:
           bun dist/ggh.js --help > /dev/null
           bun dist/ggh.js completion zsh | head -1
 
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Smoke test the npm launcher under Node and Bun
+        # `npm i -g good-gh-cli` installs bin/ggh.cjs and runs it with Node,
+        # which must hand off to Bun; `bun add -g` runs the same file in-process.
+        run: |
+          test "$(node bin/ggh.cjs --version)" = "$(bun -e 'console.log(require("./package.json").version)')"
+          test "$(bun bin/ggh.cjs --version)" = "$(node bin/ggh.cjs --version)"
+
       - name: Check stdout stays clean
         # stdout is the data channel. If chrome leaks into it, piping breaks.
         run: |
@@ -81,3 +98,15 @@ jobs:
           SIZE=$(wc -c < dist/ggh.js)
           echo "Bundle size: $SIZE bytes"
           test "$SIZE" -le 400000
+
+      - name: Man page is fresh
+        # man/ggh.1 is generated from the command tree; this fails the build
+        # when someone adds a command and forgets `bun run man`.
+        run: bun run man --check
+
+      - name: Performance budgets
+        # Startup and status must complete, not just eventually: an accidental
+        # network call or unmemoized 15 s probe on these paths shows up here.
+        # Budgets are flake-proof on purpose; see docs/PERF.md for real numbers.
+        # (A script, not timeout(1): macOS runners don't have timeout.)
+        run: bun run scripts/perf-budget.ts

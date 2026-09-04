@@ -1,7 +1,15 @@
 import { describe, expect, it } from "bun:test";
-import { normalizeCloneUrl } from "../src/services/github.ts";
+import { normalizeCloneUrl, stdinTextRequest } from "../src/services/github.ts";
 
 describe("github service", () => {
+  it("keeps long-form text out of the subprocess argument list", () => {
+    const body = "private vulnerability details";
+    expect(stdinTextRequest(["pr", "create"], "--body-file", body)).toEqual({
+      args: ["pr", "create", "--body-file", "-"],
+      input: body,
+    });
+  });
+
   it("normalizes owner/repo shorthand to HTTPS and SSH URLs", () => {
     expect(normalizeCloneUrl("facebook/react", "https")).toBe("https://github.com/facebook/react.git");
     expect(normalizeCloneUrl("facebook/react", "ssh")).toBe("git@github.com:facebook/react.git");

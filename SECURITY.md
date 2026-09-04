@@ -14,11 +14,15 @@ This is the part worth reading before you trust it with a private repository.
 
 `ggh` sends your **staged diff, branch diff, or pull request diff** to whichever
 AI CLI you have configured, whenever you use an AI feature: commit messages, pull
-request bodies, reviews, branch names, release notes, and CI triage. That CLI
-then sends it to its vendor. `ggh` has no server of its own and stores nothing
-remotely.
+request bodies, reviews, branch names, release notes, issue bodies (`issue create
+--ai`), and CI triage. That CLI then sends it to its vendor. `ggh` has no server
+of its own and stores nothing remotely. Before the first hosted provider runs,
+`ggh` asks for explicit consent. Non-interactive use must set
+`hosted_ai_consent=true` deliberately.
 
-Before any diff leaves the process it goes through `sanitizeDiffForAI`:
+Before any diff leaves the process it goes through `sanitizeDiffForAI`. The same
+redaction is applied to reporter notes passed via `issue create --ai -n` before
+they reach the provider:
 
 **Whole files are dropped**, never sent at all — `.env` and its variants, `*.pem`,
 `*.key`, anything matching `id_rsa`, `credentials.json`, `secrets.json`/`.yaml`,
@@ -46,19 +50,17 @@ If you want the AI features with none of the network exposure, run a local model
 
 ```bash
 ggh config set ai_provider ollama
+ggh config set ai_fallback false
 ```
 
-Or pin it per repository, so a work checkout can never reach a hosted provider:
-
-```jsonc
-// .ggh.json at the repo root
-{ "ai_provider": "ollama" }
-```
+Repository `.ggh.json` files cannot set the provider, fallback, model, or consent
+because a cloned repository is untrusted input.
 
 ## Other things worth knowing
 
 - **Prompts are written to a `0600` temp file**, not passed as an argument, so a
   diff never appears in `ps` output. The file is removed after the call.
+- **Secrets and long-form GitHub bodies use stdin**, not process arguments.
 - **`ggh` never asks for or stores an API key.** It drives CLIs you have already
   signed in to, and reads only whether an auth file exists.
 - **Codex runs with `--ignore-user-config`**, so your MCP servers, hooks, and
@@ -71,3 +73,6 @@ Or pin it per repository, so a work checkout can never reach a hosted provider:
 
 The latest release is supported. Given the size of the project, fixes go into the
 next release rather than being backported.
+
+The repository-grounded attack assumptions and controls live in
+[`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md).

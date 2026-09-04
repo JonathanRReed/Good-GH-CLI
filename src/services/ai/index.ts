@@ -4,6 +4,7 @@ import { GrokProvider } from "./grok.ts";
 import { ClaudeProvider } from "./claude.ts";
 import { OllamaProvider } from "./ollama.ts";
 import { DEFAULT_AI_TIMEOUT_MS } from "./base.ts";
+import { confirmPrompt } from "../../utils/prompts.ts";
 import {
   AIGenerationError,
   classifyAIFailure,
@@ -15,11 +16,18 @@ import {
 import type {
   CommitMessageResult,
   CommitPromptInput,
+  IssueBodyPromptInput,
+  IssueFromDiffPromptInput,
+  IssueFromDiffResult,
   PrContentResult,
   PrPromptInput,
   ReleaseNotesPromptInput,
   ReviewPromptInput,
   ReviewResult,
+  SplitPromptInput,
+  SplitResult,
+  TriageItem,
+  TriageResult,
 } from "./prompt.ts";
 
 export * from "./provider.ts";
@@ -81,10 +89,29 @@ export function getConfiguredModel(provider: AIProvider): string {
   return (config[MODEL_KEYS[provider.id]] as string | undefined) || provider.defaultModel;
 }
 
+let cachedAvailability: { at: number; providers: AIProvider[] } | null = null;
+const AVAILABILITY_TTL_MS = 60_000;
+
+/**
+ * Which AI CLIs are installed and signed in. Probing shells out (up to 15s
+ * worst case per provider), so results are memoized for a minute — `status
+ * --watch` re-renders every few seconds and must not respawn the world.
+ * Tests and one-shot callers that need fresh data use refreshProviders().
+ */
 export async function getAvailableProviders(): Promise<AIProvider[]> {
+  if (cachedAvailability && Date.now() - cachedAvailability.at < AVAILABILITY_TTL_MS) {
+    return cachedAvailability.providers;
+  }
+  return refreshProviders();
+}
+
+/** Bypass the cache and probe every provider right now. */
+export async function refreshProviders(): Promise<AIProvider[]> {
   const providers = PROVIDER_ORDER.map(getProviderById);
   const availability = await Promise.all(providers.map((p) => p.isAvailable()));
-  return providers.filter((_, i) => availability[i]);
+  const available = providers.filter((_, i) => availability[i]);
+  cachedAvailability = { at: Date.now(), providers: available };
+  return available;
 }
 
 export async function ensureFirstRunSetup(
@@ -104,6 +131,33 @@ export async function ensureFirstRunSetup(
 
   saveConfig({ ai_provider: "codex", first_run_completed: true });
   return getCodex();
+}
+
+export class AIConsentError extends Error {
+  constructor() {
+    super(
+      "Hosted AI is off until you consent to sending sanitized repository content. " +
+      "Run `ggh config set hosted_ai_consent true`, choose Ollama for local-only AI, or use --no-ai.",
+    );
+    this.name = "AIConsentError";
+  }
+}
+
+/**
+ * Requires an explicit, user-owned decision before any hosted AI CLI receives
+ * repository content. Project configuration cannot set this key.
+ */
+export async function ensureHostedAIConsent(
+  prompt: (message: string) => Promise<boolean> = (message) =>
+    confirmPrompt({ message, initialValue: false }),
+): Promise<void> {
+  if (getConfig().hosted_ai_consent === true) return;
+
+  const accepted = await prompt(
+    "Allow hosted AI providers to receive sanitized repository content? Redaction can miss secrets.",
+  );
+  if (!accepted) throw new AIConsentError();
+  saveConfig({ hosted_ai_consent: true });
 }
 
 export interface AIAttempt {
@@ -139,6 +193,9 @@ const REMEDIATION: Partial<Record<AIFailureKind, string>> = {
   timeout: "Increase the limit with `ggh config set ai_timeout_ms 180000`, or commit with `-m` / `--no-ai`.",
 };
 
+const STRICT_REMEDIATION =
+  "Fallback to other providers is off (ai_fallback=false). Fix this provider, or run `ggh config set ai_fallback true`.";
+
 /** Raised only when every provider and model in the chain has failed. */
 export class AIChainError extends Error {
   readonly failures: AIAttemptFailure[];
@@ -163,6 +220,7 @@ export class AIChainError extends Error {
         out.push(hint);
       }
     }
+    if (this.failures.length > 0 && getConfig().ai_fallback === false) out.push(STRICT_REMEDIATION);
     return out;
   }
 }
@@ -174,11 +232,13 @@ export class AIChainError extends Error {
 export function buildAttemptChain(explicitId?: ConfigAIProvider): AIAttempt[] {
   const config = getConfig();
   const primaryId: ConfigAIProvider = explicitId || config.ai_provider || "codex";
-  // Preferred provider first, then the rest in their default order.
-  const ordered: AIProvider[] = [
-    getProviderById(primaryId),
-    ...PROVIDER_ORDER.filter((id) => id !== primaryId).map(getProviderById),
-  ];
+  // Preferred provider first, then the rest in their default order — unless
+  // fallback is off, or the caller named a provider explicitly (`--provider`),
+  // in which case that provider is the whole chain.
+  const strict = explicitId !== undefined || config.ai_fallback === false;
+  const ordered: AIProvider[] = strict
+    ? [getProviderById(primaryId)]
+    : [getProviderById(primaryId), ...PROVIDER_ORDER.filter((id) => id !== primaryId).map(getProviderById)];
 
   const attempts: AIAttempt[] = [];
   for (const provider of ordered) {
@@ -237,9 +297,14 @@ export async function runAIWithFallback<T>(
   const failures: AIAttemptFailure[] = [];
   const skipped = new Set<AIProviderId>(exhaustedProviders);
 
-  for (let i = 0; i < chain.length; i++) {
-    const attempt = chain[i];
+  for (const [i, attempt] of chain.entries()) {
     if (skipped.has(attempt.provider.id)) continue;
+
+    // A custom chain is a test seam. Real provider runs are consent-gated at
+    // the last shared boundary before a hosted process is spawned.
+    if (!options.chain && attempt.provider.id !== "ollama") {
+      await ensureHostedAIConsent();
+    }
 
     // Reflect the configured timeout onto the provider instance for this attempt.
     (attempt.provider as unknown as { timeoutMs: number }).timeoutMs = timeoutMs;
@@ -319,12 +384,56 @@ export async function generateReleaseNotesWithFallback(
   });
 }
 
+export async function generateIssueBodyWithFallback(
+  input: IssueBodyPromptInput,
+  explicitProvider?: ConfigAIProvider,
+  onAttemptFailed?: FallbackOptions["onAttemptFailed"],
+): Promise<AIRunResult<string>> {
+  return runAIWithFallback((provider, model) => provider.generateIssueBody(input, model), {
+    explicitProvider,
+    onAttemptFailed,
+  });
+}
+
 export async function generateReviewWithFallback(
   input: ReviewPromptInput,
   explicitProvider?: ConfigAIProvider,
   onAttemptFailed?: FallbackOptions["onAttemptFailed"],
 ): Promise<AIRunResult<ReviewResult>> {
   return runAIWithFallback((provider, model) => provider.generateReview(input, model), {
+    explicitProvider,
+    onAttemptFailed,
+  });
+}
+
+export async function generateTriageWithFallback(
+  items: TriageItem[],
+  explicitProvider?: ConfigAIProvider,
+  onAttemptFailed?: FallbackOptions["onAttemptFailed"],
+): Promise<AIRunResult<TriageResult>> {
+  return runAIWithFallback((provider, model) => provider.generateTriage(items, model), {
+    explicitProvider,
+    onAttemptFailed,
+  });
+}
+
+export async function generateSplitWithFallback(
+  input: SplitPromptInput,
+  explicitProvider?: ConfigAIProvider,
+  onAttemptFailed?: FallbackOptions["onAttemptFailed"],
+): Promise<AIRunResult<SplitResult>> {
+  return runAIWithFallback((provider, model) => provider.generateSplit(input, model), {
+    explicitProvider,
+    onAttemptFailed,
+  });
+}
+
+export async function generateIssueFromDiffWithFallback(
+  input: IssueFromDiffPromptInput,
+  explicitProvider?: ConfigAIProvider,
+  onAttemptFailed?: FallbackOptions["onAttemptFailed"],
+): Promise<AIRunResult<IssueFromDiffResult>> {
+  return runAIWithFallback((provider, model) => provider.generateIssueFromDiff(input, model), {
     explicitProvider,
     onAttemptFailed,
   });

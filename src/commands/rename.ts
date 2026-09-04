@@ -1,34 +1,36 @@
 import { Command } from "commander";
+import { getFlags } from "../services/runtime.ts";
 import { run } from "../utils/exec.ts";
 import {
   getAheadBehind,
+  getAllMergeBases,
   getCurrentBranch,
   getRemotes,
   hasBranch,
-  isGitRepo,
   renameBranch,
+  requireGitRepo,
 } from "../services/git.ts";
 import {
-  confirmPrompt,
+  confirmOrAbort,
+  emitJson,
   fail,
   header,
   p,
   pc,
   promptInput,
 } from "../utils/ui.ts";
-import { isDryRun } from "../utils/flags.ts";
+import { dryRun } from "../utils/flags.ts";
+import { validateBranchName } from "../utils/branch-name.ts";
 
 export function registerRenameCommand(program: Command): void {
   program
     .command("rename [newName]")
     .description("Rename the current branch, locally and on the remote")
-    .action(async (newNameArg?: string) => {
+    .option("-y, --yes", "Skip confirmation prompts")
+    .action(async (newNameArg?: string, options?: { yes?: boolean }) => {
       header("Branch Rename Assistant");
 
-      if (!(await isGitRepo())) {
-        fail("Not a git repository.");
-        return;
-      }
+      if (!(await requireGitRepo())) return;
 
       const current = await getCurrentBranch();
       if (!current || current === "HEAD") {
@@ -37,14 +39,7 @@ export function registerRenameCommand(program: Command): void {
       }
 
       if (current === "main" || current === "master") {
-        const confirmDefault = await confirmPrompt({
-          message: `Current branch is default branch ${pc.bold(pc.yellow(current))}. Are you sure you want to rename it?`,
-          initialValue: false,
-        });
-        if (!confirmDefault) {
-          p.cancel("Rename cancelled.");
-          return;
-        }
+        if (!(await confirmOrAbort(`Current branch is default branch ${pc.bold(pc.yellow(current))}. Are you sure you want to rename it?`, { assumeYes: options?.yes, initialValue: false, cancelText: "Rename cancelled." }))) return;
       }
 
       let newName = newNameArg?.trim();
@@ -57,7 +52,10 @@ export function registerRenameCommand(program: Command): void {
         const inputName = await promptInput({
           message: `Enter new name for branch ${pc.bold(pc.cyan(current))}:`,
           placeholder: "e.g. feat/new-auth-flow",
-          validate: (v) => (!v || !v.trim() ? "New branch name required" : undefined),
+          validate: (v) => {
+            if (!v || !v.trim()) return "New branch name required";
+            return validateBranchName(v.trim()) || undefined;
+          },
         });
 
         if (!inputName) {
@@ -66,6 +64,12 @@ export function registerRenameCommand(program: Command): void {
         }
 
         newName = inputName.trim();
+      } else {
+        const validationError = validateBranchName(newName);
+        if (validationError) {
+          fail(validationError);
+          return;
+        }
       }
 
       if (newName === current) {
@@ -78,8 +82,22 @@ export function registerRenameCommand(program: Command): void {
         return;
       }
 
-      if (isDryRun()) {
-        p.log.warn(`${pc.yellow("dry run")} ${pc.dim("·")} would rename ${pc.bold(current)} to ${pc.bold(newName)}`);
+      if (dryRun(`rename ${current} to ${newName}`)) return;
+
+      if (getFlags().json) {
+        try {
+          await renameBranch(current, newName);
+          const mergeBases = await getAllMergeBases();
+          for (const [childBranch, parentBranch] of mergeBases.entries()) {
+            if (parentBranch === current) {
+              await run("git", ["config", `branch.${childBranch}.gh-merge-base`, newName], { reject: false });
+            }
+          }
+          emitJson({ renamed: true, from: current, to: newName, remoteUpdated: false });
+        } catch (err) {
+          emitJson({ renamed: false, from: current, to: newName, error: String(err) });
+          fail(String(err));
+        }
         return;
       }
 
@@ -98,15 +116,21 @@ export function registerRenameCommand(program: Command): void {
         return;
       }
 
+      // Rewrite every child's parent pointer that pointed at the old name. Only
+      // the name changes: the recorded parent tip is still where the child forked.
+      const mergeBases = await getAllMergeBases();
+      for (const [childBranch, parentBranch] of mergeBases.entries()) {
+        if (parentBranch === current) {
+          await run("git", ["config", `branch.${childBranch}.gh-merge-base`, newName], { reject: false });
+        }
+      }
+
       if (hadRemote) {
         const remotes = await getRemotes();
         const remoteName = remotes.includes("origin") ? "origin" : remotes[0];
 
         if (remoteName) {
-          const updateRemote = await confirmPrompt({
-            message: `Branch had remote tracking. Push ${pc.bold(pc.green(newName))} to remote and delete old remote branch '${remoteName}/${current}'?`,
-            initialValue: true,
-          });
+          const updateRemote = await confirmOrAbort(`Branch had remote tracking. Push ${pc.bold(pc.green(newName))} to remote and delete old remote branch '${remoteName}/${current}'?`, { assumeYes: options?.yes, cancelText: null });
 
           if (updateRemote) {
             const remoteSpinner = p.spinner();

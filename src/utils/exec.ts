@@ -30,17 +30,32 @@ export class ExecError extends Error {
   }
 }
 
-const liveChildren = new Set<{ kill: (signal?: number) => void }>();
+const liveChildren = new Set<{ pid: number; kill: (signal?: number | NodeJS.Signals) => void }>();
+
+/**
+ * Kills a child and, where the platform allows it, everything it spawned. AI
+ * CLIs fork helpers; killing only the direct child leaves those running and
+ * holding the terminal.
+ */
+function terminate(child: { pid: number; kill: (signal?: number | NodeJS.Signals) => void }): void {
+  if (process.platform !== "win32") {
+    try {
+      process.kill(-child.pid, "SIGKILL");
+      return;
+    } catch {
+      // Not a group leader (or already gone); fall through to the direct kill.
+    }
+  }
+  try {
+    child.kill(process.platform === "win32" ? "SIGTERM" : "SIGKILL");
+  } catch {
+    // Already exited
+  }
+}
 
 /** Terminates every subprocess this process started. Used by the signal handler. */
 export function killAllChildren(): void {
-  for (const child of liveChildren) {
-    try {
-      child.kill(9);
-    } catch {
-      // Already exited
-    }
-  }
+  for (const child of liveChildren) terminate(child);
   liveChildren.clear();
 }
 
@@ -71,6 +86,10 @@ export async function run(command: string, args: string[], options: RunOptions =
     stdin: inherit ? "inherit" : options.input !== undefined ? "pipe" : "ignore",
     stdout: inherit ? "inherit" : "pipe",
     stderr: inherit ? "inherit" : "pipe",
+    // Piped children get their own process group so a timeout or Ctrl-C can
+    // take their helpers down with them. Inherited-stdio children (git log in
+    // a pager, an editor) must stay in ours to keep the terminal's job control.
+    detached: !inherit && process.platform !== "win32",
   });
 
   liveChildren.add(proc);
@@ -80,24 +99,32 @@ export async function run(command: string, args: string[], options: RunOptions =
   if (options.timeoutMs) {
     timeoutId = setTimeout(() => {
       timedOut = true;
-      try {
-        proc.kill(9);
-      } catch {
-        // Process already exited
-      }
+      terminate(proc);
     }, options.timeoutMs);
   }
 
-  if (options.input !== undefined && proc.stdin) {
-    proc.stdin.write(options.input);
-    proc.stdin.end();
-  }
+  // Writing a large prompt and awaiting the flush; a child that exits early
+  // (not installed, bad flag) closes the pipe, which must not become our error.
+  const stdin = proc.stdin;
+  const stdinDone =
+    options.input !== undefined && stdin
+      ? (async () => {
+          try {
+            stdin.write(options.input!);
+            await stdin.flush();
+            await stdin.end();
+          } catch {
+            // EPIPE: the child is gone; its exit code tells the real story.
+          }
+        })()
+      : Promise.resolve();
 
   try {
     const [stdout, stderr, exitCode] = await Promise.all([
       proc.stdout ? new Response(proc.stdout).text() : Promise.resolve(""),
       proc.stderr ? new Response(proc.stderr).text() : Promise.resolve(""),
       proc.exited,
+      stdinDone,
     ]);
 
     const result: RunResult = { stdout, stderr, exitCode: exitCode ?? 0 };

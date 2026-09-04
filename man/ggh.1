@@ -1,0 +1,722 @@
+.TH ggh 1 "" "ggh 0.4.0-beta.1"
+.SH NAME
+ggh \- Git and GitHub in one CLI
+.SH SYNOPSIS
+.B ggh
+[\fIoptions\fR] \fIcommand\fR [\fIargs\fR...]
+.SH DESCRIPTION
+Git and GitHub in one CLI: pull requests, issues, CI, stacked branches, and AI. Anything \fBggh\fR does not recognise goes straight to \fBgit\fR, so \fBggh add .\fR, \fBggh push\fR, and \fBggh rebase \-i\fR behave exactly as \fBgit\fR does.
+.SH COMMANDS
+.SS "Status"
+.TP
+\fBstatus, st\fR
+Repository, GitHub, and AI provider status in one place
+.SS "Daily loop"
+.TP
+\fBcommit, c\fR
+Stage, write a message with AI, commit, push, and open a PR
+.TP
+\fBlog, graph\fR
+Colourised commit graph
+.TP
+\fBswitch, sw, checkout\fR
+Switch between branches and worktrees
+.TP
+\fBstack, stk\fR
+Stacked branches: view, restack, and submit the chain
+.RS
+.TP
+\fBlist, ls\fR
+Show the branch stack as a tree
+.RE
+.RS
+.TP
+\fBon\fR
+Record the parent of the current branch, adopting it into a stack
+.RE
+.RS
+.TP
+\fBrestack\fR
+Rebase a branch and everything above it onto their recorded parents
+.RE
+.RS
+.TP
+\fBsubmit\fR
+Push the stack and open a Pull Request for each branch against its real parent
+.RE
+.RS
+.TP
+\fBnext\fR
+Create a branch stacked on the current one
+.RE
+.RS
+.TP
+\fBcheckout, co\fR
+Pick a branch from the stack and switch to it
+.RE
+.TP
+\fBworktree, wt\fR
+Isolated worktrees for parallel work, with AI branch naming
+.RS
+.TP
+\fBlist, ls\fR
+List all active worktrees
+.RE
+.RS
+.TP
+\fBadd\fR
+Create a new worktree (accepts branch name or natural language task prompt)
+.RE
+.RS
+.TP
+\fBremove, rm\fR
+Remove an active worktree and clean up references
+.RE
+.TP
+\fBstash, sh\fR
+Push, browse, pop, and drop stashes
+.RS
+.TP
+\fBpop\fR
+Pop a stash
+.RE
+.RS
+.TP
+\fBdrop\fR
+Drop a stash
+.RE
+.RS
+.TP
+\fBpush, save\fR
+Stash current changes
+.RE
+.RS
+.TP
+\fBlist\fR
+List stashes
+.RE
+.TP
+\fBdiscard, restore\fR
+Discard uncommitted changes to selected files
+.TP
+\fBundo\fR
+Undo the last commit, keeping the changes staged
+.TP
+\fBresolve\fR
+Resolve merge conflicts, file by file
+.TP
+\fBsquash\fR
+Squash the last N commits into one
+.TP
+\fBrename\fR
+Rename the current branch, locally and on the remote
+.TP
+\fBsync, prune\fR
+Fetch, prune, and delete branches whose remote is gone
+.SS "GitHub"
+.TP
+\fBclone\fR
+Search for and clone a repository, optionally blobless
+.TP
+\fBrepo\fR
+View, fork, create, and set the default repository
+.RS
+.TP
+\fBfork\fR
+Fork a repository to your account
+.RE
+.RS
+.TP
+\fBset-default\fR
+Set the repository that pr, issue, run, and release commands target
+.RE
+.RS
+.TP
+\fBcreate\fR
+Create a repository on GitHub, optionally from this directory
+.RE
+.RS
+.TP
+\fBlist\fR
+List repositories for the authenticated user or organisation
+.RE
+.RS
+.TP
+\fBdelete\fR
+Delete a repository
+.RE
+.RS
+.TP
+\fBarchive\fR
+Archive a repository
+.RE
+.RS
+.TP
+\fBunarchive\fR
+Unarchive a repository
+.RE
+.RS
+.TP
+\fBrename\fR
+Rename a repository
+.RE
+.RS
+.TP
+\fBedit\fR
+Edit repository settings
+.RE
+.RS
+.TP
+\fBsync\fR
+Sync a forked repository with its upstream parent
+.RE
+.RS
+.TP
+\fBclone\fR
+Clone a repository from GitHub
+.RE
+.TP
+\fBpr, prs\fR
+Open, review, merge, and check out pull requests
+.RS
+.TP
+\fBlist\fR
+List pull requests for this repository
+.RE
+.RS
+.TP
+\fBdiff\fR
+Show the diff for a pull request
+.RE
+.RS
+.TP
+\fBcheckout\fR
+Check out a pull request locally
+.RE
+.RS
+.TP
+\fBcreate\fR
+Open a Pull Request for the current branch, with an AI-written title and body
+.RE
+.RS
+.TP
+\fBview\fR
+Show a Pull Request: state, review decision, size, and body
+.RE
+.RS
+.TP
+\fBmerge\fR
+Merge a Pull Request and clean up the branch
+.RE
+.RS
+.TP
+\fBready\fR
+Mark a draft Pull Request as ready for review
+.RE
+.RS
+.TP
+\fBclose\fR
+Close a Pull Request without merging
+.RE
+.RS
+.TP
+\fBreopen\fR
+Reopen a closed Pull Request
+.RE
+.RS
+.TP
+\fBcomment\fR
+Add a comment to a Pull Request
+.RE
+.RS
+.TP
+\fBedit\fR
+Edit a Pull Request title, body, or base branch
+.RE
+.RS
+.TP
+\fBreview\fR
+Review a Pull Request with AI and post the findings as real review comments
+.RE
+.TP
+\fBissue, issues\fR
+Browse, read, open, and close issues
+.RS
+.TP
+\fBcreate\fR
+Open a new issue
+.RE
+.RS
+.TP
+\fBclose\fR
+Close an issue
+.RE
+.RS
+.TP
+\fBreopen\fR
+Reopen an issue
+.RE
+.RS
+.TP
+\fBcomment\fR
+Add a comment to an issue
+.RE
+.RS
+.TP
+\fBdevelop\fR
+Create and switch to a branch for an issue, named from its title
+.RE
+.RS
+.TP
+\fBlock\fR
+Lock conversation on an issue
+.RE
+.RS
+.TP
+\fBunlock\fR
+Unlock conversation on an issue
+.RE
+.RS
+.TP
+\fBpin\fR
+Pin an issue in a repository
+.RE
+.RS
+.TP
+\fBunpin\fR
+Unpin an issue in a repository
+.RE
+.RS
+.TP
+\fBtransfer\fR
+Transfer an issue to another repository
+.RE
+.RS
+.TP
+\fBedit\fR
+Edit an issue title, body, or labels
+.RE
+.TP
+\fBrun, runs\fR
+Inspect Actions runs, and explain failures with AI
+.RS
+.TP
+\fBrerun\fR
+Re-run a workflow run
+.RE
+.RS
+.TP
+\fBcancel\fR
+Cancel a workflow run
+.RE
+.TP
+\fBchecks\fR
+CI status for this branch's pull request
+.TP
+\fBrelease, rel\fR
+Browse releases, or publish one with AI-written notes
+.RS
+.TP
+\fBlist\fR
+List releases
+.RE
+.RS
+.TP
+\fBview\fR
+View a release
+.RE
+.RS
+.TP
+\fBdownload\fR
+Download release assets
+.RE
+.RS
+.TP
+\fBupload\fR
+Upload assets to a release
+.RE
+.RS
+.TP
+\fBdelete\fR
+Delete a release
+.RE
+.RS
+.TP
+\fBcreate\fR
+Create a release
+.RE
+.TP
+\fBchangelog\fR
+Write a changelog entry into CHANGELOG.md
+.TP
+\fBapi\fR
+Authenticated GitHub API request (passthrough to `gh api`)
+.TP
+\fBworkflow, workflows\fR
+List, view, run, enable, and disable GitHub Actions workflows
+.RS
+.TP
+\fBlist\fR
+List workflows
+.RE
+.RS
+.TP
+\fBview\fR
+View a workflow
+.RE
+.RS
+.TP
+\fBrun\fR
+Run a workflow
+.RE
+.RS
+.TP
+\fBenable\fR
+Enable a workflow
+.RE
+.RS
+.TP
+\fBdisable\fR
+Disable a workflow
+.RE
+.TP
+\fBlabel, labels\fR
+List, create, edit, and delete issue labels
+.RS
+.TP
+\fBlist\fR
+List labels
+.RE
+.RS
+.TP
+\fBcreate\fR
+Create a label
+.RE
+.RS
+.TP
+\fBedit\fR
+Edit a label
+.RE
+.RS
+.TP
+\fBdelete\fR
+Delete a label
+.RE
+.TP
+\fBgist, gists\fR
+List, view, create, edit, and delete GitHub Gists
+.RS
+.TP
+\fBlist\fR
+List gists
+.RE
+.RS
+.TP
+\fBview\fR
+View a gist
+.RE
+.RS
+.TP
+\fBcreate\fR
+Create a gist from files
+.RE
+.RS
+.TP
+\fBedit\fR
+Edit a gist
+.RE
+.RS
+.TP
+\fBdelete\fR
+Delete a gist
+.RE
+.TP
+\fBsearch\fR
+Search issues, pull requests, repositories, or code on GitHub
+.TP
+\fBsecret, secrets\fR
+List, set, and delete repository secrets
+.RS
+.TP
+\fBlist\fR
+List secrets
+.RE
+.RS
+.TP
+\fBset\fR
+Set a secret
+.RE
+.RS
+.TP
+\fBdelete\fR
+Delete a secret
+.RE
+.TP
+\fBvariable, variables\fR
+List, set, and delete repository variables
+.RS
+.TP
+\fBlist\fR
+List variables
+.RE
+.RS
+.TP
+\fBset\fR
+Set a variable
+.RE
+.RS
+.TP
+\fBdelete\fR
+Delete a variable
+.RE
+.TP
+\fBnotifications, notifs\fR
+List, view, mark, and unsubscribe from GitHub notifications
+.RS
+.TP
+\fBlist\fR
+List notifications
+.RE
+.RS
+.TP
+\fBview\fR
+View a notification
+.RE
+.RS
+.TP
+\fBmark\fR
+Mark one or all notifications as read
+.RE
+.RS
+.TP
+\fBunsubscribe\fR
+Unsubscribe from a notification
+.RE
+.TP
+\fBbrowse\fR
+Open the repository in a browser
+.TP
+\fBtriage\fR
+AI-triage notifications and issues (read-only)
+.SS "Local workflow"
+.TP
+\fBdraft\fR
+Stash uncommitted work with an AI-generated description, then restore it later
+.RS
+.TP
+\fBcreate\fR
+Save current changes as a draft with an AI-generated description
+.RE
+.RS
+.TP
+\fBlist\fR
+Show saved drafts
+.RE
+.RS
+.TP
+\fBresume, pop\fR
+Restore a saved draft
+.RE
+.RS
+.TP
+\fBdrop, delete\fR
+Delete a saved draft
+.RE
+.TP
+\fBignore, gitignore\fR
+Manage .gitignore patterns
+.RS
+.TP
+\fBlist\fR
+Show current ignore patterns
+.RE
+.RS
+.TP
+\fBadd\fR
+Append patterns (skips duplicates)
+.RE
+.RS
+.TP
+\fBremove, delete\fR
+Remove a pattern
+.RE
+.TP
+\fBalias\fR
+Create, list, and remove custom command shortcuts (expanded before parsing; an alias wins over a built-in or git command of the same name)
+.RS
+.TP
+\fBlist\fR
+List all aliases
+.RE
+.RS
+.TP
+\fBset\fR
+Create a command shortcut (equivalent to `ggh alias <name> <command...>`)
+.RE
+.RS
+.TP
+\fBremove, delete\fR
+Remove an alias
+.RE
+.TP
+\fBhook\fR
+Install, list, edit, and remove git hooks
+.RS
+.TP
+\fBlist\fR
+Show installed git hooks
+.RE
+.RS
+.TP
+\fBinstall\fR
+Install a git hook (prompts when name omitted)
+.RE
+.RS
+.TP
+\fBremove, delete\fR
+Remove an installed git hook
+.RE
+.RS
+.TP
+\fBedit\fR
+Show or update a git hook (--command to update)
+.RE
+.SS "Extensions"
+.TP
+\fBmcp\fR
+Run as a Model Context Protocol server (for AI tool integration)
+.TP
+\fBplugin\fR
+Install, list, and remove community plugins (run with full process privileges — install only from sources you trust)
+.RS
+.TP
+\fBlist\fR
+Show installed plugins
+.RE
+.RS
+.TP
+\fBinstall\fR
+Install a plugin from a local file
+.RE
+.RS
+.TP
+\fBremove, uninstall, delete\fR
+Remove an installed plugin
+.RE
+.TP
+\fBteam\fR
+Publish your stack graph to a secret gist, or pull a teammate's stack
+.RS
+.TP
+\fBpublish\fR
+Publish your stack as a secret gist
+.RE
+.RS
+.TP
+\fBpull, view\fR
+Fetch a teammate's stack
+.RE
+.RS
+.TP
+\fBlist\fR
+List your team-stack gists
+.RE
+.SS "Setup"
+.TP
+\fBconfig\fR
+Configure providers, models, and defaults
+.RS
+.TP
+\fBlist, ls\fR
+List all configuration settings
+.RE
+.RS
+.TP
+\fBcache-clear\fR
+Delete cached GitHub responses
+.RE
+.RS
+.TP
+\fBget\fR
+Get a specific configuration value
+.RE
+.RS
+.TP
+\fBset\fR
+Set a configuration value (e.g. ai_provider grok, ai_fallback false)
+.RE
+.RS
+.TP
+\fBunset\fR
+Remove a value from your user config so the default (or project/env) applies
+.RE
+.RS
+.TP
+\fBdoctor\fR
+Check your configuration, the project .ggh.json, and every AI provider
+.RE
+.TP
+\fBcompletion\fR
+Generate completions for zsh, bash, fish, or powershell
+.SH GLOBAL OPTIONS
+Every command follows the same rules.
+.TP
+\fB--json\fR
+Machine-readable output on stdout, nothing else.
+.TP
+\fB--dry\-run\fR
+Describe what would happen; change nothing.
+.TP
+\fB\-y\fR, \fB--yes\fR
+Answer every confirmation with yes.
+.TP
+\fB\-q\fR, \fB--quiet\fR
+Suppress progress; errors still print.
+.TP
+\fB--no\-input\fR
+Never prompt; fail with instructions instead.
+.TP
+\fB\-R\fR, \fB--repo\fR \fIowner/name\fR
+Act on another repository from anywhere (GitHub commands).
+.RS
+.PP
+stdout is data. stderr is everything else. When \fBggh\fR needs an answer and there is no terminal, it cancels and exits non-zero rather than guessing.
+.RE
+.SH ENVIRONMENT
+.TP
+\fBGH_HOST\fR
+Target a GitHub Enterprise host instead of github.com.
+.TP
+\fBGGH_*\fR
+Per-key overrides (\fBGGH_AI_PROVIDER\fR, \fBGGH_CODEX_MODEL\fR, \fBGGH_AI_TIMEOUT_MS\fR, ...). Flags beat environment, environment beats config files.
+.TP
+\fBXDG_CONFIG_HOME\fR, \fBXDG_CACHE_HOME\fR
+Respected for config, plugins, aliases, and cache.
+.TP
+\fBGGH_DEBUG\fR
+Print git-forwarding and alias-expansion decisions to stderr.
+.SH FILES
+.TP
+\fI~/.config/ggh/config.json\fR
+User configuration (see \fBggh config\fR).
+.TP
+\fI~/.config/ggh/aliases.json\fR, \fI~/.config/ggh/plugins/\fR
+Aliases and community plugins. Plugins run with full process privileges; install only from sources you trust.
+.TP
+\fI.ggh.json\fR (repository root)
+Per-project configuration, safe to commit.
+.SH EXAMPLES
+.TP
+Inspect a pull request as data:
+ggh pr --json | jq -r '.[] | "\\(.number) \\(.title)"'
+.TP
+Commit with an AI message, then open a PR:
+ggh commit --push --pr
+.TP
+Preview anything destructive first:
+ggh discard --all --dry\-run
+.SH EXIT STATUS
+Zero on success, non-zero on failure. \fBggh\fR is usable as a gate in scripts and CI: failures set the exit code, and \fB--json\fR output stays parseable.
+.SH "SEE ALSO"
+\fBgit\fR(1), \fBgh\fR(1)
+Full guide and configuration reference: the README shipped with the source.

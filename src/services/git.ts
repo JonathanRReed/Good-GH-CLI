@@ -1,9 +1,72 @@
 import { run } from "../utils/exec.ts";
-import { existsSync, appendFileSync, readFileSync, rmSync, copyFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { stat } from "node:fs/promises";
-import { join, isAbsolute, relative } from "node:path";
+import { join } from "node:path";
 import type { ChangedFile } from "../utils/diff.ts";
-import type { CloneMode } from "./config.ts";
+
+
+// Domain modules. git.ts is the facade: everything stays importable from here,
+// but stash/stack/worktree/branch/exec live in ./git/ next to this file.
+export { NON_INTERACTIVE_ENV, execGitWithRetry } from "./git/exec.ts";
+export type { BranchInfo } from "./git/branch.ts";
+export {
+  getCommitCount,
+  getCurrentBranch,
+  getRemoteTrackingBranch,
+  getRemotes,
+  getRepoRoot,
+  hasBranch,
+  hasCommits,
+  isDetachedHead,
+  listBranches,
+} from "./git/branch.ts";
+export type { StackNode } from "./git/stack.ts";
+export {
+  getAllMergeBases,
+  getBranchMergeBase,
+  getInProgressOperation,
+  getRebaseBranch,
+  getRestackBase,
+  getStackAncestors,
+  getStackDescendants,
+  getStackGraph,
+  hasRemoteBranch,
+  isAncestor,
+  isRebaseInProgress,
+  recordParentTip,
+  restackBranch,
+  setBranchMergeBase,
+} from "./git/stack.ts";
+export type { WorktreeAddResult, WorktreeInfo } from "./git/worktree.ts";
+export { worktreeAdd, worktreeList, worktreeRemove } from "./git/worktree.ts";
+export type { StashEntry } from "./git/stash.ts";
+export { stashDiff, stashDrop, stashList, stashPop, stashPush } from "./git/stash.ts";
+export {
+  clone,
+  countUniqueCommits,
+  deleteLocalBranch,
+  detectDefaultBranch,
+  discardFiles,
+  fetchPrune,
+  getAheadBehind,
+  getAheadOfDefault,
+  getGoneBranches,
+  isBranchMergedInto,
+  pullRebase,
+  push,
+  resolveConflict,
+} from "./git/sync.ts";
+
+// What the remaining core functions below still call from the domain modules.
+import { execGitWithRetry } from "./git/exec.ts";
+import {
+  getCommitCount,
+  getCurrentBranch,
+  getRemotes,
+  getRepoRoot,
+  isDetachedHead,
+} from "./git/branch.ts";
+import { getBranchMergeBase, setBranchMergeBase } from "./git/stack.ts";
 
 export interface GitStatusResult {
   isRepo: boolean;
@@ -16,71 +79,6 @@ export interface GitStatusResult {
   hasChanges: boolean;
 }
 
-export interface WorktreeInfo {
-  path: string;
-  head: string;
-  branch: string;
-  isBare: boolean;
-}
-
-export interface BranchInfo {
-  name: string;
-  current: boolean;
-  commit: string;
-}
-
-export const NON_INTERACTIVE_ENV = Object.freeze({
-  GCM_INTERACTIVE: "never",
-  GIT_ASKPASS: "",
-  GIT_TERMINAL_PROMPT: "0",
-  SSH_ASKPASS: "",
-  SSH_ASKPASS_REQUIRE: "never",
-});
-
-/**
- * Executes a git command with exponential backoff retry if index.lock or HEAD.lock is encountered.
- */
-export async function execGitWithRetry(
-  args: string[],
-  options: {
-    cwd?: string;
-    maxRetries?: number;
-    delayMs?: number;
-    nonInteractive?: boolean;
-    env?: NodeJS.ProcessEnv;
-  } = {},
-): Promise<{ stdout: string; stderr: string }> {
-  const cwd = options.cwd || process.cwd();
-  const maxRetries = options.maxRetries ?? 3;
-  let delay = options.delayMs ?? 250;
-  // Default to non-interactive when stdin is not a TTY so git never blocks on credential prompts
-  const nonInteractive = options.nonInteractive ?? !process.stdin.isTTY;
-  const env = nonInteractive
-    ? { ...process.env, ...options.env, ...NON_INTERACTIVE_ENV }
-    : options.env
-      ? { ...process.env, ...options.env }
-      : undefined;
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      return await run("git", args, { cwd, env });
-    } catch (err: unknown) {
-      const errStr = String(err);
-      const isLockError =
-        errStr.includes("index.lock") ||
-        errStr.includes("HEAD.lock") ||
-        (errStr.includes("Unable to create") && errStr.includes(".lock"));
-
-      if (isLockError && attempt < maxRetries) {
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        delay *= 1.5;
-        continue;
-      }
-      throw err;
-    }
-  }
-  return await run("git", args, { cwd, env });
-}
 
 export async function isGitRepo(cwd = process.cwd()): Promise<boolean> {
   try {
@@ -91,135 +89,19 @@ export async function isGitRepo(cwd = process.cwd()): Promise<boolean> {
   }
 }
 
-export async function hasCommits(cwd = process.cwd()): Promise<boolean> {
-  try {
-    await run("git", ["rev-parse", "--verify", "HEAD"], { cwd });
-    return true;
-  } catch {
-    return false;
-  }
+/**
+ * Checks `isGitRepo()` and calls `fail()` with a helpful message if not.
+ * Returns `true` when safe to proceed. Replaces ~28 copies of the same guard.
+ */
+
+
+export async function requireGitRepo(cwd = process.cwd()): Promise<boolean> {
+  if (await isGitRepo(cwd)) return true;
+  const { fail } = await import("../utils/ui.ts");
+  fail("Not a git repository. Run `git init` or navigate to a repository.");
+  return false;
 }
 
-export async function hasBranch(branch: string, cwd = process.cwd()): Promise<boolean> {
-  try {
-    await run("git", ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`], { cwd });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export async function getRepoRoot(cwd = process.cwd()): Promise<string> {
-  const { stdout } = await run("git", ["rev-parse", "--show-toplevel"], { cwd });
-  return stdout.trim();
-}
-
-export async function getCurrentBranch(cwd = process.cwd()): Promise<string> {
-  // `rev-parse --abbrev-ref HEAD` fails on an unborn branch (a fresh repo with no
-  // commits), which would report the branch as "HEAD" and trip the detached-HEAD
-  // guards. `branch --show-current` resolves it, and returns "" when detached.
-  try {
-    const { stdout } = await run("git", ["branch", "--show-current"], { cwd });
-    const name = stdout.trim();
-    if (name) return name;
-  } catch {
-    // Fall through to rev-parse
-  }
-
-  try {
-    const { stdout } = await run("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd });
-    return stdout.trim() || "HEAD";
-  } catch {
-    return "HEAD";
-  }
-}
-
-export async function isDetachedHead(cwd = process.cwd()): Promise<boolean> {
-  try {
-    await run("git", ["symbolic-ref", "-q", "HEAD"], { cwd });
-    return false;
-  } catch {
-    return true;
-  }
-}
-
-export async function getCommitCount(cwd = process.cwd()): Promise<number> {
-  try {
-    const { stdout } = await run("git", ["rev-list", "--count", "HEAD"], { cwd });
-    return parseInt(stdout.trim(), 10) || 0;
-  } catch {
-    return 0;
-  }
-}
-
-export async function getRemotes(cwd = process.cwd()): Promise<string[]> {
-  try {
-    const { stdout } = await run("git", ["remote"], { cwd });
-    return stdout
-      .split("\n")
-      .map((r) => r.trim())
-      .filter(Boolean);
-  } catch {
-    return [];
-  }
-}
-
-export async function hasRemote(name = "origin", cwd = process.cwd()): Promise<boolean> {
-  const remotes = await getRemotes(cwd);
-  return remotes.includes(name);
-}
-
-export async function listBranches(cwd = process.cwd()): Promise<BranchInfo[]> {
-  try {
-    const { stdout } = await run(
-      "git",
-      // NUL-delimited so branch names containing "|" (or subjects containing "|") parse correctly
-      ["for-each-ref", "--format=%(refname:short)%00%(HEAD)%00%(subject)", "refs/heads"],
-      { cwd },
-    );
-    return stdout
-      .split("\n")
-      .filter(Boolean)
-      .map((line) => {
-        const parts = line.split("\0");
-        const name = parts[0]?.trim() || "";
-        const head = parts[1]?.trim() || "";
-        const commit = parts[2]?.trim() || "";
-        return {
-          name,
-          current: head === "*",
-          commit,
-        };
-      });
-  } catch {
-    return [];
-  }
-}
-
-export async function setBranchMergeBase(
-  branch: string,
-  baseBranch: string,
-  cwd = process.cwd(),
-): Promise<void> {
-  try {
-    await run("git", ["config", `branch.${branch}.gh-merge-base`, baseBranch], { cwd });
-  } catch {
-    // Best-effort
-  }
-}
-
-export async function getBranchMergeBase(
-  branch?: string,
-  cwd = process.cwd(),
-): Promise<string | null> {
-  try {
-    const targetBranch = branch || (await getCurrentBranch(cwd));
-    const { stdout } = await run("git", ["config", `branch.${targetBranch}.gh-merge-base`], { cwd });
-    return stdout.trim() || null;
-  } catch {
-    return null;
-  }
-}
 
 export async function switchBranch(
   branch: string,
@@ -240,6 +122,7 @@ export async function switchBranch(
   }
 }
 
+
 export async function renameBranch(
   oldName: string,
   newName: string,
@@ -251,6 +134,7 @@ export async function renameBranch(
     await setBranchMergeBase(newName, mergeBase, cwd);
   }
 }
+
 
 export async function fetchPullRequestBranch(
   prNumber: number,
@@ -265,6 +149,7 @@ export async function fetchPullRequestBranch(
     { cwd },
   );
 }
+
 
 export async function findPrTemplate(cwd = process.cwd()): Promise<string | null> {
   try {
@@ -287,6 +172,67 @@ export async function findPrTemplate(cwd = process.cwd()): Promise<string | null
   }
   return null;
 }
+
+/**
+ * Lists all available PR templates by scanning `.github/PULL_REQUEST_TEMPLATE/`
+ * and the common single-template locations. Returns `{ name, path, content }`.
+ */
+
+
+export async function listPrTemplates(cwd = process.cwd()): Promise<Array<{ name: string; path: string; content: string }>> {
+  try {
+    const repoRoot = await getRepoRoot(cwd);
+    const results: Array<{ name: string; path: string; content: string }> = [];
+    const seen = new Set<string>();
+
+    // Multi-template directory: .github/PULL_REQUEST_TEMPLATE/*.md
+    const multiDir = join(repoRoot, ".github", "PULL_REQUEST_TEMPLATE");
+    if (existsSync(multiDir)) {
+      try {
+        const entries = readdirSync(multiDir).filter((f) => f.toLowerCase().endsWith(".md"));
+        for (const f of entries) {
+          const p = join(multiDir, f);
+          const name = f.replace(/\.md$/i, "");
+          if (!seen.has(p)) {
+            seen.add(p);
+            results.push({ name, path: p, content: readFileSync(p, "utf-8") });
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    // Single-template locations
+    const singleCandidates = [
+      { name: "default", path: join(repoRoot, ".github", "pull_request_template.md") },
+      { name: "default", path: join(repoRoot, ".github", "PULL_REQUEST_TEMPLATE.md") },
+      { name: "default", path: join(repoRoot, "pull_request_template.md") },
+      { name: "default", path: join(repoRoot, "PULL_REQUEST_TEMPLATE.md") },
+    ];
+    for (const c of singleCandidates) {
+      if (existsSync(c.path) && !seen.has(c.path)) {
+        seen.add(c.path);
+        results.push({ name: c.name, path: c.path, content: readFileSync(c.path, "utf-8") });
+        break; // only one "default"
+      }
+    }
+
+    return results;
+  } catch {
+    return [];
+  }
+}
+
+/** Finds a specific named PR template. Returns null if not found. */
+
+
+export async function findPrTemplateByName(name: string, cwd = process.cwd()): Promise<string | null> {
+  const templates = await listPrTemplates(cwd);
+  const match = templates.find((t) => t.name.toLowerCase() === name.toLowerCase());
+  return match?.content ?? null;
+}
+
 
 export async function getStatus(cwd = process.cwd()): Promise<GitStatusResult> {
   // Probe repo state and porcelain status in parallel (independent git calls)
@@ -321,6 +267,10 @@ export async function getStatus(cwd = process.cwd()): Promise<GitStatusResult> {
   const untracked: ChangedFile[] = [];
   const conflicts: ChangedFile[] = [];
 
+  // With -z, `git status --porcelain=v1` emits NUL-separated records.
+  // Normal entries are `XY <path>\0`. Renames and copies are
+  // `XY <new_path>\0<old_path>\0`; the score is never printed in -z mode,
+  // so the path always begins at the third character.
   const rawEntries = stdout.split("\0");
   let i = 0;
   while (i < rawEntries.length) {
@@ -331,11 +281,12 @@ export async function getStatus(cwd = process.cwd()): Promise<GitStatusResult> {
     }
 
     const x = entry[0];
-    const y = entry[1];
-    const filePath = entry.slice(3);
+    const y = entry[1] || " ";
+    const filePath = entry.length > 3 ? entry.slice(3) : "";
 
-    if (x === "R" || x === "C") {
-      // For rename/copy in -z mode, next entry is the original path
+    // For renames/copies, consume the original path so it is not reported
+    // as a separate file. `filePath` is already the new (target) path.
+    if ((x === "R" || x === "C") && i + 1 < rawEntries.length) {
       i++;
     }
 
@@ -357,7 +308,7 @@ export async function getStatus(cwd = process.cwd()): Promise<GitStatusResult> {
       let status: ChangedFile["status"] = "modified";
       if (x === "A") status = "added";
       else if (x === "D") status = "deleted";
-      else if (x === "R") status = "renamed";
+      else if (x === "R" || x === "C") status = "renamed";
       staged.push({ path: filePath, status, staged: true });
     }
 
@@ -386,19 +337,30 @@ export async function getStatus(cwd = process.cwd()): Promise<GitStatusResult> {
   };
 }
 
+
 export async function stageFiles(files: string[], cwd = process.cwd()): Promise<void> {
   if (files.length === 0) return;
   await execGitWithRetry(["add", "--", ...files], { cwd });
 }
 
+
 export async function stageAll(cwd = process.cwd()): Promise<void> {
   await execGitWithRetry(["add", "-A"], { cwd });
 }
+
+/** Unstages all staged changes (equivalent to `git reset HEAD --`). */
+
+
+export async function unstageAll(cwd = process.cwd()): Promise<void> {
+  await execGitWithRetry(["reset", "HEAD", "--"], { cwd });
+}
+
 
 export async function getStagedDiff(cwd = process.cwd()): Promise<string> {
   const { stdout } = await run("git", ["diff", "--cached"], { cwd });
   return stdout;
 }
+
 
 export async function getStagedDiffStat(cwd = process.cwd()): Promise<string> {
   try {
@@ -414,6 +376,8 @@ export async function getStagedDiffStat(cwd = process.cwd()): Promise<string> {
  * (`git diff base...HEAD`). This is what a Pull Request actually contains —
  * the staged diff is empty once the commit has been made.
  */
+
+
 export async function getBranchDiff(baseBranch: string, cwd = process.cwd()): Promise<string> {
   try {
     const { stdout } = await run("git", ["diff", `${baseBranch}...HEAD`], { cwd });
@@ -422,6 +386,7 @@ export async function getBranchDiff(baseBranch: string, cwd = process.cwd()): Pr
     return "";
   }
 }
+
 
 export async function getBranchDiffStat(baseBranch: string, cwd = process.cwd()): Promise<string> {
   try {
@@ -433,6 +398,8 @@ export async function getBranchDiffStat(baseBranch: string, cwd = process.cwd())
 }
 
 /** Subjects of the commits this branch adds on top of `baseBranch`, newest first. */
+
+
 export async function getCommitsSinceBase(
   baseBranch: string,
   limit = 50,
@@ -450,6 +417,7 @@ export async function getCommitsSinceBase(
   }
 }
 
+
 export async function getRecentCommits(count = 10, cwd = process.cwd()): Promise<string[]> {
   try {
     const { stdout } = await run("git", ["log", `-n`, `${count}`, "--oneline"], { cwd });
@@ -459,18 +427,49 @@ export async function getRecentCommits(count = 10, cwd = process.cwd()): Promise
   }
 }
 
+/** Returns the subject line of a specific commit. */
+
+
+export async function getCommitSubject(sha: string, cwd = process.cwd()): Promise<string> {
+  const { stdout } = await run("git", ["log", "-1", "--pretty=format:%s", sha], { cwd });
+  return stdout.trim();
+}
+
+/** Returns true if the given ref resolves to a valid commit. */
+
+
+export async function isValidCommit(sha: string, cwd = process.cwd()): Promise<boolean> {
+  try {
+    await run("git", ["rev-parse", "--verify", `${sha}^{commit}`], { cwd });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Applies a unified diff patch to the working tree with `git apply`. */
+
+
+export async function applyPatch(patch: string, cwd = process.cwd()): Promise<void> {
+  await execGitWithRetry(["apply", "--whitespace=fix"], { cwd, input: patch });
+}
+
+
 export interface CommitOptions {
   noVerify?: boolean;
   gpgSign?: boolean;
   signoff?: boolean;
   amend?: boolean;
+  fixup?: string;
   cwd?: string;
 }
+
 
 export interface LargeFileCheckResult {
   blocked: Array<{ path: string; sizeMB: number }>;
   warnings: Array<{ path: string; sizeMB: number }>;
 }
+
 
 export async function checkLargeFiles(
   files: ChangedFile[],
@@ -502,133 +501,6 @@ export async function checkLargeFiles(
   return { blocked, warnings };
 }
 
-export async function getAheadBehind(
-  cwd = process.cwd(),
-): Promise<{ ahead: number; behind: number; hasUpstream: boolean }> {
-  try {
-    const { stdout } = await run(
-      "git",
-      ["rev-list", "--left-right", "--count", "HEAD...@{u}"],
-      { cwd },
-    );
-    const parts = stdout.trim().split(/\s+/).map(Number);
-    return { ahead: parts[0] || 0, behind: parts[1] || 0, hasUpstream: true };
-  } catch {
-    return { ahead: 0, behind: 0, hasUpstream: false };
-  }
-}
-
-/**
- * Detects the repository's default branch: recorded merge-base first, then main/master fallback.
- */
-export async function detectDefaultBranch(cwd = process.cwd()): Promise<string> {
-  try {
-    const current = await getCurrentBranch(cwd);
-    const recordedBase = await getBranchMergeBase(current, cwd);
-    if (recordedBase && (await hasBranch(recordedBase, cwd))) {
-      return recordedBase;
-    }
-  } catch {
-    // Fall through to main/master detection
-  }
-
-  const [hasMain, hasMaster] = await Promise.all([hasBranch("main", cwd), hasBranch("master", cwd)]);
-  if (hasMain) return "main";
-  if (hasMaster) return "master";
-  return "main";
-}
-
-export async function getAheadOfDefault(
-  defaultBranch?: string,
-  cwd = process.cwd(),
-): Promise<number> {
-  try {
-    const current = await getCurrentBranch(cwd);
-    const actualDefault =
-      defaultBranch && (await hasBranch(defaultBranch, cwd))
-        ? defaultBranch
-        : await detectDefaultBranch(cwd);
-    if (!actualDefault || current === actualDefault) return 0;
-
-    const { stdout } = await run(
-      "git",
-      ["rev-list", "--count", `${actualDefault}..HEAD`],
-      { cwd },
-    );
-    return parseInt(stdout.trim(), 10) || 0;
-  } catch {
-    return 0;
-  }
-}
-
-export async function discardFiles(
-  files: { path: string; staged?: boolean; untracked?: boolean }[],
-  cwd = process.cwd(),
-): Promise<void> {
-  const hasUntracked = files.some((f) => f.untracked);
-  const root = hasUntracked ? await getRepoRoot(cwd) : "";
-
-  for (const f of files) {
-    if (f.untracked) {
-      rmSync(join(root, f.path), { force: true, recursive: true });
-    } else if (f.staged) {
-      await execGitWithRetry(["restore", "--staged", "--worktree", "--", f.path], { cwd });
-    } else {
-      await execGitWithRetry(["restore", "--", f.path], { cwd });
-    }
-  }
-}
-
-export async function fetchPrune(cwd = process.cwd()): Promise<void> {
-  await execGitWithRetry(["fetch", "--prune"], { cwd });
-}
-
-export async function getGoneBranches(cwd = process.cwd()): Promise<string[]> {
-  try {
-    const { stdout } = await run("git", ["branch", "-vv"], { cwd });
-    const gone: string[] = [];
-    const lines = stdout.split("\n");
-    for (const line of lines) {
-      if (line.includes(": gone]")) {
-        const branchName = line.replace(/^[*+ ]\s*/, "").split(/\s+/)[0];
-        if (branchName) gone.push(branchName);
-      }
-    }
-    return gone;
-  } catch {
-    return [];
-  }
-}
-
-export async function deleteLocalBranch(
-  branch: string,
-  force = false,
-  cwd = process.cwd(),
-): Promise<void> {
-  const flag = force ? "-D" : "-d";
-  await execGitWithRetry(["branch", flag, branch], { cwd });
-}
-
-export async function getUnmergedCommits(
-  branch: string,
-  base = "main",
-  cwd = process.cwd(),
-): Promise<string[]> {
-  try {
-    const [baseExists, masterExists] = await Promise.all([
-      hasBranch(base, cwd),
-      hasBranch("master", cwd),
-    ]);
-    const actualBase = baseExists ? base : masterExists ? "master" : "HEAD";
-    const { stdout } = await run("git", ["cherry", actualBase, branch], { cwd });
-    return stdout
-      .split("\n")
-      .filter((line) => line.startsWith("+"))
-      .map((line) => line.slice(2).trim());
-  } catch {
-    return [];
-  }
-}
 
 export interface SubmoduleStatus {
   name: string;
@@ -636,7 +508,11 @@ export interface SubmoduleStatus {
   commit: string;
 }
 
+
 export async function checkSubmodules(cwd = process.cwd()): Promise<SubmoduleStatus[]> {
+  // No .gitmodules, no submodules: skip the scan entirely. `git submodule
+  // status` walks the worktree and costs 100ms+ on large repos for nothing.
+  if (!existsSync(join(cwd, ".gitmodules"))) return [];
   try {
     const { stdout } = await run("git", ["submodule", "status"], { cwd });
     const results: SubmoduleStatus[] = [];
@@ -663,6 +539,7 @@ export async function checkSubmodules(cwd = process.cwd()): Promise<SubmoduleSta
   }
 }
 
+
 export async function squashCommits(
   count: number,
   cwd = process.cwd(),
@@ -683,6 +560,7 @@ export async function squashCommits(
   return { previousMessages, stagedCount: status.staged.length };
 }
 
+
 export async function commit(
   subject: string,
   body?: string,
@@ -697,6 +575,9 @@ export async function commit(
   const args = ["commit", "-m", subject.trim()];
   if (options.amend) {
     args.push("--amend");
+  }
+  if (options.fixup) {
+    args.push(`--fixup=${options.fixup}`);
   }
   if (body && body.trim().length > 0) {
     args.push("-m", body.trim());
@@ -714,6 +595,7 @@ export async function commit(
   return stdout;
 }
 
+
 export async function undoCommit(cwd = process.cwd()): Promise<void> {
   const count = await getCommitCount(cwd);
   if (count <= 1) {
@@ -724,287 +606,6 @@ export async function undoCommit(cwd = process.cwd()): Promise<void> {
   }
 }
 
-export async function getRemoteTrackingBranch(cwd = process.cwd(), branch?: string): Promise<string | null> {
-  try {
-    const ref = branch ? `${branch}@{u}` : "@{u}";
-    const { stdout } = await run("git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", ref], { cwd });
-    return stdout.trim() || null;
-  } catch {
-    return null;
-  }
-}
-
-export async function pullRebase(cwd = process.cwd()): Promise<void> {
-  await run("git", ["pull", "--rebase"], { cwd, stdio: "inherit" });
-}
-
-export async function push(
-  options: { remote?: string; branch?: string; setUpstream?: boolean; noVerify?: boolean; cwd?: string } = {},
-): Promise<void> {
-  const cwd = options.cwd || process.cwd();
-
-  const [detached, remotes] = await Promise.all([isDetachedHead(cwd), getRemotes(cwd)]);
-
-  if (detached) {
-    throw new Error("Cannot push from a detached HEAD state. Please create or checkout a branch first.");
-  }
-
-  if (remotes.length === 0) {
-    throw new Error("No git remotes configured. Please add a remote (e.g. `git remote add origin <url>`) before pushing.");
-  }
-
-  const remote = options.remote || (remotes.includes("origin") ? "origin" : remotes[0]);
-  const branch = options.branch || (await getCurrentBranch(cwd));
-
-  const args = ["push"];
-  if (options.noVerify) {
-    args.push("--no-verify");
-  }
-  if (options.setUpstream) {
-    args.push("-u", remote, branch);
-  } else {
-    // Check if tracking branch exists for this branch
-    const tracking = await getRemoteTrackingBranch(cwd, branch);
-    if (!tracking) {
-      args.push("-u", remote, branch);
-    }
-  }
-
-  await run("git", args, { cwd, stdio: "inherit" });
-}
-
-export async function clone(
-  repoUrl: string,
-  destination: string,
-  mode: CloneMode = "standard",
-  cwd = process.cwd(),
-): Promise<void> {
-  const args = ["clone"];
-
-  if (mode === "blobless") {
-    args.push("--filter=blob:none");
-  } else if (mode === "shallow") {
-    args.push("--depth", "1");
-  }
-
-  args.push("--", repoUrl, destination);
-  await run("git", args, { cwd, stdio: "inherit" });
-}
-
-export async function worktreeList(cwd = process.cwd()): Promise<WorktreeInfo[]> {
-  const { stdout } = await run("git", ["worktree", "list", "--porcelain"], { cwd });
-  const entries: WorktreeInfo[] = [];
-
-  const blocks = stdout.split("\n\n");
-  for (const block of blocks) {
-    if (!block.trim()) continue;
-    let path = "";
-    let head = "";
-    let branch = "";
-    let isBare = false;
-
-    const lines = block.split("\n");
-    for (const line of lines) {
-      if (line.startsWith("worktree ")) {
-        path = line.replace("worktree ", "").trim();
-      } else if (line.startsWith("HEAD ")) {
-        head = line.replace("HEAD ", "").trim();
-      } else if (line.startsWith("branch ")) {
-        branch = line.replace("branch refs/heads/", "").trim();
-      } else if (line === "bare") {
-        isBare = true;
-      }
-    }
-
-    if (path) {
-      entries.push({ path, head, branch: branch || head, isBare });
-    }
-  }
-
-  return entries;
-}
-
-export interface WorktreeAddResult {
-  copiedEnvFiles: string[];
-}
-
-export async function worktreeAdd(
-  branch: string,
-  targetPath: string,
-  baseBranch?: string,
-  cwd = process.cwd(),
-): Promise<WorktreeAddResult> {
-  const repoRoot = await getRepoRoot(cwd);
-  if (!(await hasCommits(repoRoot))) {
-    throw new Error(
-      "Cannot create a worktree in an empty repository with no commits. Please make an initial commit first.",
-    );
-  }
-
-  const resolvedPath = isAbsolute(targetPath) ? targetPath : join(repoRoot, targetPath);
-
-  // If destination folder exists on disk, check if it's an orphaned worktree directory
-  if (existsSync(resolvedPath)) {
-    // Never recursively delete anything outside the repository
-    const rel = relative(repoRoot, resolvedPath);
-    if (!rel || rel.startsWith("..") || isAbsolute(rel)) {
-      throw new Error(
-        `Refusing to clean up '${resolvedPath}': it is outside the repository root '${repoRoot}'.`,
-      );
-    }
-
-    const activeTrees = await worktreeList(repoRoot);
-    const isActive = activeTrees.some((w) => w.path === resolvedPath);
-    if (!isActive) {
-      // Clean up orphaned folder from previous aborted operations
-      rmSync(resolvedPath, { recursive: true, force: true });
-    } else {
-      throw new Error(`Worktree directory '${resolvedPath}' is already an active worktree.`);
-    }
-  }
-
-  // Ensure .worktrees is ignored in .git/info/exclude
-  const excludePath = join(repoRoot, ".git", "info", "exclude");
-  if (existsSync(excludePath)) {
-    const content = readFileSync(excludePath, "utf-8");
-    if (!content.includes(".worktrees")) {
-      appendFileSync(excludePath, "\n.worktrees/\n");
-    }
-  }
-
-  const branchAlreadyExists = await hasBranch(branch, repoRoot);
-  const base = baseBranch || (await getCurrentBranch(cwd));
-
-  const args = branchAlreadyExists
-    ? ["worktree", "add", "--", resolvedPath, branch]
-    : ["worktree", "add", "-b", branch, "--", resolvedPath, base];
-
-  await execGitWithRetry(args, { cwd: repoRoot });
-
-  // A fresh worktree with no .env cannot run the project, so carry them over.
-  const copiedEnvFiles: string[] = [];
-  const envFileCandidates = [".env", ".env.local", ".env.development"];
-  for (const envName of envFileCandidates) {
-    const srcEnv = join(repoRoot, envName);
-    const destEnv = join(resolvedPath, envName);
-    if (existsSync(srcEnv) && !existsSync(destEnv)) {
-      try {
-        copyFileSync(srcEnv, destEnv);
-        copiedEnvFiles.push(envName);
-      } catch {
-        // Best-effort
-      }
-    }
-  }
-
-  // A worktree starts with empty submodule directories; initialise them.
-  const gitmodulesPath = join(resolvedPath, ".gitmodules");
-  if (existsSync(gitmodulesPath)) {
-    try {
-      await run("git", ["submodule", "update", "--init", "--recursive"], {
-        cwd: resolvedPath,
-        stdio: "inherit",
-      });
-    } catch {
-      // Best-effort
-    }
-  }
-
-  // Record the parent so `ggh stack` can reconstruct the branch tree later.
-  try {
-    await run(
-      "git",
-      ["config", `branch.${branch}.gh-merge-base`, base],
-      { cwd: repoRoot },
-    );
-  } catch {
-    // Best-effort
-  }
-
-  return { copiedEnvFiles };
-}
-
-export async function worktreeRemove(
-  targetPath: string,
-  force = false,
-  cwd = process.cwd(),
-): Promise<void> {
-  const args = ["worktree", "remove"];
-  if (force) args.push("--force");
-  args.push("--", targetPath);
-  await execGitWithRetry(args, { cwd });
-  await run("git", ["worktree", "prune"], { cwd });
-}
-
-export async function resolveConflict(
-  file: string,
-  strategy: "ours" | "theirs" | "mark",
-  cwd = process.cwd(),
-): Promise<void> {
-  if (strategy === "ours") {
-    await execGitWithRetry(["checkout", "--ours", "--", file], { cwd });
-    await execGitWithRetry(["add", "--", file], { cwd });
-  } else if (strategy === "theirs") {
-    await execGitWithRetry(["checkout", "--theirs", "--", file], { cwd });
-    await execGitWithRetry(["add", "--", file], { cwd });
-  } else if (strategy === "mark") {
-    await execGitWithRetry(["add", "--", file], { cwd });
-  }
-}
-
-export interface StashEntry {
-  ref: string;
-  date: string;
-  message: string;
-}
-
-export async function stashList(cwd = process.cwd()): Promise<StashEntry[]> {
-  try {
-    const { stdout } = await run("git", ["stash", "list", "--pretty=format:%gd|%cr|%gs"], { cwd });
-    return stdout
-      .split("\n")
-      .filter(Boolean)
-      .map((line) => {
-        const parts = line.split("|");
-        return {
-          ref: parts[0]?.trim() || "",
-          date: parts[1]?.trim() || "",
-          message: parts[2]?.trim() || "",
-        };
-      });
-  } catch {
-    return [];
-  }
-}
-
-export async function stashPush(message?: string, cwd = process.cwd()): Promise<void> {
-  const args = ["stash", "push", "-u"];
-  if (message && message.trim().length > 0) {
-    args.push("-m", message.trim());
-  }
-  await execGitWithRetry(args, { cwd });
-}
-
-export async function stashPop(ref?: string, cwd = process.cwd()): Promise<void> {
-  const args = ["stash", "pop"];
-  if (ref) {
-    args.push(ref);
-  }
-  await execGitWithRetry(args, { cwd });
-}
-
-export async function stashDrop(ref: string, cwd = process.cwd()): Promise<void> {
-  await execGitWithRetry(["stash", "drop", ref], { cwd });
-}
-
-export async function stashDiff(ref: string, cwd = process.cwd()): Promise<string> {
-  try {
-    const { stdout } = await run("git", ["stash", "show", "-p", "-u", ref], { cwd });
-    return stdout;
-  } catch {
-    return "";
-  }
-}
 
 export async function gitPassthrough(args: string[], cwd = process.cwd()): Promise<number> {
   const result = await run("git", args, {
@@ -1022,136 +623,3 @@ export async function gitPassthrough(args: string[], cwd = process.cwd()): Promi
  * `branch.<name>.gh-merge-base`. Read together, those pointers form a tree —
  * which is exactly the data structure a stacked-pull-request workflow needs.
  * ------------------------------------------------------------------ */
-
-export interface StackNode {
-  branch: string;
-  parent: string | null;
-  children: string[];
-  /** Commits this branch adds on top of its parent. */
-  ahead: number;
-  /** Commits the parent has that this branch is missing (needs a restack). */
-  behind: number;
-  isCurrent: boolean;
-}
-
-/** Reads every recorded parent pointer in one git call. */
-export async function getAllMergeBases(cwd = process.cwd()): Promise<Map<string, string>> {
-  const bases = new Map<string, string>();
-  try {
-    const { stdout } = await run("git", ["config", "--get-regexp", "^branch\\..*\\.gh-merge-base$"], {
-      cwd,
-      reject: false,
-    });
-    for (const line of stdout.split("\n")) {
-      const match = line.match(/^branch\.(.+)\.gh-merge-base\s+(.+)$/);
-      if (match) bases.set(match[1], match[2].trim());
-    }
-  } catch {
-    // No recorded bases yet
-  }
-  return bases;
-}
-
-export async function getStackGraph(cwd = process.cwd()): Promise<Map<string, StackNode>> {
-  const [branches, bases, current] = await Promise.all([
-    listBranches(cwd),
-    getAllMergeBases(cwd),
-    getCurrentBranch(cwd),
-  ]);
-
-  const known = new Set(branches.map((b) => b.name));
-  const graph = new Map<string, StackNode>();
-
-  for (const branch of branches) {
-    const parent = bases.get(branch.name) ?? null;
-    graph.set(branch.name, {
-      branch: branch.name,
-      // A parent that no longer exists is treated as no parent, not a dangling edge.
-      parent: parent && known.has(parent) && parent !== branch.name ? parent : null,
-      children: [],
-      ahead: 0,
-      behind: 0,
-      isCurrent: branch.name === current,
-    });
-  }
-
-  for (const node of graph.values()) {
-    if (node.parent) graph.get(node.parent)?.children.push(node.branch);
-  }
-
-  await Promise.all(
-    [...graph.values()].map(async (node) => {
-      if (!node.parent) return;
-      try {
-        const { stdout } = await run(
-          "git",
-          ["rev-list", "--left-right", "--count", `${node.parent}...${node.branch}`],
-          { cwd },
-        );
-        const [behind, ahead] = stdout.trim().split(/\s+/).map(Number);
-        node.behind = behind || 0;
-        node.ahead = ahead || 0;
-      } catch {
-        // Unrelated histories; leave both at zero
-      }
-    }),
-  );
-
-  return graph;
-}
-
-/** Walks from a branch down to the root, nearest parent first. */
-export function getStackAncestors(graph: Map<string, StackNode>, branch: string): string[] {
-  const chain: string[] = [];
-  const seen = new Set<string>([branch]);
-  let cursor = graph.get(branch)?.parent ?? null;
-  while (cursor && !seen.has(cursor)) {
-    chain.push(cursor);
-    seen.add(cursor);
-    cursor = graph.get(cursor)?.parent ?? null;
-  }
-  return chain;
-}
-
-/** Every branch stacked on top of `branch`, parents before children. */
-export function getStackDescendants(graph: Map<string, StackNode>, branch: string): string[] {
-  const out: string[] = [];
-  const queue = [...(graph.get(branch)?.children ?? [])];
-  const seen = new Set<string>([branch]);
-  while (queue.length > 0) {
-    const next = queue.shift() as string;
-    if (seen.has(next)) continue;
-    seen.add(next);
-    out.push(next);
-    queue.push(...(graph.get(next)?.children ?? []));
-  }
-  return out;
-}
-
-/** Rebases `branch` onto its recorded parent. Returns false on conflict. */
-export async function restackBranch(
-  branch: string,
-  parent: string,
-  cwd = process.cwd(),
-): Promise<{ ok: boolean; message: string }> {
-  try {
-    await execGitWithRetry(["checkout", branch], { cwd });
-    await execGitWithRetry(["rebase", parent], { cwd });
-    return { ok: true, message: `${branch} rebased onto ${parent}` };
-  } catch (err) {
-    const text = String(err);
-    if (/conflict/i.test(text)) {
-      return { ok: false, message: `${branch} has conflicts against ${parent}. Resolve, then \`git rebase --continue\`.` };
-    }
-    return { ok: false, message: text };
-  }
-}
-
-export async function isRebaseInProgress(cwd = process.cwd()): Promise<boolean> {
-  try {
-    const root = await getRepoRoot(cwd);
-    return existsSync(join(root, ".git", "rebase-merge")) || existsSync(join(root, ".git", "rebase-apply"));
-  } catch {
-    return false;
-  }
-}

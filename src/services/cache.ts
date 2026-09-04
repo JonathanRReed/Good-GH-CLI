@@ -1,4 +1,13 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createHash } from "node:crypto";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,7 +21,7 @@ function cacheDir(): string {
   const base = process.env.XDG_CACHE_HOME || join(homedir(), ".cache");
   const dir = join(base, "good-gh");
   try {
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 });
     return dir;
   } catch {
     return tmpdir();
@@ -28,6 +37,19 @@ export interface CacheOptions {
   ttlMs?: number;
   /** Ignore any existing entry and refetch. */
   refresh?: boolean;
+}
+
+interface CacheEntry<T> {
+  key: string;
+  at: number;
+  value: T;
+}
+
+function atomicWrite(file: string, data: string): void {
+  const tmp = `${file}.${process.pid}.tmp`;
+  writeFileSync(tmp, data, { encoding: "utf-8", mode: 0o600 });
+  chmodSync(tmp, 0o600);
+  renameSync(tmp, file);
 }
 
 /**
@@ -46,7 +68,7 @@ export async function cached<T>(
   if (!options.refresh && ttlMs > 0) {
     try {
       if (existsSync(file)) {
-        const entry = JSON.parse(readFileSync(file, "utf-8")) as { at: number; value: T };
+        const entry = JSON.parse(readFileSync(file, "utf-8")) as CacheEntry<T>;
         if (Date.now() - entry.at < ttlMs) return entry.value;
       }
     } catch {
@@ -57,7 +79,7 @@ export async function cached<T>(
   const value = await fetcher();
 
   try {
-    writeFileSync(file, JSON.stringify({ at: Date.now(), value }), "utf-8");
+    atomicWrite(file, JSON.stringify({ key, at: Date.now(), value } as CacheEntry<T>));
   } catch {
     // Read-only cache directory; the value is still correct.
   }
@@ -83,4 +105,31 @@ export function clearCache(): number {
 
 export function getCacheDir(): string {
   return cacheDir();
+}
+
+/**
+ * Drops every cache entry whose key starts with `prefix`. Called after mutations
+ * so the next list or view sees the change rather than a stale cached page.
+ */
+export function invalidateCache(prefix: string): number {
+  const dir = cacheDir();
+  let removed = 0;
+  try {
+    for (const name of readdirSync(dir)) {
+      if (!name.endsWith(".json")) continue;
+      const path = join(dir, name);
+      try {
+        const entry = JSON.parse(readFileSync(path, "utf-8")) as { key?: string };
+        if (entry.key && String(entry.key).startsWith(prefix)) {
+          rmSync(path, { force: true });
+          removed++;
+        }
+      } catch {
+        // Corrupt or unreadable entry: leave it for clearCache.
+      }
+    }
+  } catch {
+    // Nothing to clear
+  }
+  return removed;
 }

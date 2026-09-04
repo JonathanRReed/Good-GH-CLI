@@ -1,6 +1,6 @@
 {
   "name": "good-gh-cli",
-  "version": "0.2.0",
+  "version": "0.4.0-beta.1",
   "description": "A modern Git and GitHub CLI: pull requests, issues, CI, stacked branches, and zero-key AI, in one tool.",
   "type": "module",
   "main": "src/index.ts",
@@ -27,11 +27,12 @@
     "bun"
   ],
   "engines": {
-    "bun": ">=1.1.0"
+    "bun": ">=1.1.0",
+    "node": ">=22.0.0"
   },
   "bin": {
-    "ggh": "./bin/ggh.ts",
-    "good-gh": "./bin/ggh.ts"
+    "ggh": "./bin/ggh.cjs",
+    "good-gh": "./bin/ggh.cjs"
   },
   "files": [
     "bin",
@@ -51,7 +52,9 @@
     "typecheck": "tsc --noEmit",
     "format": "prettier --write \"src/**/*.{ts,js,json}\" \"tests/**/*.{ts,js,json}\" \"bin/**/*.{ts,js,json}\"",
     "release": "bun run scripts/release.ts",
-    "compile": "bun build bin/ggh.ts --compile --minify --outfile ggh"
+    "compile": "bun build bin/ggh.ts --compile --minify --outfile ggh",
+    "package:macos": "bun run scripts/package-macos.ts",
+    "man": "bun run scripts/man.ts"
   },
   "dependencies": {
     "commander": "^15.0.0",
@@ -59,7 +62,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/bun": "latest",
+    "@types/bun": "^1.4.0",
     "@types/node": "^26.4.0",
     "eslint": "^10.9.1",
     "execa": "^10.0.1",

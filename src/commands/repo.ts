@@ -1,27 +1,18 @@
 import { Command } from "commander";
 import {
+  clampLimit,
   createRepository,
   forkRepository,
-  getGitHubAuthStatus,
   getRepositoryReadme,
-  ghApi,
+  gh,
+  listUserRepositories,
+  requireAuth,
   setDefaultRepository,
   viewRepository,
 } from "../services/github.ts";
-import { getFlags } from "../services/runtime.ts";
-import { isDryRun } from "../utils/flags.ts";
-import { confirmPrompt, emitJson, fail, header, p, pc, promptInput, selectMenu } from "../utils/ui.ts";
-
-async function requireAuth(): Promise<boolean> {
-  const auth = await getGitHubAuthStatus();
-  if (auth.authenticated) return true;
-  fail(
-    auth.notInstalled
-      ? "GitHub CLI (`gh`) is not installed. Install it from https://cli.github.com."
-      : "GitHub CLI is not authenticated. Run `gh auth login`.",
-  );
-  return false;
-}
+import { invalidateCache } from "../services/cache.ts";
+import { dryRun } from "../utils/flags.ts";
+import { fail, failFromGitHub, header, p, pc, promptInput, selectMenu, jsonOut, confirmOrAbort } from "../utils/ui.ts";
 
 export function registerRepoCommand(program: Command): void {
   const repo = program
@@ -42,10 +33,7 @@ export function registerRepoCommand(program: Command): void {
         return;
       }
 
-      if (getFlags().json) {
-        emitJson(detail);
-        return;
-      }
+      if (jsonOut(detail)) return;
 
       p.log.step(pc.bold(detail.nameWithOwner) + (detail.isPrivate ? pc.dim(" (private)") : ""));
       if (detail.description) p.log.message(`  ${detail.description}`);
@@ -76,20 +64,9 @@ export function registerRepoCommand(program: Command): void {
       header("Fork Repository");
       if (!(await requireAuth())) return;
 
-      if (isDryRun()) {
-        p.log.warn(`${pc.yellow("dry run")} ${pc.dim("·")} would fork ${nameWithOwner}`);
-        return;
-      }
+      if (dryRun(`fork ${nameWithOwner}`)) return;
 
-      const confirmed = await confirmPrompt({
-        message: `Fork ${pc.bold(nameWithOwner)} to your account?`,
-        initialValue: true,
-        assumeYes: options?.yes,
-      });
-      if (!confirmed) {
-        p.cancel("Cancelled.");
-        return;
-      }
+      if (!(await confirmOrAbort(`Fork ${pc.bold(nameWithOwner)} to your account?`, { assumeYes: options?.yes }))) return;
 
       const s = p.spinner();
       s.start("Forking...");
@@ -110,10 +87,7 @@ export function registerRepoCommand(program: Command): void {
       header("Set Default Repository");
       if (!(await requireAuth())) return;
 
-      if (isDryRun()) {
-        p.log.warn(`${pc.yellow("dry run")} ${pc.dim("·")} would set the default to ${nameWithOwner}`);
-        return;
-      }
+      if (dryRun(`set the default to ${nameWithOwner}`)) return;
 
       try {
         await setDefaultRepository(nameWithOwner);
@@ -177,20 +151,9 @@ export function registerRepoCommand(program: Command): void {
         }
       }
 
-      if (isDryRun()) {
-        p.log.warn(`${pc.yellow("dry run")} ${pc.dim("·")} would create ${visibility} repository ${repoName}`);
-        return;
-      }
+      if (dryRun(`create ${visibility} repository ${repoName}`)) return;
 
-      const confirmed = await confirmPrompt({
-        message: `Create ${pc.bold(visibility)} repository ${pc.bold(pc.cyan(repoName))}?`,
-        initialValue: true,
-        assumeYes: options?.yes,
-      });
-      if (!confirmed) {
-        p.cancel("Cancelled.");
-        return;
-      }
+      if (!(await confirmOrAbort(`Create ${pc.bold(visibility)} repository ${pc.bold(pc.cyan(repoName))}?`, { assumeYes: options?.yes }))) return;
 
       const s = p.spinner();
       s.start("Creating repository...");
@@ -207,23 +170,246 @@ export function registerRepoCommand(program: Command): void {
         p.outro("Done.");
       } catch (err) {
         s.stop(pc.red("Creation failed."));
-        fail(String(err));
+        failFromGitHub(err);
       }
     });
-}
 
-/**
- * The escape hatch. Anything not wrapped by a ggh command stays reachable,
- * so a missing feature never becomes a hard wall.
- */
-export function registerApiCommand(program: Command): void {
-  program
-    .command("api <endpoint...>")
-    .description("Authenticated GitHub API request (passthrough to `gh api`)")
-    .allowUnknownOption(true)
-    .helpOption(false)
-    .action(async (endpoint: string[]) => {
-      const code = await ghApi(endpoint);
-      process.exitCode = code;
+  repo
+    .command("list")
+    .description("List repositories for the authenticated user or organisation")
+    .option("--limit <n>", "Maximum repositories to list", "30")
+    .action(async (options?: { limit?: string }) => {
+      header("Repositories");
+      if (!(await requireAuth())) return;
+
+      const s = p.spinner();
+      s.start("Fetching repositories...");
+      try {
+        const repos = await listUserRepositories({
+          limit: clampLimit(Number.parseInt(options?.limit ?? "30", 10)),
+        });
+        s.stop(`Loaded ${pc.green(String(repos.length))} repository(s).`);
+        if (jsonOut(repos)) return;
+        if (repos.length === 0) {
+          p.log.info(pc.dim("No repositories found."));
+          return;
+        }
+        for (const r of repos) {
+          p.log.message(`  ${pc.bold(r.nameWithOwner)} ${pc.dim(r.isPrivate ? "private" : "public")}`);
+        }
+      } catch (err) {
+        s.stop(pc.red("Failed to fetch repositories."));
+        failFromGitHub(err);
+      }
+    });
+
+  repo
+    .command("delete <nameWithOwner>")
+    .description("Delete a repository")
+    .option("-y, --yes", "Skip the confirmation prompt")
+    .action(async (nameWithOwner: string, options?: { yes?: boolean }) => {
+      header("Delete Repository");
+      if (!(await requireAuth())) return;
+
+      if (dryRun(`delete ${nameWithOwner}`)) return;
+
+      if (!(await confirmOrAbort(`Delete repository ${pc.bold(nameWithOwner)}? This cannot be undone.`, { assumeYes: options?.yes, initialValue: false }))) return;
+
+      const s = p.spinner();
+      s.start(`Deleting ${nameWithOwner}...`);
+      try {
+        await gh(["repo", "delete", nameWithOwner, "--yes"]);
+        invalidateCache("repo-list:");
+        s.stop(pc.green("Repository deleted."));
+        if (jsonOut({ nameWithOwner, action: "delete" })) return;
+        p.outro("Done.");
+      } catch (err) {
+        s.stop(pc.red("Delete failed."));
+        failFromGitHub(err);
+      }
+    });
+
+  repo
+    .command("archive <nameWithOwner>")
+    .description("Archive a repository")
+    .option("-y, --yes", "Skip the confirmation prompt")
+    .action(async (nameWithOwner: string, options?: { yes?: boolean }) => {
+      header("Archive Repository");
+      if (!(await requireAuth())) return;
+
+      if (dryRun(`archive ${nameWithOwner}`)) return;
+
+      if (!(await confirmOrAbort(`Archive repository ${pc.bold(nameWithOwner)}?`, { assumeYes: options?.yes }))) return;
+
+      const s = p.spinner();
+      s.start(`Archiving ${nameWithOwner}...`);
+      try {
+        await gh(["repo", "archive", nameWithOwner, "--yes"]);
+        invalidateCache("repo-list:");
+        s.stop(pc.green("Repository archived."));
+        if (jsonOut({ nameWithOwner, action: "archive" })) return;
+        p.outro("Done.");
+      } catch (err) {
+        s.stop(pc.red("Archive failed."));
+        failFromGitHub(err);
+      }
+    });
+
+  repo
+    .command("unarchive <nameWithOwner>")
+    .description("Unarchive a repository")
+    .option("-y, --yes", "Skip the confirmation prompt")
+    .action(async (nameWithOwner: string, options?: { yes?: boolean }) => {
+      header("Unarchive Repository");
+      if (!(await requireAuth())) return;
+
+      if (dryRun(`unarchive ${nameWithOwner}`)) return;
+
+      if (!(await confirmOrAbort(`Unarchive repository ${pc.bold(nameWithOwner)}?`, { assumeYes: options?.yes }))) return;
+
+      const s = p.spinner();
+      s.start(`Unarchiving ${nameWithOwner}...`);
+      try {
+        await gh(["repo", "unarchive", nameWithOwner, "--yes"]);
+        invalidateCache("repo-list:");
+        s.stop(pc.green("Repository unarchived."));
+        if (jsonOut({ nameWithOwner, action: "unarchive" })) return;
+        p.outro("Done.");
+      } catch (err) {
+        s.stop(pc.red("Unarchive failed."));
+        failFromGitHub(err);
+      }
+    });
+
+  repo
+    .command("rename <nameWithOwner> <newName>")
+    .description("Rename a repository")
+    .option("-y, --yes", "Skip the confirmation prompt")
+    .action(async (nameWithOwner: string, newName: string, options?: { yes?: boolean }) => {
+      header("Rename Repository");
+      if (!(await requireAuth())) return;
+
+      if (dryRun(`rename ${nameWithOwner} to ${newName}`)) return;
+
+      if (!(await confirmOrAbort(`Rename repository ${pc.bold(nameWithOwner)} to ${pc.bold(newName)}?`, { assumeYes: options?.yes }))) return;
+
+      const s = p.spinner();
+      s.start(`Renaming ${nameWithOwner}...`);
+      try {
+        await gh(["repo", "rename", nameWithOwner, newName, "--yes"]);
+        invalidateCache("repo-list:");
+        s.stop(pc.green("Repository renamed."));
+        if (jsonOut({ nameWithOwner, newName, action: "rename" })) return;
+        p.outro("Done.");
+      } catch (err) {
+        s.stop(pc.red("Rename failed."));
+        failFromGitHub(err);
+      }
+    });
+
+  repo
+    .command("edit <nameWithOwner>")
+    .description("Edit repository settings")
+    .option("-d, --description <text>", "Repository description")
+    .option("--enable-wiki", "Enable the wiki")
+    .option("--disable-wiki", "Disable the wiki")
+    .option("--enable-issues", "Enable issues")
+    .option("--disable-issues", "Disable issues")
+    .option("-y, --yes", "Skip the confirmation prompt")
+    .action(async (
+      nameWithOwner: string,
+      options?: {
+        description?: string;
+        enableWiki?: boolean;
+        disableWiki?: boolean;
+        enableIssues?: boolean;
+        disableIssues?: boolean;
+        yes?: boolean;
+      },
+    ) => {
+      header("Edit Repository");
+      if (!(await requireAuth())) return;
+
+      if (dryRun(`edit ${nameWithOwner}`)) return;
+
+      if (!(await confirmOrAbort(`Edit repository ${pc.bold(nameWithOwner)}?`, { assumeYes: options?.yes }))) return;
+
+      const args = ["repo", "edit", nameWithOwner];
+      if (options?.description) args.push("--description", options.description);
+      if (options?.enableWiki) args.push("--enable-wiki");
+      if (options?.disableWiki) args.push("--disable-wiki");
+      if (options?.enableIssues) args.push("--enable-issues");
+      if (options?.disableIssues) args.push("--disable-issues");
+
+      const s = p.spinner();
+      s.start(`Editing ${nameWithOwner}...`);
+      try {
+        await gh(args);
+        invalidateCache("repo-list:");
+        s.stop(pc.green("Repository updated."));
+        if (jsonOut({ nameWithOwner, action: "edit" })) return;
+        p.outro("Done.");
+      } catch (err) {
+        s.stop(pc.red("Edit failed."));
+        failFromGitHub(err);
+      }
+    });
+
+  repo
+    .command("sync <nameWithOwner>")
+    .description("Sync a forked repository with its upstream parent")
+    .option("-b, --branch <branch>", "Branch to sync (defaults to the default branch)")
+    .option("-f, --force", "Force sync")
+    .option("-y, --yes", "Skip the confirmation prompt")
+    .action(async (nameWithOwner: string, options?: { branch?: string; force?: boolean; yes?: boolean }) => {
+      header("Sync Repository");
+      if (!(await requireAuth())) return;
+
+      if (dryRun(`sync ${nameWithOwner}`)) return;
+
+      if (!(await confirmOrAbort(`Sync ${pc.bold(nameWithOwner)} with upstream?`, { assumeYes: options?.yes }))) return;
+
+      const args = ["repo", "sync", nameWithOwner];
+      if (options?.branch) args.push("--branch", options.branch);
+      if (options?.force) args.push("--force");
+
+      const s = p.spinner();
+      s.start(`Syncing ${nameWithOwner}...`);
+      try {
+        await gh(args);
+        s.stop(pc.green("Repository synced."));
+        if (jsonOut({ nameWithOwner, action: "sync" })) return;
+        p.outro("Done.");
+      } catch (err) {
+        s.stop(pc.red("Sync failed."));
+        failFromGitHub(err);
+      }
+    });
+
+  repo
+    .command("clone <nameWithOwner> [directory]")
+    .description("Clone a repository from GitHub")
+    .option("--bare", "Clone as a bare repository")
+    .action(async (nameWithOwner: string, directory?: string, options?: { bare?: boolean }) => {
+      header("Clone Repository");
+      if (!(await requireAuth())) return;
+
+      if (dryRun(`clone ${nameWithOwner}`)) return;
+
+      const args = ["repo", "clone", nameWithOwner];
+      if (directory) args.push(directory);
+      if (options?.bare) args.push("--bare");
+
+      const s = p.spinner();
+      s.start(`Cloning ${nameWithOwner}...`);
+      try {
+        await gh(args, { stdio: "inherit" });
+        s.stop(pc.green("Repository cloned."));
+        if (jsonOut({ nameWithOwner, directory, action: "clone" })) return;
+        p.outro("Done.");
+      } catch (err) {
+        s.stop(pc.red("Clone failed."));
+        failFromGitHub(err);
+      }
     });
 }

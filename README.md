@@ -5,9 +5,9 @@
 
 I hated the GitHub CLI. This makes it bearable.
 
-`ggh` replaces `gh` and wraps `git`: pull requests, issues, CI runs, releases,
-repositories, **stacked branches**, and AI throughout — using the CLI you are
-already signed in to. No API keys, no accounts, no server.
+`ggh` is an opinionated layer over `git` and `gh`: pull requests, issues, CI
+runs, releases, repositories, **stacked branches**, and optional AI using CLIs
+you are already signed in to. `ggh` has no account, telemetry, or server.
 
 Anything `ggh` does not recognise goes straight to `git`, so `ggh add .`,
 `ggh push`, and `ggh rebase -i` behave exactly as `git` does.
@@ -34,11 +34,7 @@ bun add -g good-gh-cli
 
 Or take a standalone binary from
 [Releases](https://github.com/JonathanRReed/Good-GH-CLI/releases) — no Bun
-required. On macOS, sign it once:
-
-```bash
-chmod +x ggh-darwin-arm64 && codesign --force --sign - ggh-darwin-arm64
-```
+required. macOS users can use the Developer-ID-signed universal DMG.
 
 From source:
 
@@ -73,7 +69,11 @@ ggh pr                      # browse
 ggh pr create               # AI-written title and body
 ggh pr create --draft
 ggh pr view 42              # state, review decision, size, body
+ggh pr diff 42              # the diff for a PR
+ggh pr edit 42              # edit title, body, or labels
 ggh pr merge 42 --squash    # merge and delete the branch
+ggh pr merge 42 --squash --no-delete-branch
+ggh pr merge 42 --auto      # auto-merge when checks pass
 ggh pr ready | close | reopen
 ggh pr comment 42 -b "lgtm"
 ggh pr 42 --checkout
@@ -84,6 +84,7 @@ ggh pr 42 --worktree        # into .worktrees/pr-42, current branch untouched
 
 ```bash
 ggh pr review 42
+ggh pr review --approve     # approve the PR
 ggh pr review --local       # print it, post nothing
 ggh pr review --request-changes
 ```
@@ -99,9 +100,18 @@ review. The failure mode is silence, not a comment pointing at the wrong line.
 ggh issue                   # browse and read
 ggh issue 42
 ggh issue create
+ggh issue create --ai       # AI writes the body from the title
+ggh issue create --ai -n "failing on Safari, intermittent 500s"
 ggh issue develop 42        # branch named from the issue, then start work
 ggh issue close 42 | reopen 42 | comment 42
+ggh issue edit 42 --title "new title" --add-label bug
+ggh issue lock 42 | unlock 42 | pin 42 | unpin 42
+ggh issue transfer 42 owner/other-repo
 ```
+
+`--ai` generates a structured body (Description, Steps to reproduce, Expected,
+Actual) from the title and optional `--notes`, with the same provider fallback
+chain as `ggh commit`. You can accept, edit, or regenerate before opening.
 
 ## CI
 
@@ -170,14 +180,29 @@ ggh log                     # or: ggh graph
 ```bash
 ggh clone                   # search your repos or all of GitHub
 ggh clone owner/repo --fast # blobless, much faster on large repos
+ggh clone owner/repo --shallow  # depth 1, minimal footprint
+ggh clone owner/repo -d ~/projects
 
 ggh repo                    # view the current one
 ggh repo octocat/hello --readme
 ggh repo fork octocat/hello
 ggh repo create my-app --private --source . --push
 ggh repo set-default owner/name
+ggh repo list               # your repositories
+ggh repo archive owner/name # archive a repository
+ggh repo unarchive owner/name
+ggh repo delete owner/name  # asks first — it cannot be undone
+ggh repo rename owner/name new-name
+ggh repo edit owner/name --description "new description"
+ggh repo sync               # sync fork with upstream
 
+ggh release                 # browse releases
 ggh release create v1.0.0   # publish with an AI changelog
+ggh release create v1.0.0 --draft --prerelease
+ggh release view v1.0.0
+ggh release download v1.0.0
+ggh release upload v1.0.0 asset.zip
+ggh release delete v1.0.0
 ggh changelog v1.0.0        # write that changelog into CHANGELOG.md instead
 
 ggh api repos/{owner}/{repo}/topics
@@ -186,9 +211,100 @@ ggh api repos/{owner}/{repo}/topics
 `ggh api` is the escape hatch. Anything not wrapped here is still reachable, so a
 gap is never a wall.
 
+## Search, notifications, and more
+
+```bash
+ggh search issues "memory leak"
+ggh search prs "wip" --sort updated
+ggh search repos "static site"
+ggh search code "TODO fixme" --limit 50
+
+ggh notifications          # browse and triage
+ggh notifications --mark-read
+ggh browse                 # open the repo, PR, or issue in a browser
+ggh browse 42              # open issue/PR #42
+
+ggh label list
+ggh label create bug --color ff0000
+ggh label delete bug
+
+ggh secret list
+ggh secret set DATABASE_URL
+ggh secret delete DATABASE_URL
+
+ggh variable list
+ggh variable set NODE_ENV production
+ggh variable delete NODE_ENV
+
+ggh gist list
+ggh gist create file.txt --public
+ggh gist view abc123
+
+ggh workflow list
+ggh workflow view ci.yml
+ggh workflow run deploy.yml
+ggh workflow enable ci.yml | disable ci.yml
+```
+
+## Drafts, triage, and local workflow
+
+```bash
+ggh draft                   # stash work with an AI description
+ggh draft list              # show saved drafts
+ggh draft resume            # restore a draft
+ggh draft drop              # delete a draft
+
+ggh triage                  # AI groups your notifications + issues (read-only)
+ggh triage --source issues --limit 10
+ggh triage --json | jq '.suggestions'
+
+ggh ignore "*.log" ".env"   # append to .gitignore
+ggh ignore --list
+ggh ignore --remove "*.log"
+ggh ignore "*.key" --local  # .git/info/exclude instead
+
+ggh hook list
+ggh hook install pre-commit # run `ggh commit --review` before each commit
+ggh hook edit pre-commit --command "ggh commit --review"
+ggh hook remove pre-commit
+
+ggh alias ci "commit --pr --yes"
+ggh ci                      # expands to `ggh commit --pr --yes`
+ggh alias --remove ci
+```
+
+## Team stacks, plugins, and MCP
+
+```bash
+ggh team publish            # share your stack as a secret gist
+ggh team pull --user octocat
+ggh team pull --gist abc123
+ggh team list
+
+ggh plugin list
+ggh plugin install my-cmd --from ./my-cmd.ts
+ggh plugin remove my-cmd    # plugins run with full privileges — trust the source
+
+ggh mcp                     # run as an MCP server (Claude Code, Cursor, ...)
+ggh mcp --list-tools
+```
+
+### GitHub Enterprise (GHES)
+
+`ggh` works with self-hosted GitHub Enterprise. Sign in with `gh auth login
+--hostname ghe.example.com`, then set the host so `ggh` targets it:
+
+```bash
+export GH_HOST=ghe.example.com
+ggh status    # confirms the host and account
+```
+
 ## Scripting
 
-Every command follows the same rules.
+Every command follows the same rules. Typo a command and `ggh` suggests the
+real one (`ggh prr` → `ggh pr`) instead of forwarding you to git's
+irrelevant guesses — unless the typo is git's word or one of your git
+aliases, which always win.
 
 | Flag | Effect |
 | --- | --- |
@@ -223,6 +339,9 @@ ggh config list                         # every value, and which layer set it
 ggh config set ai_provider codex        # codex | grok | claude | ollama
 ggh config set codex_model gpt-5.6-luna
 ggh config set ai_timeout_ms 120000
+ggh config get ai_provider              # print a single value
+ggh config unset ai_timeout_ms          # remove a key
+ggh config doctor                       # check .ggh.json, providers, fallback
 ggh config cache-clear
 ```
 
@@ -230,21 +349,23 @@ Resolution order:
 
 **flags > `GGH_*` environment > project `.ggh.json` > user file > defaults**
 
-So a work repository can pin its own provider without touching your global setup:
+Project files are untrusted. They may set only `commit_style`; provider, model,
+fallback, consent, paths, and timeouts remain under the user's control:
 
 ```jsonc
 // .ggh.json, committed at the repo root
-{ "ai_provider": "ollama", "commit_style": "conventional" }
+{ "commit_style": "conventional" }
 ```
 
 Environment variables are named after the keys: `GGH_AI_PROVIDER`,
 `GGH_CODEX_MODEL`, `GGH_GROK_MODEL`, `GGH_AI_TIMEOUT_MS`, `GGH_COMMIT_STYLE`,
-`GGH_DEFAULT_CLONE_DIR`, `GGH_DEFAULT_CLONE_MODE`.
+`GGH_DEFAULT_CLONE_DIR`, `GGH_DEFAULT_CLONE_MODE`, `GGH_HOSTED_AI_CONSENT`.
 
 ## How the AI fallback works
 
-No API keys. `ggh` drives whichever CLI you are already signed in to, and every
-AI feature runs through one chain, taking the first result it gets:
+No API keys are stored by `ggh`. It drives whichever CLI you are already signed
+in to, and every AI feature runs through one chain, taking the first result it
+gets:
 
 1. Your preferred provider on its configured model — Codex on `gpt-5.6-luna` by
    default.
@@ -272,14 +393,22 @@ attempt — not a generic "AI unavailable" — then the Conventional Commit wiza
 
 ## What leaves your machine
 
-Diffs go to whichever AI CLI you configured. Before anything is sent, `.env`
+The first hosted AI use asks for explicit consent. Without a terminal, enable it
+deliberately with `ggh config set hosted_ai_consent true`. Diffs then go to the
+configured AI CLI. Before anything is sent, `.env`
 files, keys, lockfiles, and binaries are dropped whole, and the remaining hunks
 are scanned for tokens, API keys, JWTs, and credentialed URLs — `ggh commit`
 tells you how many it redacted.
 
 That removes credentials, not your source code. If that matters where you work,
-use `-m`, `--no-ai`, or set `ai_provider` to `ollama` and nothing leaves at all.
-[SECURITY.md](SECURITY.md) has the full list, and the limits.
+use `-m`, `--no-ai`, or configure local-only AI:
+
+```bash
+ggh config set ai_provider ollama
+ggh config set ai_fallback false
+```
+
+[SECURITY.md](SECURITY.md) has the full list and limits.
 
 ## Shell completion
 
@@ -294,7 +423,9 @@ Generated from the command tree, so it cannot drift.
 ## Contributing
 
 [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports and small fixes welcome; open an
-issue before a large feature.
+issue before a large feature. New here? `./scripts/demo.sh` runs a hermetic
+60-second tour (temp repo, no network, no auth) of what `ggh` does.
+Packaging for a distro? `docs/PACKAGING.md` and `make install`.
 
 ## License
 

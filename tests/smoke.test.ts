@@ -142,7 +142,7 @@ describe("CLI exit codes", () => {
 describe("shell completion is generated from the real command tree", () => {
   it("includes every registered command and alias in each shell", async () => {
     const { createProgram } = await import("../src/index.ts");
-    const program = createProgram();
+    const program = await createProgram();
 
     const surface = new Set<string>();
     for (const command of program.commands) {
@@ -167,7 +167,7 @@ describe("shell completion is generated from the real command tree", () => {
   });
 
   it("rejects an unsupported shell with a non-zero exit code", async () => {
-    const { exitCode, stderr } = await runCli(["completion", "powershell"]);
+    const { exitCode, stderr } = await runCli(["completion", "tcsh"]);
     expect(exitCode).not.toBe(0);
     expect(stderr).toContain("Unsupported shell");
   });

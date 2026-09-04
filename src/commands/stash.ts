@@ -1,16 +1,17 @@
 import { Command } from "commander";
+import { getFlags } from "../services/runtime.ts";
 import {
   getStatus,
-  isGitRepo,
+  requireGitRepo,
   stashDiff,
   stashDrop,
   stashList,
   stashPop,
   stashPush,
 } from "../services/git.ts";
-import { getFlags } from "../services/runtime.ts";
+import { dryRun } from "../utils/flags.ts";
 import {
-  emitJson,
+  jsonOut, emitJson,
   fail,
   header,
   p,
@@ -30,12 +31,13 @@ export function registerStashCommand(program: Command): void {
     .action(async (action?: string, options?: { message?: string }) => {
       header("Git Stash Assistant");
 
-      if (!(await isGitRepo())) {
-        fail("Not a git repository.");
-        return;
-      }
+      if (!(await requireGitRepo())) return;
 
       if (action === "push" || action === "save") {
+        const status = await getStatus();
+        const files = [...status.staged, ...status.unstaged, ...status.untracked].map((f) => f.path);
+        if (dryRun(`stash ${files.length} file(s)${options?.message ? ` with message "${options.message}"` : ""}`)) return;
+
         const s = p.spinner();
         s.start("Stashing changes...");
         try {
@@ -49,6 +51,8 @@ export function registerStashCommand(program: Command): void {
       }
 
       if (action === "pop") {
+        if (dryRun("pop the latest stash")) return;
+
         const s = p.spinner();
         s.start("Popping latest stash...");
         try {
@@ -63,10 +67,7 @@ export function registerStashCommand(program: Command): void {
 
       if (action === "list") {
         const list = await stashList();
-        if (getFlags().json) {
-          emitJson(list);
-          return;
-        }
+        if (jsonOut(list)) return;
         if (list.length === 0) {
           p.log.info(pc.dim("No stashes found."));
           return;
@@ -77,9 +78,19 @@ export function registerStashCommand(program: Command): void {
         return;
       }
 
+      // JSON mode: emit stash list without entering interactive menu
+      if (getFlags().json) {
+        const list = await stashList();
+        emitJson(list);
+        return;
+      }
+
       // Interactive Menu
+      if (dryRun("show the stash menu")) return;
+
       const status = await getStatus();
       const list = await stashList();
+      const latestStash = list.at(0);
 
       if (!status.hasChanges && list.length === 0) {
         p.log.info(pc.dim("Working tree is clean and no stashes found."));
@@ -98,12 +109,12 @@ export function registerStashCommand(program: Command): void {
                 },
               ]
             : []),
-          ...(list.length > 0
+          ...(latestStash
             ? [
                 {
                   value: "pop",
                   label: "Pop latest stash",
-                  hint: `${list[0].ref}: ${list[0].message}`,
+                  hint: `${latestStash.ref}: ${latestStash.message}`,
                 },
                 {
                   value: "browse",
@@ -136,6 +147,8 @@ export function registerStashCommand(program: Command): void {
           return;
         }
 
+        if (dryRun(`stash current changes${msg ? ` with message "${msg}"` : ""}`)) return;
+
         const s = p.spinner();
         s.start("Stashing changes...");
         try {
@@ -146,6 +159,7 @@ export function registerStashCommand(program: Command): void {
           fail(String(err));
         }
       } else if (choice === "pop") {
+        if (dryRun("pop the latest stash")) return;
         const s = p.spinner();
         s.start("Popping latest stash...");
         try {
@@ -187,6 +201,7 @@ export function registerStashCommand(program: Command): void {
         if (stashAction === null || stashAction === "back") return;
 
         if (stashAction === "pop") {
+          if (dryRun(`pop stash ${pickStash}`)) return;
           try {
             await stashPop(pickStash as string);
             p.log.success(pc.green(`Popped ${pickStash}.`));
@@ -194,6 +209,7 @@ export function registerStashCommand(program: Command): void {
             fail(`Failed to pop ${pickStash}: ${String(err)}`);
           }
         } else if (stashAction === "drop") {
+          if (dryRun(`drop stash ${pickStash}`)) return;
           try {
             await stashDrop(pickStash as string);
             p.log.success(pc.green(`Dropped ${pickStash}.`));
@@ -214,6 +230,8 @@ export function registerStashCommand(program: Command): void {
 
         if (!pickDrop) return;
 
+        if (dryRun(`drop stash ${pickDrop}`)) return;
+
         try {
           await stashDrop(pickDrop as string);
           p.log.success(pc.green(`Dropped ${pickDrop}.`));
@@ -228,10 +246,8 @@ export function registerStashCommand(program: Command): void {
     .description("Pop a stash")
     .action(async (ref?: string) => {
       header("Pop Stash");
-      if (!(await isGitRepo())) {
-        fail("Not a git repository.");
-        return;
-      }
+      if (!(await requireGitRepo())) return;
+      if (dryRun(ref ? `pop stash ${ref}` : "pop the latest stash")) return;
       try {
         await stashPop(ref);
         p.log.success(pc.green(ref ? `Stash ${ref} popped.` : "Latest stash popped."));
@@ -245,15 +261,52 @@ export function registerStashCommand(program: Command): void {
     .description("Drop a stash")
     .action(async (ref: string) => {
       header("Drop Stash");
-      if (!(await isGitRepo())) {
-        fail("Not a git repository.");
-        return;
-      }
+      if (!(await requireGitRepo())) return;
+      if (dryRun(`drop stash ${ref}`)) return;
       try {
         await stashDrop(ref);
         p.log.success(pc.green(`Dropped ${ref}.`));
       } catch (err) {
         fail(`Failed to drop stash: ${String(err)}`);
+      }
+    });
+
+  stash
+    .command("push")
+    .alias("save")
+    .description("Stash current changes")
+    .option("-m, --message <message>", "Stash message")
+    .action(async (options?: { message?: string }) => {
+      header("Push Stash");
+      if (!(await requireGitRepo())) return;
+      const status = await getStatus();
+      const files = [...status.staged, ...status.unstaged, ...status.untracked].map((f) => f.path);
+      if (dryRun(`stash ${files.length} file(s)${options?.message ? ` with message "${options.message}"` : ""}`)) return;
+      const s = p.spinner();
+      s.start("Stashing changes...");
+      try {
+        await stashPush(options?.message);
+        s.stop(pc.green("Changes stashed successfully!"));
+      } catch (err) {
+        s.stop(pc.red("Stash failed."));
+        fail(String(err));
+      }
+    });
+
+  stash
+    .command("list")
+    .description("List stashes")
+    .action(async () => {
+      header("Stash List");
+      if (!(await requireGitRepo())) return;
+      const list = await stashList();
+      if (jsonOut(list)) return;
+      if (list.length === 0) {
+        p.log.info(pc.dim("No stashes found."));
+        return;
+      }
+      for (const s of list) {
+        p.log.message(`${pc.bold(pc.cyan(s.ref))} ${pc.dim(`(${s.date})`)}: ${s.message}`);
       }
     });
 }

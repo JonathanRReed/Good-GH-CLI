@@ -3,7 +3,7 @@ import { CliAIProvider } from "../src/services/ai/base.ts";
 import { AIGenerationError, type AIProviderId } from "../src/services/ai/provider.ts";
 import { CODEX_MODEL_CHAIN, CodexProvider } from "../src/services/ai/codex.ts";
 import { GrokProvider } from "../src/services/ai/grok.ts";
-import { sanitizeDiffForAI, stripLockfilesFromDiff } from "../src/utils/diff.ts";
+import { sanitizeDiffForAI } from "../src/utils/diff.ts";
 
 class StubProvider extends CliAIProvider {
   readonly id: AIProviderId = "codex";
@@ -122,10 +122,6 @@ describe("sanitizeDiffForAI", () => {
     expect(result.diff).not.toContain("hunter2");
     expect(result.diff).not.toContain(fakeGitHubToken);
     expect(result.diff).toContain("REDACTED_SECRET");
-  });
-
-  it("keeps stripLockfilesFromDiff behaviour identical for existing callers", () => {
-    expect(stripLockfilesFromDiff(diff)).toBe(sanitizeDiffForAI(diff).diff);
   });
 
   it("handles an empty diff without throwing", () => {

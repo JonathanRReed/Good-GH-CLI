@@ -9,12 +9,12 @@ import {
   getRemotes,
   getRemoteTrackingBranch,
   getStatus,
-  hasRemote,
   isDetachedHead,
   push,
   squashCommits,
   undoCommit,
 } from "../src/services/git.ts";
+import { hasRemote } from "./git-helpers.ts";
 
 describe("audit edge cases", () => {
   let tempRepo: string;

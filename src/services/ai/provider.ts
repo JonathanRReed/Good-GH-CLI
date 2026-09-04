@@ -1,11 +1,18 @@
 import type {
   CommitMessageResult,
   CommitPromptInput,
+  IssueBodyPromptInput,
+  IssueFromDiffPromptInput,
+  IssueFromDiffResult,
   PrContentResult,
   PrPromptInput,
   ReleaseNotesPromptInput,
   ReviewPromptInput,
   ReviewResult,
+  SplitPromptInput,
+  SplitResult,
+  TriageItem,
+  TriageResult,
 } from "./prompt.ts";
 
 export type AIProviderId = "codex" | "grok" | "claude" | "ollama";
@@ -21,7 +28,11 @@ export interface AIProvider {
   generatePr(input: PrPromptInput, model?: string): Promise<PrContentResult>;
   generateBranchName(taskDescription: string, model?: string): Promise<string>;
   generateReleaseNotes(input: ReleaseNotesPromptInput, model?: string): Promise<string>;
+  generateIssueBody(input: IssueBodyPromptInput, model?: string): Promise<string>;
   generateReview(input: ReviewPromptInput, model?: string): Promise<ReviewResult>;
+  generateTriage(items: TriageItem[], model?: string): Promise<TriageResult>;
+  generateSplit(input: SplitPromptInput, model?: string): Promise<SplitResult>;
+  generateIssueFromDiff(input: IssueFromDiffPromptInput, model?: string): Promise<IssueFromDiffResult>;
 }
 
 /**

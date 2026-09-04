@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  AIConsentError,
   AIChainError,
   AIGenerationError,
   buildAttemptChain,
@@ -12,12 +13,13 @@ import {
   extractFailureDetail,
   resetProviderExhaustion,
   runAIWithFallback,
+  ensureHostedAIConsent,
   type AIAttempt,
   type AIProvider,
   type AIProviderId,
 } from "../src/services/ai/index.ts";
 import { CliAIProvider } from "../src/services/ai/base.ts";
-import { saveConfig } from "../src/services/config.ts";
+import { getConfig, saveConfig } from "../src/services/config.ts";
 
 /** A provider whose every invocation is scripted, so no CLI is ever spawned. */
 class FakeProvider extends CliAIProvider {
@@ -51,6 +53,43 @@ class FakeProvider extends CliAIProvider {
     return scripted;
   }
 }
+
+describe("hosted AI consent", () => {
+  let configDir: string;
+  let previousXdg: string | undefined;
+
+  beforeEach(() => {
+    previousXdg = process.env.XDG_CONFIG_HOME;
+    configDir = mkdtempSync(join(tmpdir(), "good-gh-consent-"));
+    process.env.XDG_CONFIG_HOME = configDir;
+  });
+
+  afterEach(() => {
+    if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = previousXdg;
+    rmSync(configDir, { recursive: true, force: true });
+  });
+
+  it("persists explicit consent before hosted repository data may be sent", async () => {
+    let prompts = 0;
+    await ensureHostedAIConsent(async () => {
+      prompts += 1;
+      return true;
+    });
+    await ensureHostedAIConsent(async () => {
+      prompts += 1;
+      return false;
+    });
+
+    expect(prompts).toBe(1);
+    expect(getConfig().hosted_ai_consent).toBe(true);
+  });
+
+  it("fails closed when consent is declined", async () => {
+    await expect(ensureHostedAIConsent(async () => false)).rejects.toBeInstanceOf(AIConsentError);
+    expect(getConfig().hosted_ai_consent).toBe(false);
+  });
+});
 
 function attempt(provider: AIProvider, model: string): AIAttempt {
   return { provider, providerName: provider.displayName, model };
@@ -159,7 +198,7 @@ describe("runAIWithFallback", () => {
     expect(grok.calls).toEqual([]);
     expect(run.model).toBe("gpt-5.6-terra");
     expect(run.failures).toHaveLength(1);
-    expect(run.failures[0].kind).toBe("unknown");
+    expect(run.failures.at(0)?.kind).toBe("unknown");
   });
 
   it("skips the remaining Codex tiers and reaches Grok when the account is out of credits", async () => {
@@ -263,7 +302,7 @@ describe("runAIWithFallback", () => {
       chain: [attempt(codex, "gpt-5.6-luna"), attempt(grok, "grok-4.5")],
     });
 
-    expect(run.failures[0].kind).toBe("empty_response");
+    expect(run.failures.at(0)?.kind).toBe("empty_response");
     expect(run.result.subject).toBe("chore: real answer");
   });
 });
@@ -313,7 +352,7 @@ describe("buildAttemptChain", () => {
 
   it("honours an explicit --provider override", () => {
     saveConfig({ ai_provider: "codex" });
-    expect(buildAttemptChain("grok")[0].provider.id).toBe("grok");
+    expect(buildAttemptChain("grok").at(0)?.provider.id).toBe("grok");
   });
 
   it("never repeats a model when the configured one is also a fallback tier", () => {

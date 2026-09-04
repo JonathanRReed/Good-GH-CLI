@@ -1,14 +1,16 @@
 import { Command } from "commander";
+import { getFlags } from "../services/runtime.ts";
 import { resolve } from "node:path";
 import {
   getRepoRoot,
   getStatus,
-  isGitRepo,
+  requireGitRepo,
   listBranches,
   switchBranch,
   worktreeList,
 } from "../services/git.ts";
 import {
+  emitJson,
   fail,
   header,
   p,
@@ -17,6 +19,8 @@ import {
   promptInput,
   searchablePicker,
 } from "../utils/ui.ts";
+import { dryRun } from "../utils/flags.ts";
+import { validateBranchName } from "../utils/branch-name.ts";
 
 function formatSwitchError(err: unknown): string {
   const str = String(err);
@@ -36,10 +40,7 @@ export function registerSwitchCommand(program: Command): void {
     .action(async (target?: string, options?: { create?: boolean }) => {
       header("Switch Branch / Worktree");
 
-      if (!(await isGitRepo())) {
-        fail("Not a git repository.");
-        return;
-      }
+      if (!(await requireGitRepo())) return;
 
       const status = await getStatus();
       const currentBranch = status.branch;
@@ -48,6 +49,24 @@ export function registerSwitchCommand(program: Command): void {
       // If user specified target directly on CLI:
       if (target) {
         if (options?.create) {
+          const validationError = validateBranchName(target);
+          if (validationError) {
+            fail(validationError);
+            return;
+          }
+          if (dryRun(`create and switch to branch ${target}`)) return;
+
+          if (getFlags().json) {
+            try {
+              await switchBranch(target, true);
+              emitJson({ switched: true, branch: target, created: true });
+            } catch (err) {
+              emitJson({ switched: false, branch: target, created: true, error: formatSwitchError(err) });
+              fail(formatSwitchError(err));
+            }
+            return;
+          }
+
           const s = p.spinner();
           s.start(`Creating and switching to branch ${pc.cyan(target)}...`);
           try {
@@ -55,6 +74,17 @@ export function registerSwitchCommand(program: Command): void {
             s.stop(pc.green(`Switched to new branch ${pc.bold(pc.cyan(target))}`));
           } catch (err) {
             s.stop(pc.red("Failed to create branch."));
+            fail(formatSwitchError(err));
+          }
+          return;
+        }
+
+        if (getFlags().json) {
+          try {
+            await switchBranch(target, false);
+            emitJson({ switched: true, branch: target, created: false });
+          } catch (err) {
+            emitJson({ switched: false, branch: target, created: false, error: formatSwitchError(err) });
             fail(formatSwitchError(err));
           }
           return;
@@ -69,6 +99,26 @@ export function registerSwitchCommand(program: Command): void {
           s.stop(pc.red("Failed to switch branch."));
           fail(formatSwitchError(err));
         }
+        return;
+      }
+
+      // JSON mode: emit branch list without entering interactive picker
+      if (getFlags().json) {
+        const branches = await listBranches();
+        const worktrees = await worktreeList();
+        const repoRoot = await getRepoRoot();
+        const worktreeBranches = new Set(
+          worktrees
+            .filter((w) => resolve(w.path) !== resolve(repoRoot))
+            .map((w) => w.branch),
+        );
+        emitJson(
+          branches.map((b) => ({
+            name: b.name,
+            current: b.current,
+            isWorktree: worktreeBranches.has(b.name),
+          })),
+        );
         return;
       }
 
@@ -127,7 +177,10 @@ export function registerSwitchCommand(program: Command): void {
       if (val === "__create__") {
         const branchName = await promptInput({
           message: "Enter new branch name:",
-          validate: (v) => (!v || !v.trim() ? "Branch name required" : undefined),
+          validate: (v) => {
+            if (!v || !v.trim()) return "Branch name required";
+            return validateBranchName(v.trim()) || undefined;
+          },
         });
 
         if (!branchName) {
@@ -136,6 +189,8 @@ export function registerSwitchCommand(program: Command): void {
         }
 
         const cleanName = branchName.trim().replace(/\s+/g, "-");
+        if (dryRun(`create and switch to branch ${cleanName}`)) return;
+
         const s = p.spinner();
         s.start(`Creating and switching to ${pc.cyan(cleanName)}...`);
         try {

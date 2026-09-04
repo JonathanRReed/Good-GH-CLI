@@ -1,16 +1,19 @@
 import { Command } from "commander";
 import {
+  DEFAULT_CONFIG,
   findProjectConfigPath,
   getConfig,
   getConfigPath,
   getConfigWithSources,
+  getProjectConfig,
+  isConfigKey,
   saveConfig,
+  validateConfigValue,
   type AIProvider,
   type GoodGhConfig,
 } from "../services/config.ts";
 import { clearCache, getCacheDir } from "../services/cache.ts";
-import { getFlags } from "../services/runtime.ts";
-import { emitJson, fail, header, p, pc, selectMenu } from "../utils/ui.ts";
+import { fail, header, p, pc, selectMenu, data, jsonOut } from "../utils/ui.ts";
 
 export function registerConfigCommand(program: Command): void {
   const configCmd = program
@@ -23,14 +26,11 @@ export function registerConfigCommand(program: Command): void {
     .description("List all configuration settings")
     .action(() => {
       const sources = getConfigWithSources();
-      if (getFlags().json) {
-        emitJson({
+      if (jsonOut({
           userFile: getConfigPath(),
           projectFile: findProjectConfigPath(),
           values: Object.fromEntries(sources.map((s) => [s.key, { value: s.value, source: s.source }])),
-        });
-        return;
-      }
+        })) return;
 
       header("Configuration Settings");
       p.log.message(`User file:    ${pc.dim(getConfigPath())}`);
@@ -50,6 +50,10 @@ export function registerConfigCommand(program: Command): void {
         p.log.message(`  ${pc.cyan(entry.key.padEnd(20))} ${String(entry.value).padEnd(18)} ${tag}`);
       }
       p.log.message("");
+      const project = getProjectConfig();
+      for (const issue of project?.problems ?? []) {
+        p.log.warn(`${pc.dim(project!.path)}: ${pc.cyan(issue.key)} ${issue.message} (ignored)`);
+      }
       p.log.info(pc.dim("Precedence: environment > project .ggh.json > user file > defaults."));
       p.outro("Done.");
     });
@@ -75,59 +79,150 @@ export function registerConfigCommand(program: Command): void {
         fail(`Configuration key '${key}' not found.`);
       } else {
         // Data on stdout: `MODEL=$(ggh config get codex_model)` must work.
-        process.stdout.write(`${String(val)}\n`);
+        data(String(val));
+      }
+    });
+
+  const settableKeys = (Object.keys(DEFAULT_CONFIG) as Array<keyof GoodGhConfig>).filter(
+    (k) => k !== "first_run_completed",
+  );
+
+  configCmd
+    .command("set <key> <value>")
+    .description("Set a configuration value (e.g. ai_provider grok, ai_fallback false)")
+    .action((key: string, value: string) => {
+      if (!isConfigKey(key) || key === "first_run_completed") {
+        fail(`Invalid configuration key. Valid keys are: ${settableKeys.join(", ")}`);
+        return;
+      }
+      const { value: coerced, problem } = validateConfigValue(key, value);
+      if (problem) {
+        fail(`${key} ${problem}.`);
+        return;
+      }
+      saveConfig({ [key]: coerced });
+      p.log.success(`${pc.cyan(key)} set to ${pc.green(String(coerced))}`);
+      if (key === "ai_provider" && coerced === "ollama" && getConfig().ai_fallback !== false) {
+        p.log.info(
+          pc.dim("Tip: `ggh config set ai_fallback false` keeps every prompt on this machine if Ollama is unavailable."),
+        );
       }
     });
 
   configCmd
-    .command("set <key> <value>")
-    .description("Set a configuration value (e.g. ai_provider grok)")
-    .action((key: string, value: string) => {
-      const validKeys: (keyof GoodGhConfig)[] = [
-        "ai_provider",
-        "codex_model",
-        "grok_model",
-        "claude_model",
-        "ollama_model",
-        "ai_timeout_ms",
-        "default_clone_dir",
-        "default_clone_mode",
-        "commit_style",
-      ];
-
-      if (!validKeys.includes(key as keyof GoodGhConfig)) {
-        fail(`Invalid configuration key. Valid keys are: ${validKeys.join(", ")}`);
+    .command("unset <key>")
+    .description("Remove a value from your user config so the default (or project/env) applies")
+    .action((key: string) => {
+      if (!isConfigKey(key)) {
+        fail(`Invalid configuration key. Valid keys are: ${settableKeys.join(", ")}`);
         return;
       }
+      saveConfig({ [key]: undefined });
+      p.log.success(`${pc.cyan(key)} reset.`);
+    });
 
-      if (key === "ai_provider" && !["codex", "grok", "claude", "ollama"].includes(value)) {
-        fail("ai_provider must be 'codex', 'grok', 'claude', or 'ollama'.");
-        return;
-      }
+  configCmd
+    .command("doctor")
+    .description("Check your configuration, the project .ggh.json, and every AI provider")
+    .option("--fix", "Automatically fix fixable problems (file permissions, invalid keys, default provider)")
+    .action(async (options?: { fix?: boolean }) => {
+      header("Configuration Doctor");
+      const { getAvailableProviders, getProviderById, PROVIDER_ORDER, getConfiguredModel } = await import(
+        "../services/ai/index.ts"
+      );
+      const config = getConfig();
+      const project = getProjectConfig();
+      const problems: string[] = [];
+      const fixed: string[] = [];
 
-      if (key === "commit_style" && !["auto", "conventional", "gitmoji", "concise"].includes(value)) {
-        fail("commit_style must be 'auto', 'conventional', 'gitmoji', or 'concise'.");
-        return;
-      }
+      if (project) {
+        p.log.message(`Project file: ${pc.dim(project.path)}`);
+        for (const issue of project.problems) problems.push(`${project.path}: ${issue.key} ${issue.message}`);
+        const overrides = Object.keys(project.config);
+        if (overrides.length) p.log.info(`Project overrides: ${overrides.map((k) => pc.cyan(k)).join(", ")}`);
 
-      if (key === "default_clone_mode" && !["standard", "blobless", "shallow"].includes(value)) {
-        fail("default_clone_mode must be 'standard', 'blobless', or 'shallow'.");
-        return;
-      }
-
-      if (key === "ai_timeout_ms") {
-        const ms = Number.parseInt(value, 10);
-        if (Number.isNaN(ms) || ms < 5_000) {
-          fail("ai_timeout_ms must be a number of milliseconds (>= 5000).");
-          return;
+        // --fix: remove invalid keys from .ggh.json
+        if (options?.fix && project.problems.length > 0) {
+          try {
+            const { existsSync, readFileSync, writeFileSync } = await import("node:fs");
+            if (existsSync(project.path)) {
+              const raw = JSON.parse(readFileSync(project.path, "utf-8")) as Record<string, unknown>;
+              let changed = false;
+              for (const issue of project.problems) {
+                if (issue.key in raw) {
+                  delete raw[issue.key];
+                  changed = true;
+                  fixed.push(`Removed invalid key '${issue.key}' from ${project.path}`);
+                }
+              }
+              if (changed) {
+                writeFileSync(project.path, JSON.stringify(raw, null, 2) + "\n", { encoding: "utf-8" });
+              }
+            }
+          } catch {
+            // best-effort
+          }
         }
-        saveConfig({ ai_timeout_ms: ms });
-        p.log.success(`${pc.cyan(key)} set to ${pc.green(String(ms))}`);
-        return;
       }
 
-      saveConfig({ [key]: value });
-      p.log.success(`${pc.cyan(key)} set to ${pc.green(value)}`);
+      const available = new Set((await getAvailableProviders()).map((x) => x.id));
+      for (const id of PROVIDER_ORDER) {
+        const provider = getProviderById(id);
+        const model = getConfiguredModel(provider);
+        const mark = available.has(id) ? pc.green("✓") : pc.dim("○");
+        p.log.message(`  ${mark} ${provider.displayName.padEnd(18)} ${pc.dim(model)}`);
+      }
+      if (!available.has(config.ai_provider ?? "codex")) {
+        problems.push(
+          `Configured provider '${config.ai_provider}' is not installed${
+            config.ai_fallback === false ? " and fallback is off, so every AI feature will fail" : ""
+          }.`,
+        );
+
+        // --fix: switch to the first available provider
+        if (options?.fix && available.size > 0) {
+          const firstAvailable = [...PROVIDER_ORDER].find((id) => available.has(id));
+          if (firstAvailable) {
+            saveConfig({ ai_provider: firstAvailable });
+            fixed.push(`Switched default provider to '${firstAvailable}' (was '${config.ai_provider}')`);
+          }
+        }
+      }
+      if (config.ai_fallback === false) {
+        p.log.info(`Fallback: ${pc.yellow("off")} — only ${pc.bold(config.ai_provider ?? "codex")} is ever contacted.`);
+      }
+
+      // --fix: tighten config file permissions
+      if (options?.fix) {
+        try {
+          const { chmodSync, existsSync } = await import("node:fs");
+          const { getConfigPath } = await import("../services/config.ts");
+          const configPath = getConfigPath();
+          if (existsSync(configPath)) {
+            chmodSync(configPath, 0o600);
+            fixed.push(`Set config file permissions to 0600`);
+          }
+        } catch {
+          // best-effort, may fail on Windows
+        }
+      }
+
+      if (jsonOut({ config, projectFile: project?.path ?? null, problems, providers: [...available], fixed })) return;
+
+      if (fixed.length > 0) {
+        for (const f of fixed) p.log.success(pc.green(f));
+      }
+
+      if (problems.length === 0) {
+        p.outro(pc.green("No problems found."));
+        return;
+      }
+      for (const problem of problems) p.log.warn(problem);
+      if (options?.fix && fixed.length > 0) {
+        p.outro(pc.green(`${fixed.length} issue(s) fixed, ${problems.length} remain.`));
+      } else {
+        fail(`${problems.length} problem(s) found${options?.fix ? " (some could not be auto-fixed)" : ""}.`);
+      }
     });
 
   // Default interactive config if no subcommand is given
@@ -138,9 +233,9 @@ export function registerConfigCommand(program: Command): void {
     const provider = await selectMenu({
       message: "Select default AI Provider:",
       options: [
-        { value: "codex" as const, label: "Codex (ChatGPT)", hint: "GPT-5.6 tiers, then the rest of the chain" },
-        { value: "grok" as const, label: "xAI Grok", hint: "local grok CLI session" },
-        { value: "claude" as const, label: "Claude Code", hint: "local claude CLI session" },
+        { value: "codex" as const, label: "Codex (ChatGPT)", hint: "hosted; sends sanitized repository content" },
+        { value: "grok" as const, label: "xAI Grok", hint: "hosted; sends sanitized repository content" },
+        { value: "claude" as const, label: "Claude Code", hint: "hosted; sends sanitized repository content" },
         { value: "ollama" as const, label: "Ollama (local)", hint: "runs offline, never rate limited" },
       ],
       initialValue: current.ai_provider || "codex",
@@ -167,8 +262,23 @@ export function registerConfigCommand(program: Command): void {
       return;
     }
 
+    const fallback = await selectMenu({
+      message: "If that provider fails, try the others?",
+      options: [
+        { value: "yes", label: "Yes, fall back", hint: "Codex → Grok → Claude → Ollama, first result wins" },
+        { value: "no", label: "No, this provider only", hint: "nothing is ever sent anywhere else" },
+      ],
+      initialValue: current.ai_fallback === false ? "no" : "yes",
+    });
+
+    if (fallback === null) {
+      p.cancel("Configuration unchanged.");
+      return;
+    }
+
     saveConfig({
       ai_provider: provider as AIProvider,
+      ai_fallback: fallback === "yes",
       commit_style: commitStyle as GoodGhConfig["commit_style"],
       first_run_completed: true,
     });

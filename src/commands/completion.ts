@@ -19,7 +19,7 @@ function describeProgram(program: Command): CommandSpec[] {
     .map((c) => ({
       name: c.name(),
       aliases: c.aliases(),
-      description: (c.description() || "").split("\n")[0],
+      description: (c.description() || "").split("\n")[0] ?? "",
       options: c.options
         .filter((o) => !o.hidden)
         .flatMap((o) => [o.short, o.long].filter((f): f is string => Boolean(f))),
@@ -28,7 +28,7 @@ function describeProgram(program: Command): CommandSpec[] {
         .map((s) => ({
           name: s.name(),
           aliases: s.aliases(),
-          description: (s.description() || "").split("\n")[0],
+          description: (s.description() || "").split("\n")[0] ?? "",
         })),
     }));
 }
@@ -153,13 +153,61 @@ function generateFish(specs: CommandSpec[]): string {
   return lines.join("\n") + "\n";
 }
 
+function generatePowershell(specs: CommandSpec[]): string {
+  const commands = specs.map((c) => c.name).join("', '");
+  const cases = specs
+    .filter((c) => c.subcommands.length > 0 || c.options.length > 0)
+    .map((c) => {
+      const subs = c.subcommands.flatMap((s) => [s.name, ...s.aliases]).join("', '");
+      const opts = c.options.join("', '");
+      const lines = [`    '${c.name}' {`];
+      if (subs) lines.push(`      $completions = '${subs}'.Split("', '")`);
+      if (opts && subs) lines.push(`      $completions += '${opts}'.Split("', '")`);
+      if (opts && !subs) lines.push(`      $completions = '${opts}'.Split("', '")`);
+      lines.push("    }");
+      return lines.join("\n");
+    })
+    .join("\n");
+
+  return `# ggh PowerShell completion
+# Source with: Invoke-Expression "$(ggh completion powershell | Out-String)"
+# Or add to your $PROFILE
+
+$gghCommands = @('${commands}')
+
+Register-ArgumentCompleter -Native -CommandName 'ggh' -ScriptBlock {
+  param($wordToComplete, $commandAst, $cursorPosition)
+
+  $words = $commandAst.CommandElements | ForEach-Object { $_.Value }
+  $prev = if ($words.Length -ge 2) { $words[$words.Length - 2] } else { '' }
+
+  if ($words.Length -le 2 -or $wordToComplete -eq $words[1]) {
+    $completions = $gghCommands
+  } else {
+    switch ($prev) {
+${cases}
+      default { $completions = @() }
+    }
+  }
+
+  $completions | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+    [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+  }
+}
+`;
+}
+
 export function registerCompletionCommand(program: Command): void {
   program
     .command("completion [shell]")
-    .description("Generate completions for zsh, bash, or fish")
+    .description("Generate completions for zsh, bash, fish, or powershell")
     .action((shell?: string) => {
       const specs = describeProgram(program);
-      const target = (shell || process.env.SHELL?.split("/").pop() || "zsh").toLowerCase();
+      const target = (
+        shell ||
+        (process.platform === "win32" ? "powershell" : process.env.SHELL?.split("/").pop()) ||
+        "zsh"
+      ).toLowerCase();
 
       if (target.includes("zsh")) {
         data(generateZsh(specs));
@@ -167,9 +215,11 @@ export function registerCompletionCommand(program: Command): void {
         data(generateBash(specs));
       } else if (target.includes("fish")) {
         data(generateFish(specs));
+      } else if (target.includes("powershell") || target.includes("pwsh")) {
+        data(generatePowershell(specs));
       } else {
         header("Shell Completion");
-        fail(`Unsupported shell: ${target}. Supported shells: zsh, bash, fish.`);
+        fail(`Unsupported shell: ${target}. Supported shells: zsh, bash, fish, powershell.`);
         p.log.message(`\nExample:\n  ${pc.cyan('eval "$(ggh completion zsh)"')}\n`);
       }
     });

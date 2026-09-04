@@ -1,11 +1,12 @@
 import { Command } from "commander";
+import { getFlags } from "../services/runtime.ts";
 import {
   commit,
   getCommitCount,
   getStagedDiff,
   getStatus,
   hasCommits,
-  isGitRepo,
+  requireGitRepo,
   squashCommits,
 } from "../services/git.ts";
 import {
@@ -15,6 +16,7 @@ import {
 } from "../services/ai/index.ts";
 import { sanitizeDiffForAI } from "../utils/diff.ts";
 import {
+  emitJson,
   fail,
   formatAIFallback,
   header,
@@ -24,7 +26,7 @@ import {
   reportAIFailure,
   selectMenu,
 } from "../utils/ui.ts";
-import { isDryRun } from "../utils/flags.ts";
+import { dryRun } from "../utils/flags.ts";
 
 export function registerSquashCommand(program: Command): void {
   program
@@ -34,10 +36,7 @@ export function registerSquashCommand(program: Command): void {
     .action(async (countArg?: string, options?: { message?: string }) => {
       header("Commit Squash Assistant");
 
-      if (!(await isGitRepo())) {
-        fail("Not a git repository.");
-        return;
-      }
+      if (!(await requireGitRepo())) return;
 
       if (!(await hasCommits())) {
         p.log.warn("Repository has no commits to squash.");
@@ -84,10 +83,7 @@ export function registerSquashCommand(program: Command): void {
         return;
       }
 
-      if (isDryRun()) {
-        p.log.warn(`${pc.yellow("dry run")} ${pc.dim("·")} would squash the last ${count} commits into one`);
-        return;
-      }
+      if (dryRun(`squash the last ${count} commits into one`)) return;
 
       const s = p.spinner();
       s.start(`Soft-resetting last ${count} commits...`);
@@ -172,6 +168,17 @@ export function registerSquashCommand(program: Command): void {
       }
 
       if (!commitSubject || commitSubject.trim().length === 0) return;
+
+      if (getFlags().json) {
+        try {
+          await commit(commitSubject, commitBody);
+          emitJson({ squashed: count, subject: commitSubject, body: commitBody });
+        } catch (err) {
+          emitJson({ squashed: 0, error: String(err) });
+          fail(String(err));
+        }
+        return;
+      }
 
       const cSpinner = p.spinner();
       cSpinner.start("Finalizing squashed commit...");

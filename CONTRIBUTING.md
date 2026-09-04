@@ -53,13 +53,31 @@ suggest a next step.
 **Every command exits non-zero when it fails.** Use `fail()`, which sets the exit
 code for you.
 
+**New actions are subcommands, not positional strings.** `ggh draft resume`,
+not `ggh draft` with an `if/else` on `[action]`. Subcommands get their own
+options (`-y`, `--limit`); `--json`, `--dry-run`, `-R`, `-q`, and `--no-input`
+arrive free from the global decorator — never redeclare them.
+
+**Use the shared helpers.** `jsonOut(v)` instead of the `--json` triplet,
+`confirmOrAbort()` instead of hand-rolled confirms (it forces you to pass
+`assumeYes`), `unknownAction()` for unknown subcommand words,
+`failFromGitHub()` for `gh` errors. Duplicating one of these by hand will be
+sent back.
+
+**`noUncheckedIndexedAccess` is on.** Indexing widens to `T | undefined`.
+Reach for iterators (`.entries()`), `charAt`, and guards — never `!`.
+
+**Generated files stay generated.** `man/ggh.1` comes from `bun run man`,
+completions from the command tree. CI fails when they drift, so regenerate
+instead of hand-editing.
+
 ## Layout
 
 ```
 src/commands/    one file per command; registers itself on the program
-src/services/    git, github, config, cache, runtime flags, ai/
+src/services/    facades (git.ts, github.ts) over domain modules in git/, github/
 src/services/ai/ provider chain: base.ts is shared, one file per provider
-src/utils/       exec, output, ui, diff, flags, conventions
+src/utils/       exec, output, ui, prompts, suggest, diff, flags, conventions
 tests/           bun:test, real git repositories in temp dirs
 ```
 
@@ -85,7 +103,7 @@ const fakeGitHubToken = `gh${"p"}_${"a".repeat(36)}`;
 Maintainer only:
 
 ```bash
-bun run release 0.2.0
+bun run release 0.4.0
 ```
 
 That bumps `package.json`, writes a `CHANGELOG.md` entry with `ggh changelog`,

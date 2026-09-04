@@ -94,7 +94,7 @@ export function note(body: string, title = ""): void {
   writeErr(`${pc.dim("├" + "─".repeat(width + 4))}╯`);
 }
 
-function stripAnsi(str: string): string {
+export function stripAnsi(str: string): string {
   // eslint-disable-next-line no-control-regex
   return str.replace(/\x1b\[[0-9;]*m/g, "");
 }

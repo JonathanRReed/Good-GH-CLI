@@ -1,12 +1,12 @@
 import { Command } from "commander";
+import { getFlags } from "../services/runtime.ts";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { getRepoRoot, hasCommits, isGitRepo } from "../services/git.ts";
+import { getRepoRoot, hasCommits, requireGitRepo } from "../services/git.ts";
 import { getCommitsSinceTag, listReleases } from "../services/github.ts";
 import { generateReleaseNotesWithFallback } from "../services/ai/index.ts";
-import { getFlags } from "../services/runtime.ts";
-import { isDryRun } from "../utils/flags.ts";
-import { confirmPrompt, data, fail, header, p, pc, reportAIFailure } from "../utils/ui.ts";
+import { dryRun } from "../utils/flags.ts";
+import { data, emitJson, fail, header, p, pc, reportAIFailure, confirmOrAbort } from "../utils/ui.ts";
 
 const HEADER = `# Changelog
 
@@ -28,10 +28,7 @@ export function registerChangelogCommand(program: Command): void {
     .action(async (version?: string, options?: { since?: string; stdout?: boolean; yes?: boolean }) => {
       header("Changelog");
 
-      if (!(await isGitRepo())) {
-        fail("Not a git repository.");
-        return;
-      }
+      if (!(await requireGitRepo())) return;
       if (!(await hasCommits())) {
         fail("Repository has no commits.");
         return;
@@ -71,7 +68,7 @@ export function registerChangelogCommand(program: Command): void {
 
       if (options?.stdout || getFlags().json) {
         if (getFlags().json) {
-          process.stdout.write(`${JSON.stringify({ version: tag, date, body: body.trim(), commits }, null, 2)}\n`);
+          emitJson({ version: tag, date, body: body.trim(), commits });
         } else {
           data(entry);
         }
@@ -83,22 +80,9 @@ export function registerChangelogCommand(program: Command): void {
       const changelogPath = join(repoRoot, "CHANGELOG.md");
       const exists = existsSync(changelogPath);
 
-      if (isDryRun()) {
-        p.log.warn(
-          `${pc.yellow("dry run")} ${pc.dim("·")} would ${exists ? "prepend to" : "create"} ${changelogPath}`,
-        );
-        return;
-      }
+      if (dryRun(`${exists ? "prepend to" : "create"} ${changelogPath}`)) return;
 
-      const confirmed = await confirmPrompt({
-        message: `${exists ? "Prepend this entry to" : "Create"} CHANGELOG.md?`,
-        initialValue: true,
-        assumeYes: options?.yes,
-      });
-      if (!confirmed) {
-        p.cancel("Nothing written.");
-        return;
-      }
+      if (!(await confirmOrAbort(`${exists ? "Prepend this entry to" : "Create"} CHANGELOG.md?`, { assumeYes: options?.yes, cancelText: "Nothing written." }))) return;
 
       try {
         if (exists) {

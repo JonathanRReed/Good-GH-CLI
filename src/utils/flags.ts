@@ -5,19 +5,29 @@ import { p, pc } from "./ui.ts";
 /** Commands that can emit structured data instead of a rendered view. */
 export const JSON_CAPABLE = new Set([
   "status", "pr", "checks", "log", "stash", "worktree", "config",
-  "release", "issue", "run", "repo", "stack", "sync",
+  "release", "issue", "run", "repo", "stack", "sync", "changelog", "api",
+  "workflow", "label", "gist", "search", "secret", "variable", "notifications",
+  "squash", "undo", "rename", "resolve", "discard", "switch", "triage",
+  "draft", "ignore", "alias", "hook", "team", "plugin",
 ]);
 
 /** Commands that change the repository or the remote and deserve a preview. */
 export const DRY_RUN_CAPABLE = new Set([
   "commit", "discard", "sync", "squash", "undo", "worktree", "release",
-  "rename", "stash", "pr", "issue", "stack", "repo",
+  "rename", "stash", "pr", "issue", "stack", "repo", "changelog", "workflow",
+  "label", "gist", "secret", "variable", "notifications",
+  "run", "switch", "clone", "resolve", "checks", "search", "status", "triage",
+  "draft", "hook", "team", "plugin", "alias", "ignore", "api",
 ]);
 
 /** Commands that act on GitHub and can therefore target another repository. */
 export const REPO_SCOPED = new Set([
   "pr", "checks", "release", "issue", "run", "repo", "api", "stack",
+  "workflow", "label", "secret", "variable", "browse", "triage",
 ]);
+// Note: `triage` honors -R for issues; notifications are account-global and
+// ignore it. `changelog` is deliberately excluded: it writes the local
+// CHANGELOG.md, so a remote -R target would be misleading.
 
 /**
  * Adds an option only when neither its long nor its short form is already taken.
@@ -68,8 +78,19 @@ export function applyGlobalFlags(program: Command): void {
   }
 
   program.hook("preAction", (_thisCommand, actionCommand) => {
+    const parent = actionCommand.parent;
+    if (parent) {
+      for (const [key, value] of Object.entries(parent.opts())) {
+        const parentSource = parent.getOptionValueSource(key);
+        const childSource = actionCommand.getOptionValueSource(key);
+        if (value !== undefined && parentSource && parentSource !== "default" && childSource !== "cli") {
+          actionCommand.setOptionValueWithSource(key, value, parentSource);
+        }
+      }
+    }
+
     const opts = actionCommand.opts();
-    const parentOpts = actionCommand.parent?.opts() ?? {};
+    const parentOpts = parent?.opts() ?? {};
     const pick = <T>(key: string): T | undefined =>
       (opts[key] !== undefined ? opts[key] : parentOpts[key]) as T | undefined;
 

@@ -10,13 +10,11 @@ import type { AIProviderId } from "./provider.ts";
  * account-specific (`grok models`), so there is no safe hardcoded second tier:
  * an unknown slug would turn a working fallback into a hard failure.
  */
-export const GROK_MODEL_CHAIN: readonly string[] = [];
-
 export class GrokProvider extends CliAIProvider {
   readonly id: AIProviderId = "grok";
   readonly displayName = "xAI Grok";
   readonly defaultModel = "grok-4.5";
-  readonly fallbackModels = GROK_MODEL_CHAIN;
+  readonly fallbackModels: readonly string[] = [];
 
   async isAvailable(): Promise<boolean> {
     try {

@@ -3,8 +3,8 @@ import {
   formatStagedSummary,
   isIgnoredDiffFile,
   redactSecrets,
+  sanitizeDiffForAI,
   scanCodeHygiene,
-  stripLockfilesFromDiff,
   truncateDiff,
   type ChangedFile,
 } from "../src/utils/diff.ts";
@@ -51,7 +51,7 @@ index 789..012 100644
 @@ -1 +1 @@
 +export const x = 1;`;
 
-    const result = stripLockfilesFromDiff(sampleDiff);
+    const result = sanitizeDiffForAI(sampleDiff).diff;
     expect(result).toContain("src/app.ts");
     expect(result).toContain("src/utils.ts");
     expect(result).not.toContain("bun.lockb");

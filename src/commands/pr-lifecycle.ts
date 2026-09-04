@@ -1,19 +1,22 @@
 import type { Command } from "commander";
+import { getFlags } from "../services/runtime.ts";
 import {
   commentOnPullRequest,
   editPullRequest,
   getActivePullRequest,
+  getCurrentRepositoryNameWithOwner,
+  getPullRequestUrl,
   mergePullRequest,
+  parseRepoFlag,
   setPullRequestState,
   viewPullRequest,
   type MergeOptions,
 } from "../services/github.ts";
-import { getFlags } from "../services/runtime.ts";
-import { isDryRun } from "../utils/flags.ts";
+import { dryRun } from "../utils/flags.ts";
 import {
-  confirmPrompt,
-  emitJson,
+  confirmOrAbort,  jsonOut,
   fail,
+  failFromGitHub,
   header,
   p,
   pc,
@@ -25,14 +28,14 @@ async function resolvePrNumber(arg?: string): Promise<number | null> {
   if (arg) {
     const parsed = Number.parseInt(arg, 10);
     if (Number.isNaN(parsed)) {
-      fail(`Invalid Pull Request number: ${arg}`);
+      fail(`Invalid PR number: ${arg}`);
       return null;
     }
     return parsed;
   }
   const active = await getActivePullRequest();
   if (!active) {
-    fail("No Pull Request found for the current branch. Pass a number, or run `ggh pr create`.");
+    fail("No PR found for the current branch. Pass a number, or run `ggh pr create`.");
     return null;
   }
   return active.number;
@@ -45,21 +48,34 @@ function stateColor(state: string): string {
   return pc.dim(state);
 }
 
+async function repoForUrl(): Promise<string | null> {
+  const parsed = parseRepoFlag();
+  if (parsed) return parsed.nameWithOwner;
+  try {
+    return await getCurrentRepositoryNameWithOwner();
+  } catch {
+    return null;
+  }
+}
+
 export function registerPrLifecycleCommands(pr: Command): void {
   pr.command("view [prNumber]")
     .description("Show a Pull Request: state, review decision, size, and body")
     .action(async (prNumber?: string) => {
       const num = prNumber ? Number.parseInt(prNumber, 10) : undefined;
-      const detail = await viewPullRequest(Number.isNaN(num as number) ? undefined : num);
+      let detail;
+      try {
+        detail = await viewPullRequest(Number.isNaN(num as number) ? undefined : num);
+      } catch (err) {
+        failFromGitHub(err);
+        return;
+      }
       if (!detail) {
-        fail("No Pull Request found. Pass a number, or run `ggh pr create`.");
+        fail("No PR found for the current branch. Pass a number, or run `ggh pr create`.");
         return;
       }
 
-      if (getFlags().json) {
-        emitJson(detail);
-        return;
-      }
+      if (jsonOut(detail)) return;
 
       header(`Pull Request #${detail.number}`);
       p.log.step(pc.bold(detail.title));
@@ -74,8 +90,9 @@ export function registerPrLifecycleCommands(pr: Command): void {
       if (detail.labels?.length) {
         p.log.message(`  Labels:   ${detail.labels.map((l) => pc.cyan(l.name)).join(", ")}`);
       }
-      if (detail.body?.trim()) {
-        p.note(detail.body.trim().slice(0, 2000), "Description");
+      const bodyTrimmed = detail.body?.trim();
+      if (bodyTrimmed) {
+        p.note(bodyTrimmed.slice(0, 2000), "Description");
       }
       p.outro(pc.dim(detail.url));
     });
@@ -97,7 +114,13 @@ export function registerPrLifecycleCommands(pr: Command): void {
       const num = await resolvePrNumber(prNumber);
       if (num === null) return;
 
-      const detail = await viewPullRequest(num);
+      let detail;
+      try {
+        detail = await viewPullRequest(num);
+      } catch (err) {
+        failFromGitHub(err);
+        return;
+      }
       if (detail) {
         p.log.step(`#${detail.number} ${pc.bold(detail.title)}`);
         p.log.message(`  ${pc.cyan(detail.headRefName)} → ${pc.cyan(detail.baseRefName)} · ${stateColor(detail.state)}`);
@@ -131,38 +154,29 @@ export function registerPrLifecycleCommands(pr: Command): void {
         }
       }
 
-      if (isDryRun()) {
-        p.log.warn(
-          `${pc.yellow("dry run")} ${pc.dim("·")} would ${method}-merge #${num}` +
-            (options?.deleteBranch === false ? "" : " and delete the head branch"),
-        );
-        return;
-      }
+      if (dryRun(
+        `${method}-merge #${num}` +
+          (options?.deleteBranch === false ? "" : " and delete the head branch"),
+      )) return;
 
-      const confirmed = await confirmPrompt({
-        message: `${method === "squash" ? "Squash" : method === "rebase" ? "Rebase" : "Merge"} Pull Request #${num}?`,
-        initialValue: true,
-        assumeYes: options?.yes,
-      });
-      if (!confirmed) {
-        p.cancel("Merge cancelled.");
-        return;
-      }
+      if (!(await confirmOrAbort(`${method === "squash" ? "Squash" : method === "rebase" ? "Rebase" : "Merge"} Pull Request #${num}?`, { assumeYes: options?.yes, cancelText: "Merge cancelled." }))) return;
 
       const s = p.spinner();
       s.start(`Merging #${num}...`);
       try {
-        const out = await mergePullRequest(num, {
+        const url = await mergePullRequest(num, {
           method,
           deleteBranch: options?.deleteBranch !== false,
           auto: options?.auto,
         });
         s.stop(pc.green(options?.auto ? `Auto-merge armed for #${num}.` : `Pull Request #${num} merged.`));
-        if (out) p.log.message(pc.dim(out));
+        if (url) p.log.message(pc.dim(url));
+                  const repo = getFlags().json ? await repoForUrl() : null;
+          if (jsonOut({ number: num, action: "merge", url: repo ? getPullRequestUrl(repo, num) : url })) return;
         p.outro("Done.");
       } catch (err) {
         s.stop(pc.red("Merge failed."));
-        fail(String(err));
+        failFromGitHub(err);
       }
     });
 
@@ -175,31 +189,26 @@ export function registerPrLifecycleCommands(pr: Command): void {
       .description(description)
       .option("-y, --yes", "Skip the confirmation prompt")
       .action(async (prNumber?: string, options?: { yes?: boolean }) => {
-        header(`${name[0].toUpperCase()}${name.slice(1)} Pull Request`);
+        header(`${name.charAt(0).toUpperCase()}${name.slice(1)} Pull Request`);
         const num = await resolvePrNumber(prNumber);
         if (num === null) return;
 
-        if (isDryRun()) {
-          p.log.warn(`${pc.yellow("dry run")} ${pc.dim("·")} would ${verb} #${num}`);
-          return;
-        }
+        if (dryRun(`${verb} #${num}`)) return;
 
-        const confirmed = await confirmPrompt({
-          message: `${verb[0].toUpperCase()}${verb.slice(1)} Pull Request #${num}?`,
-          initialValue: true,
-          assumeYes: options?.yes,
-        });
-        if (!confirmed) {
-          p.cancel("Cancelled.");
-          return;
-        }
+        if (!(await confirmOrAbort(`${verb.charAt(0).toUpperCase()}${verb.slice(1)} Pull Request #${num}?`, { assumeYes: options?.yes }))) return;
 
+        const s = p.spinner();
+        s.start(`${name} #${num}...`);
         try {
-          await setPullRequestState(name, num);
-          p.log.success(pc.green(`Pull Request #${num} ${name === "ready" ? "is ready for review" : name + "d"}.`));
+          const output = await setPullRequestState(name, num);
+          s.stop(pc.green(`Pull Request #${num} ${name === "ready" ? "is ready for review" : name + "d"}.`));
+          if (output) p.log.message(pc.dim(output));
+                      const repo = getFlags().json ? await repoForUrl() : null;
+            if (jsonOut({ number: num, action: name, url: repo ? getPullRequestUrl(repo, num) : output })) return;
           p.outro("Done.");
         } catch (err) {
-          fail(String(err));
+          s.stop(pc.red("Failed."));
+          failFromGitHub(err);
         }
       });
   }
@@ -225,18 +234,16 @@ export function registerPrLifecycleCommands(pr: Command): void {
         body = typed;
       }
 
-      if (isDryRun()) {
-        p.log.warn(`${pc.yellow("dry run")} ${pc.dim("·")} would comment on #${num}`);
-        return;
-      }
+      if (dryRun(`comment on #${num}`)) return;
 
       try {
         const url = await commentOnPullRequest(num, body);
         p.log.success(pc.green("Comment posted."));
         if (url) p.log.message(pc.dim(url));
+        if (jsonOut({ number: num, action: "comment", url })) return;
         p.outro("Done.");
       } catch (err) {
-        fail(String(err));
+        failFromGitHub(err);
       }
     });
 
@@ -258,17 +265,16 @@ export function registerPrLifecycleCommands(pr: Command): void {
         return;
       }
 
-      if (isDryRun()) {
-        p.log.warn(`${pc.yellow("dry run")} ${pc.dim("·")} would edit #${num}`);
-        return;
-      }
+      if (dryRun(`edit #${num}`)) return;
 
       try {
         await editPullRequest(num, options);
         p.log.success(pc.green(`Pull Request #${num} updated.`));
+                  const repo = getFlags().json ? await repoForUrl() : null;
+          if (jsonOut({ number: num, action: "edit", url: repo ? getPullRequestUrl(repo, num) : undefined })) return;
         p.outro("Done.");
       } catch (err) {
-        fail(String(err));
+        failFromGitHub(err);
       }
     });
 }

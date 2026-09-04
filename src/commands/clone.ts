@@ -13,8 +13,9 @@ import {
 } from "../services/github.ts";
 import { getConfig, type CloneMode } from "../services/config.ts";
 import {
-  confirmPrompt,
+  confirmOrAbort,
   fail,
+  failFromGitHub,
   header,
   p,
   pc,
@@ -23,6 +24,7 @@ import {
   searchablePicker,
   selectMenu,
 } from "../utils/ui.ts";
+import { dryRun } from "../utils/flags.ts";
 
 function expandPath(pathStr: string): string {
   if (pathStr.startsWith("~/") || pathStr === "~") {
@@ -45,7 +47,8 @@ export function registerCloneCommand(program: Command): void {
     .option("--shallow", "Use shallow clone with depth 1 (--depth 1)")
     .option("-d, --dir <directory>", "Target directory for the cloned repository")
     .option("--refresh", "Bypass the cached repository list")
-    .action(async (repoArg?: string, options?: { fast?: boolean; blobless?: boolean; shallow?: boolean; dir?: string; refresh?: boolean }) => {
+    .option("--dry-run", "Show what would be cloned and where, without cloning")
+    .action(async (repoArg?: string, options?: { fast?: boolean; blobless?: boolean; shallow?: boolean; dir?: string; refresh?: boolean; dryRun?: boolean }) => {
       header("Clone & Add Project");
 
       let selectedRepo = repoArg;
@@ -58,8 +61,8 @@ export function registerCloneCommand(program: Command): void {
         const s = p.spinner();
         s.start(`Finding repository matching "${selectedRepo}"...`);
         const [userRepos, globalResults] = await Promise.all([
-          listUserRepositories(100, options?.refresh),
-          searchRepositories(selectedRepo, 10),
+          listUserRepositories({ limit: 100 }, options?.refresh),
+          searchRepositories(selectedRepo, { limit: 10 }),
         ]);
         s.stop();
 
@@ -88,14 +91,7 @@ export function registerCloneCommand(program: Command): void {
 
           if (candidateList.length === 1 && candidateList[0]) {
             const only = candidateList[0].nameWithOwner;
-            const acceptMatch = await confirmPrompt({
-              message: `No repository is named '${selectedRepo}'. Clone ${pc.bold(pc.cyan(only))} instead?`,
-              initialValue: false,
-            });
-            if (!acceptMatch) {
-              p.cancel("Clone cancelled.");
-              return;
-            }
+            if (!(await confirmOrAbort(`No repository is named '${selectedRepo}'. Clone ${pc.bold(pc.cyan(only))} instead?`, { initialValue: false, cancelText: "Clone cancelled." }))) return;
             selectedRepo = only;
           } else if (candidateList.length > 1) {
             const pick = await searchablePicker({
@@ -130,7 +126,7 @@ export function registerCloneCommand(program: Command): void {
         const s = p.spinner();
         s.start("Loading your GitHub repositories...");
         const [userRepos, starredRepos] = await Promise.all([
-          listUserRepositories(100, options?.refresh),
+          listUserRepositories({ limit: 100 }, options?.refresh),
           listStarredRepositories(30, options?.refresh),
         ]);
         s.stop("Repositories loaded.");
@@ -163,7 +159,7 @@ export function registerCloneCommand(program: Command): void {
           items,
           pageSize: 8,
           onSearchGitHub: async (q: string) => {
-            const results = await searchRepositories(q, 15);
+            const results = await searchRepositories(q, { limit: 15 });
             return results.map((r) => ({
               value: r.nameWithOwner,
               label: `🌐 ${r.nameWithOwner}`,
@@ -181,7 +177,7 @@ export function registerCloneCommand(program: Command): void {
       }
 
       const finalAuth = ghAuth ?? (await getGitHubAuthStatus());
-      const repoUrl = normalizeCloneUrl(selectedRepo, finalAuth.protocol || "https");
+      const repoUrl = normalizeCloneUrl(selectedRepo, finalAuth.protocol || "https", finalAuth.host);
       const defaultRepoName = extractRepoName(selectedRepo);
 
       // Destination directory resolution
@@ -273,6 +269,12 @@ export function registerCloneCommand(program: Command): void {
       const cloneSpinner = p.spinner();
       cloneSpinner.start(`Cloning ${pc.cyan(selectedRepo)} [${cloneMode} mode] into ${pc.dim(targetDir)}...`);
 
+      cloneSpinner.stop(pc.yellow("dry run"));
+      if (dryRun(`clone ${pc.cyan(selectedRepo)} [${cloneMode}] into ${pc.dim(targetDir)}`)) {
+        p.outro(pc.dim("No files were changed."));
+        return;
+      }
+
       try {
         await clone(repoUrl, targetDir, cloneMode);
         cloneSpinner.stop(pc.green("Repository cloned successfully!"));
@@ -280,7 +282,7 @@ export function registerCloneCommand(program: Command): void {
         p.outro(pc.green("Ready to code!"));
       } catch (err) {
         cloneSpinner.stop(pc.red("Clone failed."));
-        fail(String(err));
+        failFromGitHub(err);
       }
     });
 }

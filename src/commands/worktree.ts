@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import {
   getCurrentBranch,
   getRepoRoot,
-  isGitRepo,
+  requireGitRepo,
   worktreeAdd,
   worktreeList,
   worktreeRemove,
@@ -13,11 +13,11 @@ import {
   type AIAttempt,
   type AIAttemptFailure,
 } from "../services/ai/index.ts";
-import { getFlags } from "../services/runtime.ts";
-import { isDryRun } from "../utils/flags.ts";
+import { dryRun, isDryRun } from "../utils/flags.ts";
+import { sanitizeForAI } from "../utils/diff.ts";
+import { validateBranchName } from "../utils/branch-name.ts";
 import {
-  confirmPrompt,
-  emitJson,
+  confirmOrAbort, jsonOut,
   fail,
   formatAIFallback,
   header,
@@ -39,16 +39,10 @@ export function registerWorktreeCommand(program: Command): void {
     .description("List all active worktrees")
     .action(async () => {
       header("Git Worktrees");
-      if (!(await isGitRepo())) {
-        fail("Not inside a git repository.");
-        return;
-      }
+      if (!(await requireGitRepo())) return;
 
       const list = await worktreeList();
-      if (getFlags().json) {
-        emitJson(list);
-        return;
-      }
+      if (jsonOut(list)) return;
       if (list.length === 0) {
         p.log.info("No worktrees found.");
         return;
@@ -69,10 +63,7 @@ export function registerWorktreeCommand(program: Command): void {
     .option("-b, --base <branch>", "Base branch to create worktree from")
     .action(async (arg?: string, options?: { base?: string }) => {
       header("Add Worktree");
-      if (!(await isGitRepo())) {
-        fail("Not inside a git repository.");
-        return;
-      }
+      if (!(await requireGitRepo())) return;
 
       let branchName = arg;
 
@@ -90,13 +81,19 @@ export function registerWorktreeCommand(program: Command): void {
         branchName = input;
       }
 
-      // If input looks like natural language (contains spaces or > 15 chars without slashes)
-      if (branchName.includes(" ") || (!branchName.includes("/") && branchName.length > 15)) {
+      // If the input is already a valid branch name, skip AI entirely. Only
+      // treat free-form text (spaces, or long slash-less strings) as natural
+      // language that needs an AI suggestion. Dry-run also short-circuits
+      // before any network call.
+      const looksLikeNaturalLanguage =
+        branchName.includes(" ") || (!branchName.includes("/") && branchName.length > 15);
+
+      if (looksLikeNaturalLanguage && !isDryRun()) {
         const s = p.spinner();
         s.start("Generating semantic branch name with AI...");
         try {
           const { result: generated, providerName, model } = await generateBranchNameWithFallback(
-            branchName,
+            sanitizeForAI(branchName).text,
             undefined,
             (failure: AIAttemptFailure, next?: AIAttempt) => {
               s.message(formatAIFallback(failure, next));
@@ -108,6 +105,7 @@ export function registerWorktreeCommand(program: Command): void {
             message: "Confirm or edit generated branch name:",
             defaultValue: generated,
             placeholder: generated,
+            validate: validateBranchName,
           });
 
           if (!confirmBranch) {
@@ -120,6 +118,21 @@ export function registerWorktreeCommand(program: Command): void {
           reportAIFailure(err, "Could not generate a branch name with AI:");
           branchName = `feat/${branchName.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30)}`;
         }
+      } else if (looksLikeNaturalLanguage && isDryRun()) {
+        // Best-effort slug for the dry-run preview, no AI call.
+        branchName = `feat/${branchName.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30)}`;
+      } else {
+        const validationError = validateBranchName(branchName);
+        if (validationError) {
+          fail(validationError);
+          return;
+        }
+      }
+
+      const validationError = validateBranchName(branchName);
+      if (validationError) {
+        fail(validationError);
+        return;
       }
 
       const sanitizedDir = branchName
@@ -129,6 +142,8 @@ export function registerWorktreeCommand(program: Command): void {
       const repoRoot = await getRepoRoot();
       const targetPath = join(repoRoot, ".worktrees", sanitizedDir);
       const baseBranch = options?.base || (await getCurrentBranch());
+
+      if (dryRun(`create worktree for ${branchName} at ${targetPath} from ${baseBranch}`)) return;
 
       const s = p.spinner();
       s.start(`Creating worktree for ${pc.cyan(branchName)} at ${pc.dim(targetPath)}...`);
@@ -157,12 +172,10 @@ export function registerWorktreeCommand(program: Command): void {
     .alias("rm")
     .description("Remove an active worktree and clean up references")
     .option("-f, --force", "Force remove even with uncommitted changes")
-    .action(async (target?: string, options?: { force?: boolean }) => {
+    .option("-y, --yes", "Skip confirmation prompts")
+    .action(async (target?: string, options?: { force?: boolean; yes?: boolean }) => {
       header("Remove Worktree");
-      if (!(await isGitRepo())) {
-        fail("Not inside a git repository.");
-        return;
-      }
+      if (!(await requireGitRepo())) return;
 
       const repoRoot = await getRepoRoot();
       const list = await worktreeList();
@@ -204,10 +217,7 @@ export function registerWorktreeCommand(program: Command): void {
         selectedPath = pick;
       }
 
-      if (isDryRun()) {
-        p.log.warn(`${pc.yellow("dry run")} ${pc.dim("·")} would remove worktree ${pc.bold(selectedPath)}`);
-        return;
-      }
+      if (dryRun(`remove worktree ${pc.bold(selectedPath)}`)) return;
 
       const s = p.spinner();
       s.start(`Removing worktree ${pc.cyan(selectedPath)}...`);
@@ -220,10 +230,7 @@ export function registerWorktreeCommand(program: Command): void {
         s.stop(pc.yellow("Worktree removal blocked."));
         const errStr = String(err);
         if (errStr.includes("contains modified or untracked files") || errStr.includes("use --force")) {
-          const confirmForce = await confirmPrompt({
-            message: "Worktree contains untracked build files or local edits. Force remove?",
-            initialValue: true,
-          });
+          const confirmForce = await confirmOrAbort("Worktree contains untracked build files or local edits. Force remove?", { assumeYes: options?.yes, cancelText: null });
 
           if (confirmForce) {
             const forceSpinner = p.spinner();

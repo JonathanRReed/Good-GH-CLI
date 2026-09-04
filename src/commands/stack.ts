@@ -1,26 +1,33 @@
 import { Command } from "commander";
 import {
   detectDefaultBranch,
+  execGitWithRetry,
   getCurrentBranch,
+  getRebaseBranch,
+  getRemoteTrackingBranch,
   getStackAncestors,
   getStackDescendants,
   getStackGraph,
   getStatus,
-  isGitRepo,
+  hasRemoteBranch,
+  isAncestor,
+  isDetachedHead,
   isRebaseInProgress,
   push,
+  recordParentTip,
+  requireGitRepo,
   restackBranch,
   setBranchMergeBase,
   switchBranch,
   type StackNode,
 } from "../services/git.ts";
-import { createPullRequest, getActivePullRequest, getGitHubAuthStatus } from "../services/github.ts";
-import { getFlags } from "../services/runtime.ts";
-import { isDryRun } from "../utils/flags.ts";
+import { createPullRequest, getActivePullRequest, requireAuth } from "../services/github.ts";
+import { dryRun } from "../utils/flags.ts";
+import { validateBranchName } from "../utils/branch-name.ts";
 import {
-  confirmPrompt,
-  emitJson,
+  confirmOrAbort, jsonOut,
   fail,
+  failFromGitHub,
   header,
   p,
   pc,
@@ -29,7 +36,7 @@ import {
 } from "../utils/ui.ts";
 
 /** Renders the stack as a tree, marking branches that have drifted from their parent. */
-function renderTree(graph: Map<string, StackNode>, roots: string[]): string[] {
+function renderTree(graph: Map<string, StackNode>, roots: string[], defaultBranch = "main"): string[] {
   const lines: string[] = [];
 
   function walk(branch: string, prefix: string, isLast: boolean, depth: number): void {
@@ -43,6 +50,9 @@ function renderTree(graph: Map<string, StackNode>, roots: string[]): string[] {
     const meta: string[] = [];
     if (node.ahead > 0) meta.push(pc.cyan(`+${node.ahead}`));
     if (node.behind > 0) meta.push(pc.yellow(`${node.behind} behind parent`));
+    if (node.parent === null && node.recordedParent && !node.parentExists) {
+      meta.push(pc.yellow(`parent merged → ${defaultBranch}`));
+    }
     const suffix = meta.length ? `  ${pc.dim("(")}${meta.join(pc.dim(", "))}${pc.dim(")")}` : "";
 
     lines.push(`${pc.dim(prefix)}${pc.dim(connector)}${marker} ${name}${suffix}`);
@@ -70,21 +80,15 @@ export function registerStackCommand(program: Command): void {
     .option("--all", "Show every branch, not just the current stack")
     .action(async (options?: { all?: boolean }) => {
       header("Branch Stack");
-      if (!(await isGitRepo())) {
-        fail("Not a git repository.");
-        return;
-      }
+      if (!(await requireGitRepo())) return;
 
-      const graph = await getStackGraph();
+      const [graph, defaultBranch] = await Promise.all([getStackGraph(), detectDefaultBranch()]);
       if (graph.size === 0) {
         p.log.info(pc.dim("No branches yet."));
         return;
       }
 
-      if (getFlags().json) {
-        emitJson([...graph.values()]);
-        return;
-      }
+      if (jsonOut([...graph.values()])) return;
 
       const current = await getCurrentBranch();
       let roots = [...graph.values()].filter((n) => !n.parent).map((n) => n.branch).sort();
@@ -92,11 +96,11 @@ export function registerStackCommand(program: Command): void {
       if (!options?.all) {
         // Narrow to the tree the current branch belongs to.
         const ancestors = getStackAncestors(graph, current);
-        const rootOfCurrent = ancestors.length > 0 ? ancestors[ancestors.length - 1] : current;
+        const rootOfCurrent = ancestors.at(-1) ?? current;
         if (roots.includes(rootOfCurrent)) roots = [rootOfCurrent];
       }
 
-      for (const line of renderTree(graph, roots)) {
+      for (const line of renderTree(graph, roots, defaultBranch)) {
         p.log.message(line);
       }
 
@@ -113,41 +117,108 @@ export function registerStackCommand(program: Command): void {
     .description("Record the parent of the current branch, adopting it into a stack")
     .action(async (parent: string) => {
       header("Set Stack Parent");
-      if (!(await isGitRepo())) {
-        fail("Not a git repository.");
+      if (!(await requireGitRepo())) return;
+      const [detached, current] = await Promise.all([isDetachedHead(), getCurrentBranch()]);
+      if (detached) {
+        fail("Cannot stack a branch from a detached HEAD. Please checkout a named branch first.");
         return;
       }
-      const current = await getCurrentBranch();
       if (current === parent) {
         fail("A branch cannot be stacked on itself.");
         return;
       }
-      if (isDryRun()) {
-        p.log.warn(`${pc.yellow("dry run")} ${pc.dim("·")} would record ${current} as stacked on ${parent}`);
-        return;
-      }
+      if (dryRun(`record ${current} as stacked on ${parent}`)) return;
       await setBranchMergeBase(current, parent);
       p.log.success(pc.green(`${pc.bold(current)} is now stacked on ${pc.bold(parent)}.`));
       p.outro("Done.");
     });
 
-  stack.command("restack [branch]")
+  stack
+    .command("restack [branch]")
     .description("Rebase a branch and everything above it onto their recorded parents")
     .option("-y, --yes", "Skip the confirmation prompt")
-    .action(async (branch?: string, options?: { yes?: boolean }) => {
+    .option("--continue", "Continue a rebase in progress, then finish restacking")
+    .option("--abort", "Abort a rebase in progress, then finish restacking")
+    .action(async (branch?: string, options?: { yes?: boolean; continue?: boolean; abort?: boolean }) => {
       header("Restack");
-      if (!(await isGitRepo())) {
-        fail("Not a git repository.");
+      if (!(await requireGitRepo())) return;
+
+      // --continue/--abort may run from a detached HEAD that the rebase left
+      // behind, so only guard the fresh-restack path.
+      if (!options?.continue && !options?.abort && await isDetachedHead()) {
+        fail("Cannot restack from a detached HEAD. Checkout a named branch first.");
         return;
       }
 
-      if (await isRebaseInProgress()) {
-        fail("A rebase is already in progress. Finish it with `git rebase --continue` or `--abort` first.");
+      const [rebaseInProgress, defaultBranch] = await Promise.all([isRebaseInProgress(), detectDefaultBranch()]);
+
+      if (options?.continue || options?.abort) {
+        if (!rebaseInProgress) {
+          fail("No rebase in progress. Use `ggh stack restack` to start.");
+          return;
+        }
+
+        const rebaseBranch = await getRebaseBranch();
+        if (!rebaseBranch) {
+          fail("Could not determine which branch is being rebased.");
+          return;
+        }
+
+        if (options?.abort) {
+          try {
+            await execGitWithRetry(["rebase", "--abort"]);
+            p.log.warn("Rebase aborted.");
+          } catch (err) {
+            fail(`Failed to abort rebase: ${String(err)}`);
+            return;
+          }
+        } else {
+          try {
+            await execGitWithRetry(["rebase", "--continue"], {
+              env: { ...process.env, GIT_EDITOR: "true" },
+            });
+            const finishedParent = (await getStackGraph()).get(rebaseBranch)?.parent;
+            if (finishedParent) await recordParentTip(rebaseBranch, finishedParent);
+            p.log.success("Rebase continued.");
+          } catch (err) {
+            fail(`Failed to continue rebase: ${String(err)}`);
+            return;
+          }
+        }
+
+        // Resume with the remaining descendants of the branch that was being rebased.
+        const graph = await getStackGraph();
+        const order = getStackDescendants(graph, rebaseBranch);
+
+        for (const b of order) {
+          const node = graph.get(b);
+          const parent = node?.parent ?? (node?.recordedParent && !node?.parentExists ? defaultBranch : null);
+          if (!parent) continue;
+          const s = p.spinner();
+          s.start(`Rebasing ${pc.cyan(b)} onto ${pc.cyan(parent)}...`);
+          const result = await restackBranch(b, parent);
+          if (result.ok) {
+            s.stop(pc.green(result.message));
+          } else {
+            s.stop(pc.red(result.message));
+            fail("Restack stopped. Resolve the conflict, then run `ggh stack restack --continue`.");
+            return;
+          }
+        }
+
+        p.log.success(pc.green("Stack replayed cleanly."));
+        p.outro("Done.");
         return;
       }
 
+      if (rebaseInProgress) {
+        fail("A rebase is already in progress. Finish it with `ggh stack restack --continue` or `ggh stack restack --abort`.");
+        return;
+      }
+
+      // Untracked files do not block a rebase; tracked modifications do.
       const status = await getStatus();
-      if (status.hasChanges) {
+      if (status.staged.length || status.unstaged.length || status.conflicts.length) {
         fail("Working tree has uncommitted changes. Commit or stash them before restacking.");
         return;
       }
@@ -161,7 +232,9 @@ export function registerStackCommand(program: Command): void {
 
       // Parents must be replayed before their children, so include the start
       // branch first, then its descendants breadth-first.
-      const order = [start, ...getStackDescendants(graph, start)].filter((b) => graph.get(b)?.parent);
+      const order = [start, ...getStackDescendants(graph, start)].filter(
+        (b) => graph.get(b)?.parent || (graph.get(b)?.recordedParent && !graph.get(b)?.parentExists),
+      );
 
       if (order.length === 0) {
         p.log.info(pc.dim(`${start} has no recorded parent and nothing stacked on it.`));
@@ -170,27 +243,19 @@ export function registerStackCommand(program: Command): void {
 
       p.log.step(`Will replay ${order.length} branch(es):`);
       for (const b of order) {
-        p.log.message(`  ${pc.cyan(b)} ${pc.dim("onto")} ${pc.cyan(graph.get(b)?.parent ?? "?")}`);
+        const node = graph.get(b);
+        const parent = node?.parent ?? (node?.recordedParent && !node?.parentExists ? defaultBranch : null);
+        p.log.message(`  ${pc.cyan(b)} ${pc.dim("onto")} ${pc.cyan(parent ?? "?")}`);
       }
 
-      if (isDryRun()) {
-        p.log.warn(`${pc.yellow("dry run")} ${pc.dim("·")} would rebase ${order.length} branch(es)`);
-        return;
-      }
+      if (dryRun(`rebase ${order.length} branch(es)`)) return;
 
-      const confirmed = await confirmPrompt({
-        message: `Rebase ${order.length} branch(es)?`,
-        initialValue: true,
-        assumeYes: options?.yes,
-      });
-      if (!confirmed) {
-        p.cancel("Restack cancelled.");
-        return;
-      }
+      if (!(await confirmOrAbort(`Rebase ${order.length} branch(es)?`, { assumeYes: options?.yes, cancelText: "Restack cancelled." }))) return;
 
       const original = await getCurrentBranch();
       for (const b of order) {
-        const parent = graph.get(b)?.parent;
+        const node = graph.get(b);
+        const parent = node?.parent ?? (node?.recordedParent && !node?.parentExists ? defaultBranch : null);
         if (!parent) continue;
         const s = p.spinner();
         s.start(`Rebasing ${pc.cyan(b)} onto ${pc.cyan(parent)}...`);
@@ -199,7 +264,7 @@ export function registerStackCommand(program: Command): void {
           s.stop(pc.green(result.message));
         } else {
           s.stop(pc.red(result.message));
-          fail("Restack stopped. Resolve the conflict, then run `ggh stack restack` again.");
+          fail("Restack stopped. Resolve the conflict, then run `ggh stack restack --continue`.");
           return;
         }
       }
@@ -219,24 +284,19 @@ export function registerStackCommand(program: Command): void {
     .option("-y, --yes", "Skip the confirmation prompt")
     .action(async (branch?: string, options?: { draft?: boolean; yes?: boolean }) => {
       header("Submit Stack");
-      if (!(await isGitRepo())) {
-        fail("Not a git repository.");
+      if (!(await requireGitRepo())) return;
+      if (!branch && await isDetachedHead()) {
+        fail("Cannot submit a stack from a detached HEAD. Checkout a named branch first.");
         return;
       }
 
-      const auth = await getGitHubAuthStatus();
-      if (!auth.authenticated) {
-        fail(
-          auth.notInstalled
-            ? "GitHub CLI (`gh`) is not installed. Install it from https://cli.github.com."
-            : "GitHub CLI is not authenticated. Run `gh auth login`.",
-        );
-        return;
-      }
-
-      const start = branch || (await getCurrentBranch());
-      const graph = await getStackGraph();
-      const defaultBranch = await detectDefaultBranch();
+      const [authed, start, graph, defaultBranch] = await Promise.all([
+        requireAuth(),
+        branch ? Promise.resolve(branch) : getCurrentBranch(),
+        getStackGraph(),
+        detectDefaultBranch(),
+      ]);
+      if (!authed) return;
 
       // Submit from the bottom of the stack up, so each parent branch exists on
       // the remote before the child Pull Request points at it.
@@ -254,35 +314,52 @@ export function registerStackCommand(program: Command): void {
         p.log.message(`  ${pc.cyan(b)} ${pc.dim("→")} ${pc.cyan(parent)}`);
       }
 
-      if (isDryRun()) {
-        p.log.warn(`${pc.yellow("dry run")} ${pc.dim("·")} would push and open ${chain.length} Pull Request(s)`);
-        return;
-      }
+      if (dryRun(`push and open ${chain.length} Pull Request(s)`)) return;
 
-      const confirmed = await confirmPrompt({
-        message: `Push and open Pull Requests for ${chain.length} branch(es)?`,
-        initialValue: true,
-        assumeYes: options?.yes,
-      });
-      if (!confirmed) {
-        p.cancel("Cancelled.");
-        return;
-      }
+      if (!(await confirmOrAbort(`Push and open Pull Requests for ${chain.length} branch(es)?`, { assumeYes: options?.yes }))) return;
 
       const original = await getCurrentBranch();
       const opened: Array<{ branch: string; base: string; url: string }> = [];
 
       for (const b of chain) {
         const base = graph.get(b)?.parent ?? defaultBranch;
+
+        // If this is a child, make sure its parent exists on the remote first.
+        if (base !== defaultBranch && !(await hasRemoteBranch(base))) {
+          p.log.warn(`Parent branch ${pc.cyan(base)} does not exist on the remote yet. Pushing it first.`);
+          const parentSpinner = p.spinner();
+          parentSpinner.start(`Pushing parent ${pc.cyan(base)}...`);
+          try {
+            await switchBranch(base);
+            await push({ branch: base, setUpstream: true });
+            parentSpinner.stop(`${pc.cyan(base)} pushed.`);
+          } catch (parentErr) {
+            parentSpinner.stop(pc.red(`Failed to push parent ${base}.`));
+            fail(String(parentErr));
+            return;
+          }
+        }
+
         const s = p.spinner();
         s.start(`Pushing ${pc.cyan(b)}...`);
         try {
           await switchBranch(b);
-          await push({ branch: b, setUpstream: true });
+
+          const upstream = await getRemoteTrackingBranch();
+          let forceWithLease = false;
+          if (upstream) {
+            const isAnc = await isAncestor(upstream, b);
+            if (!isAnc) {
+              p.log.warn(`Remote ${upstream} is not an ancestor of ${b}; pushing with --force-with-lease.`);
+              forceWithLease = true;
+            }
+          }
+
+          await push({ branch: b, setUpstream: true, forceWithLease });
           s.stop(`${pc.cyan(b)} pushed.`);
         } catch (err) {
           s.stop(pc.red(`Failed to push ${b}.`));
-          fail(String(err));
+          failFromGitHub(err);
           return;
         }
 
@@ -308,7 +385,7 @@ export function registerStackCommand(program: Command): void {
           opened.push({ branch: b, base, url });
         } catch (err) {
           prSpinner.stop(pc.red(`Failed to open a Pull Request for ${b}.`));
-          fail(String(err));
+          failFromGitHub(err);
           return;
         }
       }
@@ -319,10 +396,7 @@ export function registerStackCommand(program: Command): void {
         // Best effort
       }
 
-      if (getFlags().json) {
-        emitJson(opened);
-        return;
-      }
+      if (jsonOut(opened)) return;
       for (const entry of opened) {
         p.log.message(`  ${pc.cyan(entry.branch)} → ${pc.cyan(entry.base)}  ${pc.dim(entry.url)}`);
       }
@@ -334,8 +408,9 @@ export function registerStackCommand(program: Command): void {
     .argument("[name]", "Branch name")
     .action(async (name?: string) => {
       header("Stack a New Branch");
-      if (!(await isGitRepo())) {
-        fail("Not a git repository.");
+      if (!(await requireGitRepo())) return;
+      if (await isDetachedHead()) {
+        fail("Cannot stack a branch from a detached HEAD. Checkout a named branch first.");
         return;
       }
       const parent = await getCurrentBranch();
@@ -344,26 +419,33 @@ export function registerStackCommand(program: Command): void {
       if (!branch) {
         const typed = await promptInput({
           message: `New branch stacked on ${parent}:`,
-          validate: (v) => (!v || !v.trim() ? "Branch name required" : undefined),
+          validate: (v) => {
+            if (!v || !v.trim()) return "Branch name required";
+            return validateBranchName(v.trim()) || undefined;
+          },
         });
         if (!typed) {
           p.cancel("Cancelled.");
           return;
         }
         branch = typed.trim().replace(/\s+/g, "-");
+      } else {
+        const validationError = validateBranchName(branch);
+        if (validationError) {
+          fail(validationError);
+          return;
+        }
       }
 
-      if (isDryRun()) {
-        p.log.warn(`${pc.yellow("dry run")} ${pc.dim("·")} would create ${branch} stacked on ${parent}`);
-        return;
-      }
+      if (dryRun(`create ${branch} stacked on ${parent}`)) return;
 
       try {
         await switchBranch(branch, true, process.cwd(), parent);
+        if (jsonOut({ branch, parent, created: true })) return;
         p.log.success(pc.green(`Created ${pc.bold(branch)} stacked on ${pc.bold(parent)}.`));
         p.outro("Done.");
       } catch (err) {
-        fail(String(err));
+        failFromGitHub(err);
       }
     });
 
@@ -372,10 +454,7 @@ export function registerStackCommand(program: Command): void {
     .description("Pick a branch from the stack and switch to it")
     .action(async () => {
       header("Switch Within Stack");
-      if (!(await isGitRepo())) {
-        fail("Not a git repository.");
-        return;
-      }
+      if (!(await requireGitRepo())) return;
       const graph = await getStackGraph();
       const items = [...graph.values()].map((n) => ({
         value: n.branch,
@@ -387,12 +466,13 @@ export function registerStackCommand(program: Command): void {
         p.cancel("Cancelled.");
         return;
       }
+      if (dryRun(`switch to ${picked}`)) return;
       try {
         await switchBranch(picked);
         p.log.success(pc.green(`Switched to ${pc.bold(picked)}.`));
         p.outro("Done.");
       } catch (err) {
-        fail(String(err));
+        failFromGitHub(err);
       }
     });
 }

@@ -8,18 +8,30 @@ import {
 import {
   buildBranchNamePrompt,
   buildCommitPrompt,
+  buildIssueBodyPrompt,
+  buildIssueFromDiffPrompt,
   buildPrPrompt,
   buildReleaseNotesPrompt,
   buildReviewPrompt,
+  buildSplitPrompt,
+  buildTriagePrompt,
   parseJsonResponse,
   type CommitMessageResult,
   type CommitPromptInput,
+  type IssueBodyPromptInput,
+  type IssueFromDiffPromptInput,
+  type IssueFromDiffResult,
   type PrContentResult,
   type PrPromptInput,
   type ReleaseNotesPromptInput,
   type ReviewPromptInput,
   type ReviewResult,
+  type SplitPromptInput,
+  type SplitResult,
+  type TriageItem,
+  type TriageResult,
 } from "./prompt.ts";
+import { sanitizeBranchName } from "../../utils/branch-name.ts";
 
 /** Upper bound for a single provider invocation. Overridable via config `ai_timeout_ms`. */
 export const DEFAULT_AI_TIMEOUT_MS = 120_000;
@@ -51,10 +63,11 @@ export abstract class CliAIProvider implements AIProvider {
       throw new AIGenerationError(this.id, model, classifyAIFailure(err), extractFailureDetail(err));
     }
 
-    if (!raw || !raw.trim()) {
+    const trimmed = raw?.trim();
+    if (!trimmed) {
       throw new AIGenerationError(this.id, model, "empty_response");
     }
-    return raw.trim();
+    return trimmed;
   }
 
   async generateCommit(
@@ -62,9 +75,10 @@ export abstract class CliAIProvider implements AIProvider {
     model = this.defaultModel,
   ): Promise<CommitMessageResult> {
     const raw = await this.runPrompt(buildCommitPrompt(input), model);
+    const lines = raw.split("\n");
     const parsed = parseJsonResponse<CommitMessageResult>(raw, {
-      subject: raw.split("\n")[0]?.slice(0, 72) || "update files",
-      body: raw.split("\n").slice(1).join("\n").trim(),
+      subject: lines[0]?.slice(0, 72) || "update files",
+      body: lines.slice(1).join("\n").trim(),
     });
 
     const subject = String(parsed.subject ?? "").replace(/\.$/, "").trim();
@@ -77,9 +91,10 @@ export abstract class CliAIProvider implements AIProvider {
 
   async generatePr(input: PrPromptInput, model = this.defaultModel): Promise<PrContentResult> {
     const raw = await this.runPrompt(buildPrPrompt(input), model);
+    const lines = raw.split("\n");
     const parsed = parseJsonResponse<PrContentResult>(raw, {
-      title: raw.split("\n")[0]?.slice(0, 72) || "Update repository",
-      body: raw.split("\n").slice(1).join("\n").trim(),
+      title: lines[0]?.slice(0, 72) || "Update repository",
+      body: lines.slice(1).join("\n").trim(),
     });
 
     const title = String(parsed.title ?? "").trim();
@@ -92,11 +107,9 @@ export abstract class CliAIProvider implements AIProvider {
 
   async generateBranchName(taskDescription: string, model = this.defaultModel): Promise<string> {
     const raw = await this.runPrompt(buildBranchNamePrompt(taskDescription), model);
-    const branch = (raw.split("\n")[0] ?? "")
-      .replace(/[`'"]/g, "")
-      .trim()
-      .replace(/\s+/g, "-")
-      .toLowerCase();
+    // Model output is untrusted: a leading dash would become a git flag and a
+    // space would split the name into branch + start-point.
+    const branch = sanitizeBranchName(raw);
 
     if (!branch) {
       throw new AIGenerationError(this.id, model, "empty_response", "no branch name in response");
@@ -110,6 +123,15 @@ export abstract class CliAIProvider implements AIProvider {
   ): Promise<string> {
     const raw = await this.runPrompt(buildReleaseNotesPrompt(input), model);
     // Models occasionally wrap Markdown in a fence despite the instruction.
+    const unfenced = raw.replace(/^```(?:markdown|md)?\s*\n?/, "").replace(/\n?```\s*$/, "");
+    return unfenced.trim();
+  }
+
+  async generateIssueBody(
+    input: IssueBodyPromptInput,
+    model = this.defaultModel,
+  ): Promise<string> {
+    const raw = await this.runPrompt(buildIssueBodyPrompt(input), model);
     const unfenced = raw.replace(/^```(?:markdown|md)?\s*\n?/, "").replace(/\n?```\s*$/, "");
     return unfenced.trim();
   }
@@ -139,7 +161,88 @@ export abstract class CliAIProvider implements AIProvider {
         line: f.line,
         severity: ["blocker", "concern", "nit"].includes(f.severity) ? f.severity : "concern",
         body: f.body.trim(),
+        suggestedFix: typeof f.suggestedFix === "string" && f.suggestedFix.trim() ? f.suggestedFix.trim() : undefined,
       })),
     };
+  }
+
+  async generateTriage(items: TriageItem[], model = this.defaultModel): Promise<TriageResult> {
+    const raw = await this.runPrompt(buildTriagePrompt(items), model);
+    const parsed = parseJsonResponse<TriageResult>(raw, { groups: [], suggestions: [] });
+
+    const groups = Array.isArray(parsed.groups)
+      ? parsed.groups.filter(
+          (g) =>
+            g &&
+            typeof g.label === "string" &&
+            Array.isArray(g.itemIds),
+        )
+      : [];
+
+    const suggestions = Array.isArray(parsed.suggestions)
+      ? parsed.suggestions.filter(
+          (s) =>
+            s &&
+            typeof s.itemId === "string" &&
+            ["high", "medium", "low"].includes(s.priority),
+        )
+      : [];
+
+    return {
+      groups: groups.map((g) => ({
+        label: String(g.label).trim(),
+        itemIds: g.itemIds.map(String),
+        summary: String(g.summary ?? "").trim(),
+      })),
+      suggestions: suggestions.map((s) => ({
+        itemId: String(s.itemId).trim(),
+        suggestedLabel: typeof s.suggestedLabel === "string" ? s.suggestedLabel.trim() : undefined,
+        priority: s.priority as "high" | "medium" | "low",
+        draftResponse: typeof s.draftResponse === "string" ? s.draftResponse.trim() : undefined,
+      })),
+    };
+  }
+
+  async generateSplit(input: SplitPromptInput, model = this.defaultModel): Promise<SplitResult> {
+    const raw = await this.runPrompt(buildSplitPrompt(input), model);
+    const parsed = parseJsonResponse<SplitResult>(raw, { commits: [] });
+
+    const commits = Array.isArray(parsed.commits)
+      ? parsed.commits.filter(
+          (c) =>
+            c &&
+            typeof c.subject === "string" &&
+            c.subject.trim().length > 0 &&
+            Array.isArray(c.files) &&
+            c.files.length > 0,
+        )
+      : [];
+
+    return {
+      commits: commits.map((c) => ({
+        subject: String(c.subject).replace(/\.$/, "").trim(),
+        body: String(c.body ?? "").trim(),
+        files: c.files.map(String).filter(Boolean),
+      })),
+    };
+  }
+
+  async generateIssueFromDiff(
+    input: IssueFromDiffPromptInput,
+    model = this.defaultModel,
+  ): Promise<IssueFromDiffResult> {
+    const raw = await this.runPrompt(buildIssueFromDiffPrompt(input), model);
+    const lines = raw.split("\n");
+    const parsed = parseJsonResponse<IssueFromDiffResult>(raw, {
+      title: lines[0]?.slice(0, 72) || "New issue",
+      body: lines.slice(1).join("\n").trim(),
+    });
+
+    const title = String(parsed.title ?? "").trim();
+    if (!title) {
+      throw new AIGenerationError(this.id, model, "empty_response", "no issue title in response");
+    }
+
+    return { title, body: String(parsed.body ?? "").trim() };
   }
 }

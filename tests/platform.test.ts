@@ -58,13 +58,12 @@ describe("configuration layers", () => {
     expect(getConfig(project).ai_provider).toBe("grok");
   });
 
-  it("lets a project .ggh.json override the user file", () => {
+  it("keeps AI provider choices in the user file, not the cloned repository", () => {
     saveConfig({ ai_provider: "grok", codex_model: "gpt-5.6-luna" });
     writeFileSync(join(project, ".ggh.json"), JSON.stringify({ ai_provider: "claude" }), "utf-8");
 
     const config = getConfig(project);
-    expect(config.ai_provider).toBe("claude");
-    // Keys the project file does not mention still come from the user file.
+    expect(config.ai_provider).toBe("grok");
     expect(config.codex_model).toBe("gpt-5.6-luna");
   });
 
@@ -242,7 +241,7 @@ describe("branch stack graph", () => {
       ["one", "main"],
       ["two", "one"],
       ["three", "two"],
-    ]) {
+    ] as Array<[string, string]>) {
       await git(["checkout", "-b", branch, parent]);
       writeFileSync(join(repo, `${branch}.txt`), `${branch}\n`);
       await git(["add", "-A"]);
