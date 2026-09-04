@@ -162,7 +162,7 @@ export function registerPrCommand(program: Command): void {
     .description("Check out a pull request locally")
     .action(async (prNumber: string) => {
       header("Checkout Pull Request");
-      if (!(await requireGitHubRepo())) return;
+      if (!(await requireGitRepo())) return;
       const num = parseInt(prNumber, 10);
       if (isNaN(num)) {
         fail(`Invalid PR number: ${prNumber}`);

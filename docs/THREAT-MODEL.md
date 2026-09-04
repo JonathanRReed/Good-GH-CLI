@@ -75,6 +75,10 @@ warns before installation, and documents the privilege boundary in help output.
 
 - Protecting a user from a malicious `git`, `gh`, AI CLI, or plugin they chose
   to install
+- Defending against malicious processes already running as the same user, or
+  privileged processes that can modify that user's files. Cache ownership and
+  symlink checks prevent accidental redirection; they are not a filesystem
+  sandbox against adversarial directory replacement between system calls.
 - Guaranteeing that pattern-based AI redaction catches every secret
 - Replacing GitHub permissions, branch protection, or organization policy
 - Collecting telemetry or checking for updates automatically

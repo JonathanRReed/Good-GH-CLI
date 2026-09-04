@@ -26,7 +26,12 @@ audit. Published assets and registry versions are separate from code on main.
 | A16 numeric config validation | config service; native 23; release-safety.test.ts |
 
 Additional cases cover API argv/dry-run, quoted secret paths, bounded subprocess
-output, Claude tool isolation, local Ollama verification, and plugin recovery.
+output, Claude tool isolation, local Ollama verification, and plugin recovery. Follow-up cases 44-52 cover detached splitting, optional AI
+fields, malformed plugin metadata, GH_REPO host precedence, literal hook
+arguments, custom hook names, preserved restack pointers and local PR checkout.
+Release-note extraction and cache replacement during asynchronous fetches have
+source-level regressions. Adversarial same-user filesystem mutation remains an
+explicit non-goal in THREAT-MODEL.md, not a claimed isolation guarantee.
 
 ## Required automated gates
 

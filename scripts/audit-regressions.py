@@ -424,6 +424,75 @@ class Audit(unittest.TestCase):
         self.assertTrue(any(x.get('error') for x in replies))
         self.assertTrue(any(x.get('id')==3 and x.get('result')=={} for x in replies))
 
+    def test_44_detached_split_creates_only_the_planned_commits(self):
+        self.ok(self.git('checkout','--detach'))
+        main=self.ok(self.git('rev-parse','main')).stdout
+        self.stage_change();(self.repo/'second.txt').write_text('second\n');self.ok(self.git('add','second.txt'))
+        tree=self.ok(self.git('write-tree')).stdout
+        self.ok(self.ggh('c','--split','-y','--provider','ollama',env=self.split_env()))
+        self.assertEqual(self.ok(self.git('rev-list','--count','main..HEAD')).stdout.strip(),'2')
+        self.assertEqual(self.ok(self.git('rev-parse','main')).stdout,main)
+        self.assertEqual(self.ok(self.git('rev-parse','HEAD^{tree}')).stdout,tree)
+
+    def test_45_split_optional_body_is_normalized(self):
+        self.feature();self.stage_change()
+        plan={'commits':[{'subject':'feat: omitted body','files':['file.txt']}]}
+        self.ok(self.ggh('c','--split','-y','--provider','ollama',env={'AUDIT_PLAN':json.dumps(plan)}))
+        self.assertEqual(self.ok(self.git('rev-list','--count','main..HEAD')).stdout.strip(),'1')
+
+    def test_46_malformed_plugin_manifest_is_recoverable(self):
+        d=self.home/'.config/good-gh/plugins';d.mkdir()
+        (d/'manifest.json').write_text(json.dumps([{'name':'broken'},{'name':'bad-description','installedAt':'2026-09-04T00:00:00Z','description':42}]))
+        self.ok(self.ggh('plugin','list',env={'GGH_NO_PLUGINS':'1'}))
+        self.assertEqual(json.loads(self.ok(self.ggh('plugin','list','--json',env={'GGH_NO_PLUGINS':'1'})).stdout),[])
+
+    def test_47_gh_repo_host_controls_auth_and_api_routing(self):
+        env={'GH_REPO':'enterprise.example/audit/remote'}
+        self.ok(self.ggh('pr','--json',cwd=self.root,env=env))
+        self.ok(self.ggh('api','repos/{owner}/{repo}','--json',cwd=self.root,env=env))
+        calls=[json.loads(x) for x in (self.root/'gh.jsonl').read_text().splitlines()]
+        auth=[x for x in calls if x['argv'][:2]==['auth','status']]
+        self.assertTrue(auth)
+        self.assertTrue(all(x['argv'][x['argv'].index('--hostname')+1]=='enterprise.example' for x in auth))
+        api=next(x for x in calls if x['argv'][0]=='api')
+        self.assertEqual(api['GH_HOST'],'enterprise.example')
+        self.assertEqual(api['GH_REPO'],'audit/remote')
+
+    def test_48_explicit_repo_overrides_gh_repo_host(self):
+        self.ok(self.ggh('pr','--json','-R','github.com/audit/explicit',cwd=self.root,env={'GH_REPO':'enterprise.example/audit/other'}))
+        calls=[json.loads(x) for x in (self.root/'gh.jsonl').read_text().splitlines()]
+        auth=next(x for x in calls if x['argv'][:2]==['auth','status'])
+        self.assertEqual(auth['argv'][auth['argv'].index('--hostname')+1],'github.com')
+        req=next(x for x in calls if x['argv'][:2]==['pr','list'])
+        self.assertIn('github.com/audit/explicit',req['argv'])
+
+    def test_49_hook_command_does_not_execute_shell_substitution(self):
+        command="hook check $(python3 -c 'from pathlib import Path; Path(\"hook-canary\").write_text(\"unexpected\")')"
+        self.ok(self.ggh('hook','install','pre-commit','--command',command,'-y'))
+        self.stage_change();self.git('commit','-m','test hook')
+        self.assertFalse((self.repo/'hook-canary').exists(),'hook command substitution executed instead of staying literal')
+
+    def test_50_custom_hook_basename_round_trip(self):
+        name='pre-commit.local_test'
+        self.ok(self.ggh('hook','install',name,'-y'))
+        listed=json.loads(self.ok(self.ggh('hook','list','--json')).stdout)
+        self.assertTrue(any(x['name']==name for x in listed))
+        self.ok(self.ggh('hook','remove',name,'-y'))
+        self.assertFalse((self.repo/'.git/hooks'/name).exists())
+
+    def test_51_restack_keeps_short_parent_pointer(self):
+        self.test_17_restack_replays_amended_parent_correctly()
+        self.assertEqual(self.ok(self.git('config','branch.child.gh-merge-base')).stdout.strip(),'parent')
+        graph=json.loads(self.ok(self.ggh('stack','list','--all','--json')).stdout)
+        self.assertEqual(next(x for x in graph if x['branch']=='child')['parent'],'parent')
+
+    def test_52_pr_checkout_requires_a_local_worktree(self):
+        p=self.ggh('pr','checkout','42','-R','audit/remote',cwd=self.root)
+        self.assertNotEqual(p.returncode,0)
+        log=self.root/'gh.jsonl'
+        calls=[json.loads(x) for x in log.read_text().splitlines()] if log.exists() else []
+        self.assertFalse(any(x['argv'][:2]==['pr','checkout'] for x in calls),'remote target bypassed local checkout guard')
+
 
 class Results(unittest.TextTestResult):
     def __init__(self,*a,**kw):super().__init__(*a,**kw);self.records=[]

@@ -214,11 +214,11 @@ export abstract class CliAIProvider implements AIProvider {
     // filenames can turn an invalid model response into an unintended commit.
     if (!parsed || !Array.isArray(parsed.commits) || !parsed.commits.length ||
         parsed.commits.some((c) => !c || typeof c.subject !== "string" || !c.subject.trim() ||
-          typeof c.body !== "string" || !Array.isArray(c.files) || !c.files.length ||
+          (c.body !== undefined && typeof c.body !== "string") || !Array.isArray(c.files) || !c.files.length ||
           c.files.some((file) => typeof file !== "string" || !file))) {
       throw new AIGenerationError(this.id, model, "empty_response", "invalid split plan; no commits were attempted");
     }
-    return parsed;
+    return { commits: parsed.commits.map((c) => ({ ...c, body: c.body ?? "" })) };
   }
 
   async generateIssueFromDiff(

@@ -31,6 +31,12 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   unparseable file identity. Bound subprocess output and preserve inherited
   environment keys when callers supply overrides.
 
+- Follow-up review: support detached-HEAD splits and optional model body fields,
+  validate plugin metadata, honor Enterprise hosts from GH_REPO, require a local
+  worktree for PR checkout, and refuse publishing empty release notes.
+- Parse custom hook commands as literal quoted arguments without shell expansion;
+  preserve safe custom hook basenames and Windows path separators.
+
 ### Hardened
 
 - Refuse remote/cloud Ollama endpoints and unverified model aliases before

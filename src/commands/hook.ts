@@ -5,11 +5,12 @@ import { join } from "node:path";
 import { checkLargeFiles, getGitPath, getStagedDiff, getStatus, requireGitRepo } from "../services/git.ts";
 import { scanCodeHygiene } from "../utils/diff.ts";
 import { emitJson, fail, header, p, pc, selectMenu, jsonOut, unknownAction, confirmOrAbort } from "../utils/ui.ts";
+import { parseCommandArguments, quoteShellArgument } from "../utils/command-args.ts";
 import { dryRun } from "../utils/flags.ts";
 
 /** Hooks are executable files, never paths supplied by a caller. */
 function safeHookName(name: string): boolean {
-  return /^[A-Za-z0-9][A-Za-z0-9-]*$/.test(name);
+  return /^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(name);
 }
 
 /** Atomic replacement avoids following a symlink or leaving a partial script. */
@@ -42,14 +43,14 @@ const KNOWN_HOOKS = [
 ] as const;
 
 function buildHookScript(command: string): string {
-  const normalized = command.trim().replace(/^ggh\s+/, "");
-  if (!normalized || /[\r\n\0]/.test(normalized)) {
-    throw new Error("Hook command must be a nonempty single line.");
-  }
+  const args = parseCommandArguments(command);
+  if (args[0] === "ggh" || args[0] === "good-gh") args.shift();
+  if (!args.length) throw new Error("Hook command must name a ggh operation.");
   return `#!/bin/sh
-# Installed by ggh hook install. Custom commands run with your privileges.
-exec ggh ${normalized} "$@"
+# Installed by ggh hook install. Arguments are literal; shell expansion is disabled.
+exec ggh ${args.map(quoteShellArgument).join(" ")} "$@"
 `;
+
 }
 
 const DEFAULT_COMMAND = "hook check";

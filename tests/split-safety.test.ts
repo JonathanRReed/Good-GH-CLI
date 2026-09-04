@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { captureStagedSnapshot, executeSplitCommits, validateSplitPlan } from "../src/services/git/split.ts";
@@ -28,6 +28,26 @@ describe("split index transactions", () => {
     expect(git("show", "HEAD:one.txt")).toBe("staged");
     expect(readFileSync(join(root, "one.txt"), "utf8")).toBe("unstaged private bytes\n");
     expect(git("diff", "--cached")).toBe("");
+  });
+  it("supports detached HEAD without changing named branches or adding duplicate commits", async () => {
+    const main = git("rev-parse", "main");
+    git("checkout", "--detach");
+    const snapshot = await captureStagedSnapshot(root);
+    const completed = await executeSplitCommits(snapshot, [group(["one.txt"]), group(["two.txt"])], {});
+    expect(completed).toHaveLength(2);
+    expect(git("rev-list", "--count", `${main}..HEAD`)).toBe("2");
+    expect(git("rev-parse", "main")).toBe(main);
+    expect(git("rev-parse", "HEAD^{tree}")).toBe(snapshot.tree);
+    expect(git("diff", "--cached")).toBe("");
+  });
+  it("removes a staged file before replacing it with a directory in one group", async () => {
+    rmSync(join(root, "one.txt")); mkdirSync(join(root, "one.txt"));
+    writeFileSync(join(root, "one.txt", "nested.txt"), "nested staged\n"); git("add", "-A");
+    const snapshot = await captureStagedSnapshot(root);
+    await executeSplitCommits(snapshot, [group(["one.txt/nested.txt", "one.txt"]), group(["two.txt"])], {});
+    expect(git("rev-parse", "HEAD^{tree}")).toBe(snapshot.tree);
+    expect(git("show", "HEAD:one.txt/nested.txt")).toBe("nested staged");
+    expect(git("rev-list", "--count", "HEAD")).toBe("3");
   });
   for (const [name, groups] of Object.entries({
     extra: [group(["one.txt", "two.txt", "private.txt"])],

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -54,6 +54,17 @@ describe("cache ownership", () => {
     await cached("not-stored", async () => 1);
     clearCache();
     expect(readdirSync(join(root, "victim"))).toEqual(["canary.json"]);
+  });
+  it.skipIf(process.platform === "win32")("does not write through a cache directory replaced while awaiting a response", async () => {
+    const dir = join(root, "cache", "good-gh");
+    const victim = join(root, "victim"); mkdirSync(victim);
+    const value = await cached("replaced", async () => {
+      renameSync(dir, `${dir}-previous`);
+      symlinkSync(victim, dir);
+      return "fresh response";
+    });
+    expect(value).toBe("fresh response");
+    expect(readdirSync(victim)).toEqual([]);
   });
   it("does not reuse a mismatched cache envelope", async () => {
     await cached("first", async () => "first");
