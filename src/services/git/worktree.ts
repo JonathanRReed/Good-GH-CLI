@@ -3,8 +3,8 @@
  */
 
 import { run } from "../../utils/exec.ts";
-import { existsSync, appendFileSync, readFileSync, copyFileSync, realpathSync } from "node:fs";
-import { join, isAbsolute, relative } from "node:path";
+import { existsSync, appendFileSync, readFileSync, copyFileSync, realpathSync, statSync } from "node:fs";
+import { dirname, join, isAbsolute } from "node:path";
 import { execGitWithRetry } from "./exec.ts";
 import { getCurrentBranch, getRepoRoot, hasBranch, hasCommits } from "./branch.ts";
 import { getBranchMergeBase, setBranchMergeBase } from "./stack.ts";
@@ -19,6 +19,31 @@ export interface WorktreeInfo {
 
 export interface WorktreeAddResult {
   copiedEnvFiles: string[];
+}
+
+
+function sameDirectory(left: string, right: string): boolean {
+  try {
+    const leftStat = statSync(left, { bigint: true });
+    const rightStat = statSync(right, { bigint: true });
+    return leftStat.dev === rightStat.dev && leftStat.ino === rightStat.ino;
+  } catch {
+    return false;
+  }
+}
+
+
+function isStrictDescendant(directory: string, candidate: string): boolean {
+  let current = realpathSync(candidate);
+  let movedToParent = false;
+
+  while (true) {
+    if (sameDirectory(directory, current)) return movedToParent;
+    const parent = dirname(current);
+    if (parent === current) return false;
+    current = parent;
+    movedToParent = true;
+  }
 }
 
 
@@ -73,20 +98,15 @@ export async function worktreeAdd(
 
   // If destination folder exists on disk, check if it's an orphaned worktree directory
   if (existsSync(resolvedPath)) {
-    const canonicalPath = realpathSync(resolvedPath);
     // Never recursively delete anything outside the repository
-    const rel = relative(repoRoot, canonicalPath);
-    if (!rel || rel.startsWith("..") || isAbsolute(rel)) {
+    if (!isStrictDescendant(repoRoot, resolvedPath)) {
       throw new Error(
         `Refusing to clean up '${resolvedPath}': it is outside the repository root '${repoRoot}'.`,
       );
     }
 
     const activeTrees = await worktreeList(repoRoot);
-    const isActive = activeTrees.some((w) => {
-      if (!existsSync(w.path)) return false;
-      return realpathSync(w.path) === canonicalPath;
-    });
+    const isActive = activeTrees.some((w) => sameDirectory(w.path, resolvedPath));
     if (isActive) {
       throw new Error(`Worktree directory '${resolvedPath}' is already an active worktree.`);
     }

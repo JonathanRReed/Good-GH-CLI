@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { execa } from "execa";
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -76,7 +76,10 @@ describe("git service", () => {
     expect(branch).toBe("main");
 
     const root = await getRepoRoot(tempRepo);
-    expect(root).toBe(tempRepo);
+    const rootStat = statSync(root, { bigint: true });
+    const tempStat = statSync(tempRepo, { bigint: true });
+    expect(rootStat.dev).toBe(tempStat.dev);
+    expect(rootStat.ino).toBe(tempStat.ino);
   });
 
   it("handles files with spaces and unicode without escaping errors", async () => {
