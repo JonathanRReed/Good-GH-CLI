@@ -1,6 +1,17 @@
 #!/usr/bin/env bun
 /** Build, Developer-ID sign, and verify a universal macOS CLI DMG. */
-import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
 const root = join(import.meta.dir, "..");
@@ -99,7 +110,24 @@ writeFileSync(
 );
 
 if (existsSync(dmg)) rmSync(dmg);
-run("hdiutil", ["create", "-volname", `Good GH ${version}`, "-srcfolder", payload, "-format", "UDZO", "-ov", dmg]);
+const imageTempDir = mkdtempSync(join(tmpdir(), "good-gh-dmg-"));
+const temporaryDmg = join(imageTempDir, basename(dmg));
+try {
+  run("diskutil", [
+    "image",
+    "create",
+    "from",
+    "--volumeName",
+    `Good GH ${version}`,
+    "--format",
+    "UDZO",
+    payload,
+    temporaryDmg,
+  ]);
+  renameSync(temporaryDmg, dmg);
+} finally {
+  rmSync(imageTempDir, { recursive: true, force: true });
+}
 run("codesign", ["--force", "--timestamp", "--sign", identity, dmg]);
 run("codesign", ["--verify", "--strict", "--verbose=2", dmg]);
 run("hdiutil", ["verify", dmg]);
