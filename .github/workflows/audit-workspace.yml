@@ -1,0 +1,41 @@
+name: Audit verification workspace
+
+on:
+  push:
+    branches: [fix/release-safety-audit]
+    paths: [.github/workflows/audit-workspace.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  workspace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun install --frozen-lockfile
+      - name: Package tracked sources and public development dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEST="$RUNNER_TEMP/audit-workspace"
+          mkdir -p "$DEST/source" "$DEST/runtime"
+          git archive HEAD | tar -x -C "$DEST/source"
+          git bundle create "$DEST/repository.bundle" --all
+          cp -a node_modules "$DEST/source/node_modules"
+          cp "$(command -v bun)" "$DEST/runtime/bun"
+          git rev-parse HEAD > "$DEST/source-commit.txt"
+          bun --revision > "$DEST/bun-version.txt"
+          tar -czf "$RUNNER_TEMP/audit-workspace.tar.gz" -C "$DEST" .
+      - uses: actions/upload-artifact@v7
+        with:
+          name: audit-verification-workspace
+          path: ${{ runner.temp }}/audit-workspace.tar.gz
+          retention-days: 1
