@@ -162,7 +162,9 @@ if (notaryProfile) {
 }
 
 const checksum = run("shasum", ["-a", "256", dmg]);
-writeFileSync(`${dmg}.sha256`, `${checksum}\n`);
+const sha256 = checksum.split(/\s+/)[0];
+if (!sha256) throw new Error("Could not parse the DMG checksum.");
+writeFileSync(`${dmg}.sha256`, `${sha256}  ${basename(dmg)}\n`);
 console.log(JSON.stringify({
   artifact: dmg,
   file: basename(dmg),
@@ -170,5 +172,5 @@ console.log(JSON.stringify({
   architectures: architectures.split(/\s+/).sort(),
   identity,
   notarized: Boolean(notaryProfile),
-  sha256: checksum.split(/\s+/)[0],
+  sha256,
 }, null, 2));
