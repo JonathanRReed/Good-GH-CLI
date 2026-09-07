@@ -261,6 +261,9 @@ export async function getStatus(cwd = process.cwd()): Promise<GitStatusResult> {
     };
   }
 
+  if (statusResult.exitCode !== 0) {
+    throw new Error(`Could not read Git status: ${statusResult.stderr.trim() || "git status failed"}`);
+  }
   const stdout = statusResult.stdout;
 
   const staged: ChangedFile[] = [];
@@ -287,7 +290,9 @@ export async function getStatus(cwd = process.cwd()): Promise<GitStatusResult> {
 
     // For renames/copies, consume the original path so it is not reported
     // as a separate file. `filePath` is already the new (target) path.
+    let originalPath: string | undefined;
     if ((x === "R" || x === "C") && i + 1 < rawEntries.length) {
+      if (x === "R") originalPath = rawEntries[i + 1];
       i++;
     }
 
@@ -310,7 +315,7 @@ export async function getStatus(cwd = process.cwd()): Promise<GitStatusResult> {
       if (x === "A") status = "added";
       else if (x === "D") status = "deleted";
       else if (x === "R" || x === "C") status = "renamed";
-      staged.push({ path: filePath, status, staged: true });
+      staged.push({ path: filePath, status, staged: true, ...(originalPath ? { originalPath } : {}) });
     }
 
     // Unstaged changes (Y column)
@@ -341,7 +346,7 @@ export async function getStatus(cwd = process.cwd()): Promise<GitStatusResult> {
 
 export async function stageFiles(files: string[], cwd = process.cwd()): Promise<void> {
   if (files.length === 0) return;
-  await execGitWithRetry(["add", "--", ...files], { cwd });
+  await execGitWithRetry(["--literal-pathspecs", "add", "--", ...files], { cwd: await getRepoRoot(cwd) });
 }
 
 
@@ -452,7 +457,7 @@ export async function isValidCommit(sha: string, cwd = process.cwd()): Promise<b
 
 
 export async function applyPatch(patch: string, cwd = process.cwd()): Promise<void> {
-  await execGitWithRetry(["apply", "--whitespace=fix"], { cwd, input: patch });
+  await execGitWithRetry(["apply", "--whitespace=fix"], { cwd: await getRepoRoot(cwd), input: patch });
 }
 
 
@@ -482,6 +487,7 @@ export async function checkLargeFiles(
   const warnings: LargeFileCheckResult["warnings"] = [];
   const wanted = new Set(files.filter((f) => f.status !== "deleted").map((f) => f.path));
   if (wanted.size === 0) return { blocked, warnings };
+  cwd = await getRepoRoot(cwd);
   const { stdout } = await run("git", ["ls-files", "--stage", "-z"], { cwd });
   const entries: Array<{ path: string; oid: string }> = [];
   for (const record of stdout.split("\0")) {
@@ -551,26 +557,56 @@ export async function checkSubmodules(cwd = process.cwd()): Promise<SubmoduleSta
 }
 
 
+export interface SquashPreview {
+  head: string;
+  branch: string;
+  base: string | null;
+  previousMessages: string[];
+}
+
+/** Inspect the exact range without rewriting history or changing the index. */
+export async function getSquashPreview(count: number, cwd = process.cwd()): Promise<SquashPreview> {
+  if (!Number.isSafeInteger(count) || count <= 1) throw new Error("Squash count must be at least 2.");
+  const total = await getCommitCount(cwd);
+  if (total < count) throw new Error(`Cannot squash ${count} commits: only ${total} commit(s) available.`);
+  const head = (await run("git", ["rev-parse", "--verify", "HEAD"], { cwd })).stdout.trim();
+  const branch = await getCurrentBranch(cwd);
+  const base = count === total ? null : (await run("git", ["rev-parse", "--verify", `HEAD~${count}`], { cwd })).stdout.trim();
+  if (base === null && await isDetachedHead(cwd)) {
+    throw new Error("Create a branch before squashing a history that includes the root commit.");
+  }
+  const { stdout } = await run("git", ["log", "--format=%s", base ? `${base}..${head}` : head], { cwd });
+  const previousMessages = stdout.trimEnd().split("\n");
+  if (previousMessages.length !== count) {
+    throw new Error("The selected range crosses merge history. Choose an unambiguous linear range or the full history.");
+  }
+  return { head, branch, base, previousMessages };
+}
+
 export async function squashCommits(
   count: number,
   cwd = process.cwd(),
-): Promise<{ previousMessages: string[]; stagedCount: number }> {
-  if (count <= 1) {
-    throw new Error("Squash count must be at least 2.");
-  }
-  const total = await getCommitCount(cwd);
-  if (total < count) {
-    throw new Error(`Cannot squash ${count} commits: only ${total} commit(s) available.`);
-  }
-
-  const { stdout } = await run("git", ["log", `-n`, count.toString(), "--pretty=format:%s"], { cwd });
-  const previousMessages = stdout.split("\n").filter(Boolean);
-
-  await execGitWithRetry(["reset", "--soft", `HEAD~${count}`], { cwd });
+  expected?: Pick<SquashPreview, "head" | "branch">,
+): Promise<{ previousMessages: string[]; stagedCount: number; recoveryRef: string }> {
+  const preview = await getSquashPreview(count, cwd);
   const status = await getStatus(cwd);
-  return { previousMessages, stagedCount: status.staged.length };
+  if (status.hasChanges) throw new Error("Squash requires a clean index and working tree. Preserve your uncommitted changes first.");
+  if (status.branch !== preview.branch || (expected && (preview.head !== expected.head || preview.branch !== expected.branch))) {
+    throw new Error("Repository changed while preparing the squash. Nothing was rewritten; retry after inspecting git status.");
+  }
+  // Keep the original history reachable even if a hook rejects the new commit.
+  const recoveryRef = `refs/ggh/squash/${preview.head}`;
+  await execGitWithRetry(["update-ref", recoveryRef, preview.head], { cwd });
+  if (preview.base) {
+    await execGitWithRetry(["reset", "--soft", preview.base], { cwd });
+  } else {
+    // Leave the symbolic HEAD attached to its now-unborn branch. The complete
+    // original tree stays staged for the new root commit.
+    await execGitWithRetry(["update-ref", "-d", "HEAD", preview.head], { cwd });
+  }
+  const after = await getStatus(cwd);
+  return { previousMessages: preview.previousMessages, stagedCount: after.staged.length, recoveryRef };
 }
-
 
 export async function commit(
   subject: string,

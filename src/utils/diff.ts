@@ -1,5 +1,7 @@
 export interface ChangedFile {
   path: string;
+  /** Repository-relative source of a staged rename, when present. */
+  originalPath?: string;
   status: "added" | "modified" | "deleted" | "renamed" | "untracked" | "conflict";
   staged: boolean;
 }

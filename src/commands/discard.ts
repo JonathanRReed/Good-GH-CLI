@@ -27,11 +27,18 @@ export function registerDiscardCommand(program: Command): void {
       if (!(await requireGitRepo())) return;
 
       const status = await getStatus();
+      // A partially staged file appears twice in status. Restore it once, with
+      // the staged entry taking precedence and retaining the rename source.
+      const seen = new Set<string>();
       const allDirty = [
-        ...status.staged.map((f) => ({ path: f.path, staged: true, untracked: false, status: f.status })),
-        ...status.unstaged.map((f) => ({ path: f.path, staged: false, untracked: false, status: f.status })),
-        ...status.untracked.map((f) => ({ path: f.path, staged: false, untracked: true, status: "untracked" })),
-      ];
+        ...status.staged.map((f) => ({ ...f, untracked: false })),
+        ...status.unstaged.map((f) => ({ ...f, untracked: false })),
+        ...status.untracked.map((f) => ({ ...f, untracked: true })),
+      ].filter((f) => {
+        if (seen.has(f.path)) return false;
+        seen.add(f.path);
+        return true;
+      });
 
       if (allDirty.length === 0) {
         if (jsonOut({ discarded: [], count: 0 })) return;
@@ -115,6 +122,7 @@ export function registerDiscardCommand(program: Command): void {
       s.start("Discarding file changes...");
       try {
         await discardFiles(toDiscard);
+        if (jsonOut({ discarded: toDiscard.map((f) => f.path), count: toDiscard.length })) return;
         s.stop(pc.green(`Discarded changes in ${toDiscard.length} file(s)!`));
         p.outro(pc.green("Working tree restored."));
       } catch (err) {

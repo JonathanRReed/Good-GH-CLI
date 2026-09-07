@@ -26,8 +26,8 @@ export async function push(
     throw new Error("No git remotes configured. Please add a remote (e.g. `git remote add origin <url>`) before pushing.");
   }
 
-  const remote = options.remote || (remotes.includes("origin") ? "origin" : (remotes.at(0) ?? "origin"));
   const branch = options.branch || (await getCurrentBranch(cwd));
+  if (!(await hasBranch(branch, cwd))) throw new Error(`Local branch "${branch}" does not exist.`);
 
   const args = ["push"];
   if (options.noVerify) {
@@ -36,14 +36,19 @@ export async function push(
   if (options.forceWithLease) {
     args.push("--force-with-lease");
   }
-  if (options.setUpstream) {
-    args.push("-u", remote, branch);
-  } else {
-    // Check if tracking branch exists for this branch
-    const tracking = await getRemoteTrackingBranch(cwd, branch);
-    if (!tracking) {
-      args.push("-u", remote, branch);
-    }
+  const tracking = await getRemoteTrackingBranch(cwd, branch);
+  // Unqualified pushes keep Git's configured refspec/upstream behavior. Once a
+  // caller selects a target, never let push.default=matching publish other refs.
+  if (options.remote || options.branch || options.setUpstream || !tracking) {
+    const keys = [`branch.${branch}.pushRemote`, "remote.pushDefault", `branch.${branch}.remote`];
+    const configured = await Promise.all(keys.map(async (key) => {
+      const result = await run("git", ["config", "--get", key], { cwd, reject: false });
+      return result.exitCode === 0 ? result.stdout.trim() : "";
+    }));
+    const remote = options.remote || configured.find(Boolean) || (remotes.includes("origin") ? "origin" : remotes[0]!);
+    if (options.setUpstream || !tracking) args.push("-u");
+    const ref = `refs/heads/${branch}`;
+    args.push("--", remote, `${ref}:${ref}`);
   }
 
   await execGitWithRetry(args, { cwd, stdio: "inherit" });
@@ -230,32 +235,43 @@ export async function resolveConflict(
   strategy: "ours" | "theirs" | "mark",
   cwd = process.cwd(),
 ): Promise<void> {
-  if (strategy === "ours") {
-    await execGitWithRetry(["checkout", "--ours", "--", file], { cwd });
-    await execGitWithRetry(["add", "--", file], { cwd });
-  } else if (strategy === "theirs") {
-    await execGitWithRetry(["checkout", "--theirs", "--", file], { cwd });
-    await execGitWithRetry(["add", "--", file], { cwd });
-  } else if (strategy === "mark") {
-    await execGitWithRetry(["add", "--", file], { cwd });
+  cwd = await getRepoRoot(cwd);
+  if (strategy === "ours" || strategy === "theirs") {
+    await execGitWithRetry(["--literal-pathspecs", "checkout", `--${strategy}`, "--", file], { cwd });
   }
+  await execGitWithRetry(["--literal-pathspecs", "add", "--", file], { cwd });
 }
 
 
 export async function discardFiles(
-  files: { path: string; staged?: boolean; untracked?: boolean }[],
+  files: { path: string; originalPath?: string; staged?: boolean; untracked?: boolean }[],
   cwd = process.cwd(),
 ): Promise<void> {
-  const hasUntracked = files.some((f) => f.untracked);
-  const root = hasUntracked ? await getRepoRoot(cwd) : "";
-
-  for (const f of files) {
-    if (f.untracked) {
-      rmSync(join(root, f.path), { force: true, recursive: true });
-    } else if (f.staged) {
-      await execGitWithRetry(["restore", "--staged", "--worktree", "--", f.path], { cwd });
-    } else {
-      await execGitWithRetry(["restore", "--", f.path], { cwd });
+  if (!files.length) return;
+  const root = await getRepoRoot(cwd);
+  const untracked = new Set(files.filter((f) => f.untracked).map((f) => f.path));
+  const staged = new Set<string>();
+  const unstaged = new Set<string>();
+  for (const file of files) {
+    if (file.untracked) continue;
+    if (!file.staged) { unstaged.add(file.path); continue; }
+    staged.add(file.path);
+    if (file.originalPath) {
+      // A user may recreate the old name after staging a rename. Restoring the
+      // rename must not silently overwrite that now-untracked content.
+      const other = await run("git", ["--literal-pathspecs", "ls-files", "--others", "-z", "--", file.originalPath], { cwd: root });
+      if (other.stdout && !untracked.has(file.originalPath)) {
+        throw new Error(`Refusing to overwrite untracked rename source ${file.originalPath}. Move it aside or explicitly include it for deletion.`);
+      }
+      staged.add(file.originalPath);
     }
   }
+  // Delete explicitly selected untracked paths before restoring renames, not
+  // afterwards: a restored source path must survive the operation.
+  for (const path of untracked) rmSync(join(root, path), { force: true, recursive: true });
+  if (staged.size) {
+    await execGitWithRetry(["--literal-pathspecs", "restore", "--staged", "--worktree", "--", ...staged], { cwd: root });
+  }
+  const remaining = [...unstaged].filter((path) => !staged.has(path));
+  if (remaining.length) await execGitWithRetry(["--literal-pathspecs", "restore", "--", ...remaining], { cwd: root });
 }

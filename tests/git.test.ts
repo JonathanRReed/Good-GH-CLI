@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { execa } from "execa";
 import { mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -46,7 +46,7 @@ import { getUnmergedCommits } from "./git-helpers.ts";
 describe("git service", () => {
   let tempRepo: string;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     tempRepo = realpathSync(mkdtempSync(join(tmpdir(), "good-gh-test-")));
     await execa("git", ["init", "-b", "main"], { cwd: tempRepo });
     await execa("git", ["config", "user.name", "Test User"], { cwd: tempRepo });
@@ -57,7 +57,7 @@ describe("git service", () => {
     await execa("git", ["commit", "-m", "initial commit"], { cwd: tempRepo });
   });
 
-  afterAll(() => {
+  afterEach(() => {
     try {
       rmSync(tempRepo, { recursive: true, force: true });
     } catch {
