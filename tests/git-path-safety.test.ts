@@ -47,6 +47,8 @@ beforeEach(() => {
   git("config", "user.name", "Test");
   git("config", "user.email", "test@example.invalid");
   git("config", "commit.gpgsign", "false");
+  // Keep byte-level fixtures independent of the runner's newline policy.
+  git("config", "core.autocrlf", "false");
   mkdirSync(join(root, "nested"));
   write("file.txt");
   write("nested/file.txt");
@@ -73,6 +75,14 @@ describe("repository-root and literal path boundaries", () => {
     write("nested/file.txt", "keep\n");
     await discardFiles([{ path: "file.txt" }], join(root, "nested"));
     expect(readFileSync(join(root, "file.txt"), "utf8")).toBe("original\n");
+    expect(readFileSync(join(root, "nested/file.txt"), "utf8")).toBe("keep\n");
+  });
+  it("preserves the repository CRLF policy when restoring a selected path", async () => {
+    git("config", "core.autocrlf", "true");
+    write("file.txt", "discard\n");
+    write("nested/file.txt", "keep\n");
+    await discardFiles([{ path: "file.txt" }], join(root, "nested"));
+    expect(readFileSync(join(root, "file.txt"), "utf8")).toBe("original\r\n");
     expect(readFileSync(join(root, "nested/file.txt"), "utf8")).toBe("keep\n");
   });
   it("does not discard other files matched by a selected filename", async () => {
