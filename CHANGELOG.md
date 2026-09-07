@@ -7,6 +7,19 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Resolve selected Git paths from the repository root, including nested working
+  directories, staged-object checks, split commits, conflict resolution and
+  review patches. Treat selected filenames literally, not as Git pathspecs.
+- Restore both sides of staged renames without overwriting untracked replacement
+  files. Discard partially staged files once and emit the documented JSON result.
+- Fail closed when Git cannot read status instead of reporting a clean tree.
+- Honor explicit push destinations and branch names without publishing other
+  matching branches. Preserve configured push-remote precedence and leave
+  unqualified upstream pushes under Git's normal configuration.
+- Collect squash messages before rewriting history, reject malformed counts and
+  stale previews, support full-history squashes on named branches, and retain
+  the original history under `refs/ggh/squash/<original-head>` for recovery.
+
 - Confine cache cleanup to validated, owned entries; disable caching on unsafe
   roots and isolate responses by repository, host, and authenticated account.
   Environment-token sessions bypass disk caching.
@@ -39,6 +52,9 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Hardened
 
+- Isolate each Git service test in its own repository. Extend native checks from
+  52 to 64 cases and require positive evidence that custom hooks and valid
+  plugins actually execute, while malformed plugins remain unloaded.
 - Refuse remote/cloud Ollama endpoints and unverified model aliases before
   sending prompts. Isolate coding-client working directories and disable Claude
   tools, MCP discovery, customizations and session persistence.

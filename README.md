@@ -193,6 +193,15 @@ ggh stack list --json | jq '.[] | select(.behind > 0) | .branch'
 ggh discard --all --dry-run
 ```
 
+File selections from status are relative to the repository root, even when you
+run `ggh` from a subdirectory. Selected filenames are literal, not glob patterns.
+`discard --all` keeps untracked files unless you also pass `--include-untracked`;
+restoring a rename refuses to overwrite a newly created, untracked source file.
+
+Squash collects the new message before changing history. It keeps the original
+commits at `refs/ggh/squash/<original-head>` and reports that ref if the final
+commit fails. Inspect `git status` and the saved history before recovering.
+
 Typos get command suggestions unless the word is a Git command or one of your Git aliases, which take precedence.
 
 ## Configuration

@@ -18,6 +18,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -439,12 +440,23 @@ class Audit(unittest.TestCase):
         plan={'commits':[{'subject':'feat: omitted body','files':['file.txt']}]}
         self.ok(self.ggh('c','--split','-y','--provider','ollama',env={'AUDIT_PLAN':json.dumps(plan)}))
         self.assertEqual(self.ok(self.git('rev-list','--count','main..HEAD')).stdout.strip(),'1')
+        self.assertEqual(self.ok(self.git('log','-1','--format=%B')).stdout.strip(),'feat: omitted body')
 
     def test_46_malformed_plugin_manifest_is_recoverable(self):
         d=self.home/'.config/good-gh/plugins';d.mkdir()
-        (d/'manifest.json').write_text(json.dumps([{'name':'broken'},{'name':'bad-description','installedAt':'2026-09-04T00:00:00Z','description':42}]))
-        self.ok(self.ggh('plugin','list',env={'GGH_NO_PLUGINS':'1'}))
-        self.assertEqual(json.loads(self.ok(self.ggh('plugin','list','--json',env={'GGH_NO_PLUGINS':'1'})).stdout),[])
+        valid={'name':'valid','installedAt':'2026-09-04T00:00:00Z','description':'safe fixture'}
+        invalid=[{'name':'broken'},{'name':'bad-description','installedAt':valid['installedAt'],'description':42}]
+        (d/'manifest.json').write_text(json.dumps([*invalid,valid]))
+        for item in invalid:
+            (d/(item['name']+'.ts')).write_text('import {writeFileSync} from "node:fs"; writeFileSync("invalid-plugin-loaded","bad"); export function register() {}')
+        (d/'valid.ts').write_text('import {writeFileSync} from "node:fs"; export function register() { writeFileSync("valid-plugin-loaded","yes"); }')
+        self.ok(self.ggh('plugin','list'))
+        self.assertEqual(json.loads(self.ok(self.ggh('plugin','list','--json')).stdout),[valid])
+        self.assertFalse((self.repo/'invalid-plugin-loaded').exists())
+        self.assertTrue((self.repo/'valid-plugin-loaded').exists(),'normal plugin loading was not exercised')
+        (self.repo/'valid-plugin-loaded').unlink()
+        self.assertEqual(json.loads(self.ok(self.ggh('plugin','list','--json',env={'GGH_NO_PLUGINS':'1'})).stdout),[valid])
+        self.assertFalse((self.repo/'valid-plugin-loaded').exists(),'recovery mode loaded a plugin')
 
     def test_47_gh_repo_host_controls_auth_and_api_routing(self):
         env={'GH_REPO':'enterprise.example/audit/remote'}
@@ -467,9 +479,12 @@ class Audit(unittest.TestCase):
         self.assertIn('github.com/audit/explicit',req['argv'])
 
     def test_49_hook_command_does_not_execute_shell_substitution(self):
-        command="hook check $(python3 -c 'from pathlib import Path; Path(\"hook-canary\").write_text(\"unexpected\")')"
+        literal = "$(python3 -c 'from pathlib import Path; Path(\"hook-canary\").write_text(\"unexpected\")')"
+        command = 'api repos/audit/repo -f ' + shlex.quote('body=' + literal)
         self.ok(self.ggh('hook','install','pre-commit','--command',command,'-y'))
-        self.stage_change();self.git('commit','-m','test hook')
+        self.stage_change();self.ok(self.git('commit','-m','test hook'))
+        calls=[json.loads(x)['argv'] for x in (self.root/'gh.jsonl').read_text().splitlines()]
+        self.assertIn(['api','repos/audit/repo','-f','body='+literal],calls,'hook did not execute with literal arguments')
         self.assertFalse((self.repo/'hook-canary').exists(),'hook command substitution executed instead of staying literal')
 
     def test_50_custom_hook_basename_round_trip(self):
@@ -492,6 +507,110 @@ class Audit(unittest.TestCase):
         log=self.root/'gh.jsonl'
         calls=[json.loads(x) for x in log.read_text().splitlines()] if log.exists() else []
         self.assertFalse(any(x['argv'][:2]==['pr','checkout'] for x in calls),'remote target bypassed local checkout guard')
+
+
+    def test_53_nested_discard_uses_repository_paths(self):
+        nested=self.repo/'nested';nested.mkdir();(nested/'file.txt').write_text('nested initial\n')
+        self.ok(self.git('add','-A'));self.ok(self.git('commit','-m','nested fixture'))
+        (self.repo/'file.txt').write_text('discard root\n');(nested/'file.txt').write_text('keep nested\n')
+        result=json.loads(self.ok(self.ggh('discard','file.txt','-y','--json',cwd=nested)).stdout)
+        self.assertEqual(result,{'discarded':['file.txt'],'count':1})
+        self.assertEqual((self.repo/'file.txt').read_text(),'initial\n')
+        self.assertEqual((nested/'file.txt').read_text(),'keep nested\n')
+
+    def test_54_discard_treats_pathspec_magic_literally(self):
+        name=':(glob)*.txt'
+        (self.repo/name).write_text('initial\n');(self.repo/'other.txt').write_text('initial\n')
+        self.ok(self.git('add','-A'));self.ok(self.git('commit','-m','literal fixture'))
+        (self.repo/name).write_text('discard\n');(self.repo/'other.txt').write_text('keep\n')
+        self.ok(self.ggh('discard',name,'-y'))
+        self.assertEqual((self.repo/name).read_text(),'initial\n')
+        self.assertEqual((self.repo/'other.txt').read_text(),'keep\n')
+
+    def test_55_discard_restores_staged_rename_source(self):
+        self.ok(self.git('mv','file.txt','renamed.txt'))
+        self.ok(self.ggh('discard','--all','-y'))
+        self.assertTrue((self.repo/'file.txt').exists(),'rename source was not restored')
+        self.assertEqual((self.repo/'file.txt').read_text(),'initial\n')
+        self.assertFalse((self.repo/'renamed.txt').exists())
+        self.assertEqual(self.ok(self.git('status','--porcelain')).stdout,'')
+
+    def test_56_discard_partially_staged_addition_once(self):
+        (self.repo/'new.txt').write_text('staged\n');self.ok(self.git('add','new.txt'))
+        (self.repo/'new.txt').write_text('unstaged\n')
+        result=json.loads(self.ok(self.ggh('discard','--all','-y','--json')).stdout)
+        self.assertEqual(result,{'discarded':['new.txt'],'count':1})
+        self.assertEqual(self.ok(self.git('status','--porcelain')).stdout,'')
+
+    def test_57_corrupt_index_does_not_appear_clean(self):
+        (self.repo/'.git/index').write_text('invalid index')
+        self.assertNotEqual(self.ggh('status','--json').returncode,0)
+
+    def test_58_split_from_subdirectory_preserves_entire_staged_tree(self):
+        self.feature();nested=self.repo/'nested';nested.mkdir()
+        self.stage_change();(nested/'second.txt').write_text('nested staged\n');self.ok(self.git('add','-A'))
+        tree=self.ok(self.git('write-tree')).stdout
+        plan={'commits':[{'subject':'feat: nested split','body':'','files':['file.txt','nested/second.txt']}]}
+        self.ok(self.ggh('c','--split','-y','--provider','ollama',cwd=nested,env={'AUDIT_PLAN':json.dumps(plan)}))
+        self.assertEqual(self.ok(self.git('rev-parse','HEAD^{tree}')).stdout,tree)
+        self.assertEqual(self.ok(self.git('status','--porcelain')).stdout,'')
+        self.assertEqual(self.ok(self.git('rev-list','--count','main..HEAD')).stdout.strip(),'1')
+
+    def test_59_commit_push_does_not_publish_other_matching_branches(self):
+        remote=self.root/'remote';remote.mkdir();self.ok(self.git('init','--bare','-b','main',cwd=remote))
+        self.ok(self.git('remote','add','origin',str(remote)));self.ok(self.git('push','-u','origin','main'))
+        original=self.ok(self.git('rev-parse','main',cwd=remote)).stdout
+        self.feature();self.ok(self.git('push','-u','origin','feature'));self.ok(self.git('checkout','main'))
+        (self.repo/'private.txt').write_text('do not publish this branch\n');self.ok(self.git('add','private.txt'));self.ok(self.git('commit','-m','private main'))
+        self.ok(self.git('checkout','feature'));self.ok(self.git('config','push.default','matching'));self.stage_change()
+        self.ok(self.ggh('c','-m','push feature only','--push','-y'))
+        self.assertEqual(self.ok(self.git('rev-parse','main',cwd=remote)).stdout,original)
+        self.assertEqual(self.ok(self.git('rev-parse','feature',cwd=remote)).stdout,self.ok(self.git('rev-parse','HEAD')).stdout)
+
+    def make_squash_fixture(self):
+        for name in ['second.txt','third.txt']:
+            (self.repo/name).write_text(name+'\n');self.ok(self.git('add',name));self.ok(self.git('commit','-m',name))
+
+    def test_60_squash_cancellation_does_not_rewrite_history(self):
+        self.make_squash_fixture();head=self.ok(self.git('rev-parse','HEAD')).stdout
+        self.assertNotEqual(self.ggh('squash','2','--no-input','--no-ai').returncode,0)
+        self.assertEqual(self.ok(self.git('rev-parse','HEAD')).stdout,head)
+        self.assertEqual(self.ok(self.git('status','--porcelain')).stdout,'')
+
+    def test_61_squash_full_history_preserves_tree_and_recovery(self):
+        self.make_squash_fixture();head=self.ok(self.git('rev-parse','HEAD')).stdout.strip()
+        tree=self.ok(self.git('rev-parse','HEAD^{tree}')).stdout
+        result=json.loads(self.ok(self.ggh('squash','3','-m','entire history','--json')).stdout)
+        self.assertEqual(result['squashed'],3)
+        self.assertEqual(self.ok(self.git('rev-list','--count','HEAD')).stdout.strip(),'1')
+        self.assertEqual(self.ok(self.git('rev-parse','HEAD^{tree}')).stdout,tree)
+        self.assertEqual(self.ok(self.git('rev-parse','refs/ggh/squash/'+head)).stdout.strip(),head)
+
+    def test_62_invalid_squash_input_never_rewrites_history(self):
+        self.make_squash_fixture();head=self.ok(self.git('rev-parse','HEAD')).stdout
+        for count,message in [('2junk','message'),('2.5','message'),('2','   ')]:
+            with self.subTest(count=count,message=message):
+                self.assertNotEqual(self.ggh('squash',count,'-m',message).returncode,0)
+                self.assertEqual(self.ok(self.git('rev-parse','HEAD')).stdout,head)
+                self.assertEqual(self.ok(self.git('status','--porcelain')).stdout,'')
+
+    def test_63_discard_protects_untracked_rename_source(self):
+        self.ok(self.git('mv','file.txt','renamed.txt'));(self.repo/'file.txt').write_text('private recreation\n')
+        self.assertNotEqual(self.ggh('discard','--all','-y').returncode,0)
+        self.assertEqual((self.repo/'file.txt').read_text(),'private recreation\n')
+        self.assertTrue((self.repo/'renamed.txt').exists())
+        self.ok(self.ggh('discard','--all','--include-untracked','-y'))
+        self.assertEqual((self.repo/'file.txt').read_text(),'initial\n')
+        self.assertEqual(self.ok(self.git('status','--porcelain')).stdout,'')
+
+    def test_64_squash_hook_failure_keeps_recovery_reference(self):
+        self.make_squash_fixture();head=self.ok(self.git('rev-parse','HEAD')).stdout.strip()
+        hook=self.repo/'.git/hooks/pre-commit';hook.write_text('#!/bin/sh\nexit 1\n');hook.chmod(0o755)
+        result=self.ggh('squash','2','-m','blocked')
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('refs/ggh/squash/'+head,result.stderr)
+        self.assertEqual(self.ok(self.git('rev-parse','refs/ggh/squash/'+head)).stdout.strip(),head)
+        self.assertEqual(self.ok(self.git('diff','--cached','--name-only')).stdout.strip(),'second.txt\nthird.txt')
 
 
 class Results(unittest.TextTestResult):

@@ -2,7 +2,7 @@
 
 This is a release checklist, not a claim of perfect software or a security
 certification. The 0.4.0-beta.3 candidate addresses the September 4 pre-adoption
-audit. Published assets and registry versions are separate from code on main.
+audit and the September 7 completion pass. Published assets and registry versions are separate from code on main.
 
 ## Audit closure map
 
@@ -32,6 +32,21 @@ arguments, custom hook names, preserved restack pointers and local PR checkout.
 Release-note extraction and cache replacement during asynchronous fetches have
 source-level regressions. Adversarial same-user filesystem mutation remains an
 explicit non-goal in THREAT-MODEL.md, not a claimed isolation guarantee.
+
+## Completion regression coverage
+
+`git-path-safety.test.ts`, `push-target.test.ts` and `squash-safety.test.ts`
+cover root-relative and literal path handling, conflict resolution, staged
+rename recovery, protected untracked files, explicit push destinations,
+corrupt-index failures and squash preflight/recovery. Each Git service test
+now uses its own repository instead of inheriting dirty state from earlier tests.
+
+Native cases 53-64 exercise nested discard and split operations, literal
+filenames, staged renames, partially staged additions, corrupt indexes,
+branch-scoped pushing, cancelled/invalid/full-history squash operations,
+untracked rename sources and hook-failure recovery. Cases 45, 46 and 49 also
+assert actual commit messages, successful plugin loading and successful hook
+execution, not merely the absence of an error or canary.
 
 ## Required automated gates
 
@@ -68,3 +83,10 @@ assumes a trusted daemon and unchanged model metadata; enforce no-egress policy
 at the daemon/OS boundary as well. A split checkpoint is diagnostic/recovery
 material, not an automatic rollback of arbitrary hooks. Stop after a partial
 failure and inspect status/history before retrying.
+
+Squash keeps the original commits reachable at `refs/ggh/squash/<original-head>`.
+Message selection and AI requests finish before the reset. If a commit hook
+fails after the reset, inspect `git status` and the recovery ref before taking
+further action; arbitrary hook changes are not automatically rolled back.
+Squashing an entire history requires a named branch. A partial range that would
+include more commits through a merge than the requested count is refused.

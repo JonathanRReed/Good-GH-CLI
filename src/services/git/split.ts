@@ -1,6 +1,6 @@
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { commit, type CommitOptions } from "../git.ts";
+import { commit, getRepoRoot, type CommitOptions } from "../git.ts";
 import { getFlags } from "../runtime.ts";
 import { run } from "../../utils/exec.ts";
 import type { ChangedFile } from "../../utils/diff.ts";
@@ -39,6 +39,7 @@ async function branchAt(cwd: string): Promise<string | null> {
 
 /** Capture the staged tree before the model runs. Working-tree bytes are never read. */
 export async function captureStagedSnapshot(cwd = process.cwd()): Promise<StagedSnapshot> {
+  cwd = await getRepoRoot(cwd);
   const indexPath = await getGitPath("index", cwd);
   const head = await headAt(cwd);
   const branch = await branchAt(cwd);

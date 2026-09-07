@@ -3,7 +3,8 @@ import { getFlags } from "../services/runtime.ts";
 import {
   commit,
   getCommitCount,
-  getStagedDiff,
+  getSquashPreview,
+  type SquashPreview,
   getStatus,
   hasCommits,
   requireGitRepo,
@@ -14,7 +15,8 @@ import {
   type AIAttempt,
   type AIAttemptFailure,
 } from "../services/ai/index.ts";
-import { sanitizeDiffForAI } from "../utils/diff.ts";
+import { run } from "../utils/exec.ts";
+import { sanitizeDiffForAI, type ChangedFile } from "../utils/diff.ts";
 import {
   emitJson,
   fail,
@@ -57,14 +59,18 @@ export function registerSquashCommand(program: Command): void {
         return;
       }
 
-      let count = countArg ? parseInt(countArg, 10) : 0;
-      if (!count || isNaN(count)) {
+      let count = countArg === undefined ? 0 : Number(countArg);
+      if (countArg !== undefined && (!/^[0-9]+$/.test(countArg) || !Number.isSafeInteger(count) || count < 2)) {
+        fail("Squash count must be a whole number of at least 2.");
+        return;
+      }
+      if (countArg === undefined) {
         const input = await promptInput({
           message: `How many commits would you like to squash into one? (2 - ${totalCommits})`,
           defaultValue: "2",
           validate: (val) => {
-            const n = parseInt(val, 10);
-            if (isNaN(n) || n < 2) return "Must be at least 2 commits";
+            const n = Number(val);
+            if (!/^[0-9]+$/.test(val) || !Number.isSafeInteger(n) || n < 2) return "Must be at least 2 commits";
             if (n > totalCommits) return `Cannot exceed total repository commits (${totalCommits})`;
             return undefined;
           },
@@ -75,7 +81,7 @@ export function registerSquashCommand(program: Command): void {
           return;
         }
 
-        count = parseInt(input, 10);
+        count = Number(input);
       }
 
       if (count > totalCommits) {
@@ -85,19 +91,14 @@ export function registerSquashCommand(program: Command): void {
 
       if (dryRun(`squash the last ${count} commits into one`)) return;
 
-      const s = p.spinner();
-      s.start(`Soft-resetting last ${count} commits...`);
-
-      let previousMessages: string[];
+      let preview: SquashPreview;
       try {
-        const result = await squashCommits(count);
-        previousMessages = result.previousMessages;
-        s.stop(pc.green(`Soft-reset ${count} commits. All changes staged!`));
+        preview = await getSquashPreview(count);
       } catch (err) {
-        s.stop(pc.red("Failed to squash commits."));
         fail(String(err));
         return;
       }
+      const previousMessages = preview.previousMessages;
 
       p.log.step("Commits being squashed:");
       for (const msg of previousMessages) {
@@ -105,6 +106,10 @@ export function registerSquashCommand(program: Command): void {
       }
 
       let commitSubject = options?.message;
+      if (commitSubject !== undefined && !commitSubject.trim()) {
+        fail("Commit message cannot be empty.");
+        return;
+      }
       let commitBody = "";
 
       if (!commitSubject) {
@@ -118,7 +123,7 @@ export function registerSquashCommand(program: Command): void {
         });
 
         if (aiChoice === null) {
-          p.cancel("All changes remain staged. You can commit anytime with `ggh commit`.");
+          p.cancel("Squash cancelled. History and staged content were not changed.");
           return;
         }
 
@@ -136,12 +141,17 @@ export function registerSquashCommand(program: Command): void {
           const aiSpinner = p.spinner();
           aiSpinner.start("Generating squashed commit message with AI...");
           try {
-            const status = await getStatus();
-            const rawDiff = await getStagedDiff();
+            const base = preview.base ?? (await run("git", ["hash-object", "-t", "tree", "--stdin"], { input: "" })).stdout.trim();
+            const rawDiff = (await run("git", ["diff", "--no-relative", base, preview.head])).stdout;
+            const paths = (await run("git", ["diff", "--no-relative", "--name-status", "--no-renames", "-z", base, preview.head])).stdout.split("\0");
+            const files: ChangedFile[] = [];
+            for (let i = 0; i + 1 < paths.length; i += 2) {
+              files.push({ path: paths[i + 1]!, staged: true, status: paths[i] === "D" ? "deleted" : paths[i] === "A" ? "added" : "modified" });
+            }
             const { result: aiResult, providerName, model } = await generateCommitWithFallback(
               {
                 branch: status.branch,
-                stagedFiles: status.staged,
+                stagedFiles: files,
                 // Never send raw diffs (lockfiles, .env, secrets) to the AI provider
                 stagedDiff: sanitizeDiffForAI(rawDiff).diff,
                 customGuidance: `Consolidate these ${count} commits: ${previousMessages.join(", ")}`,
@@ -169,13 +179,24 @@ export function registerSquashCommand(program: Command): void {
 
       if (!commitSubject || commitSubject.trim().length === 0) return;
 
+      // Prompts and AI finish before the first history mutation. Recheck the
+      // original branch, HEAD and clean worktree immediately before resetting.
+      let recoveryRef: string;
+      try {
+        ({ recoveryRef } = await squashCommits(count, process.cwd(), preview));
+      } catch (err) {
+        fail(String(err));
+        return;
+      }
+      const recovery = `Original history is retained at ${recoveryRef}. Inspect git status before recovering; no automatic reset was performed.`;
+
       if (getFlags().json) {
         try {
           await commit(commitSubject, commitBody);
           emitJson({ squashed: count, subject: commitSubject, body: commitBody });
         } catch (err) {
-          emitJson({ squashed: 0, error: String(err) });
-          fail(String(err));
+          emitJson({ squashed: 0, error: String(err), recoveryRef });
+          fail(`${String(err)}\n${recovery}`);
         }
         return;
       }
@@ -188,7 +209,7 @@ export function registerSquashCommand(program: Command): void {
         p.outro(pc.bold(pc.cyan(`Commit: ${commitSubject}`)));
       } catch (err) {
         cSpinner.stop(pc.red("Commit failed."));
-        fail(String(err));
+        fail(`${String(err)}\n${recovery}`);
       }
     });
 }
