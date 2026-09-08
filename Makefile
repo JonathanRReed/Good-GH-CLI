@@ -22,15 +22,17 @@ LICDIR = $(DESTDIR)$(PREFIX)/share/licenses/good-gh-cli
 
 BUILD = build/ggh
 DIST = dist/ggh.js
+SOURCES = $(shell find src bin -type f -name '*.ts')
+BUILD_INPUTS = $(SOURCES) package.json bun.lock Makefile
 
-.PHONY: all build build-lean man completions install install-lean uninstall check clean
+.PHONY: all build build-lean man completions completions-lean install install-lean uninstall check clean
 
 all: build
 
 # Standalone binary (no Bun needed at runtime).
 build: $(BUILD)
 
-$(BUILD): bin/ggh.ts $(wildcard src/*.ts src/*/*.ts)
+$(BUILD): $(BUILD_INPUTS)
 	mkdir -p build
 	bun build bin/ggh.ts --compile --minify --outfile $(BUILD)
 # macOS kills unsigned local binaries on exec (exit 137); ad-hoc sign so the
@@ -41,7 +43,7 @@ $(BUILD): bin/ggh.ts $(wildcard src/*.ts src/*/*.ts)
 build-lean:
 	bun run build
 
-man/ggh.1: scripts/man.ts $(wildcard src/*.ts src/*/*.ts)
+man/ggh.1: scripts/man.ts $(BUILD_INPUTS)
 	bun run man
 
 man: man/ggh.1
@@ -59,38 +61,38 @@ completions-lean: build-lean
 	bun $(DIST) completion fish > build/completions/ggh.fish
 
 install: build man completions
-	mkdir -p $(BINDIR)
-	install -m755 $(BUILD) $(BINDIR)/ggh
-	mkdir -p $(MANDIR)
-	install -m644 man/ggh.1 $(MANDIR)/ggh.1
-	mkdir -p $(BASHDIR) $(ZSHDIR) $(FISHDIR)
-	install -m644 build/completions/ggh.bash $(BASHDIR)/ggh
-	install -m644 build/completions/_ggh $(ZSHDIR)/_ggh
-	install -m644 build/completions/ggh.fish $(FISHDIR)/ggh.fish
-	mkdir -p $(LICDIR)
-	install -m644 LICENSE $(LICDIR)/LICENSE
+	mkdir -p "$(BINDIR)"
+	install -m755 $(BUILD) "$(BINDIR)/ggh"
+	mkdir -p "$(MANDIR)"
+	install -m644 man/ggh.1 "$(MANDIR)/ggh.1"
+	mkdir -p "$(BASHDIR)" "$(ZSHDIR)" "$(FISHDIR)"
+	install -m644 build/completions/ggh.bash "$(BASHDIR)/ggh"
+	install -m644 build/completions/_ggh "$(ZSHDIR)/_ggh"
+	install -m644 build/completions/ggh.fish "$(FISHDIR)/ggh.fish"
+	mkdir -p "$(LICDIR)"
+	install -m644 LICENSE "$(LICDIR)/LICENSE"
 
 install-lean: build-lean man completions-lean
 # The npm launcher (bin/ggh.cjs) assumes npm's directory layout, so the
 # lean install uses a two-line wrapper: bun + the self-contained bundle.
-	mkdir -p $(DESTDIR)$(PREFIX)/share/good-gh-cli
-	install -m644 $(DIST) $(DESTDIR)$(PREFIX)/share/good-gh-cli/ggh.js
-	printf '#!/bin/sh\nexec bun $(PREFIX)/share/good-gh-cli/ggh.js "$$@"\n' > build/ggh-shim
-	mkdir -p $(BINDIR)
-	install -m755 build/ggh-shim $(BINDIR)/ggh
-	mkdir -p $(MANDIR)
-	install -m644 man/ggh.1 $(MANDIR)/ggh.1
-	mkdir -p $(BASHDIR) $(ZSHDIR) $(FISHDIR)
-	install -m644 build/completions/ggh.bash $(BASHDIR)/ggh
-	install -m644 build/completions/_ggh $(ZSHDIR)/_ggh
-	install -m644 build/completions/ggh.fish $(FISHDIR)/ggh.fish
-	mkdir -p $(LICDIR)
-	install -m644 LICENSE $(LICDIR)/LICENSE
+	mkdir -p "$(DESTDIR)$(PREFIX)/share/good-gh-cli"
+	install -m644 $(DIST) "$(DESTDIR)$(PREFIX)/share/good-gh-cli/ggh.js"
+	printf '#!/bin/sh\nexec bun "$(PREFIX)/share/good-gh-cli/ggh.js" "$$@"\n' > build/ggh-shim
+	mkdir -p "$(BINDIR)"
+	install -m755 build/ggh-shim "$(BINDIR)/ggh"
+	mkdir -p "$(MANDIR)"
+	install -m644 man/ggh.1 "$(MANDIR)/ggh.1"
+	mkdir -p "$(BASHDIR)" "$(ZSHDIR)" "$(FISHDIR)"
+	install -m644 build/completions/ggh.bash "$(BASHDIR)/ggh"
+	install -m644 build/completions/_ggh "$(ZSHDIR)/_ggh"
+	install -m644 build/completions/ggh.fish "$(FISHDIR)/ggh.fish"
+	mkdir -p "$(LICDIR)"
+	install -m644 LICENSE "$(LICDIR)/LICENSE"
 
 uninstall:
-	rm -f $(BINDIR)/ggh $(MANDIR)/ggh.1
-	rm -f $(BASHDIR)/ggh $(ZSHDIR)/_ggh $(FISHDIR)/ggh.fish
-	rm -rf $(DESTDIR)$(PREFIX)/share/good-gh-cli $(LICDIR)
+	rm -f "$(BINDIR)/ggh" "$(MANDIR)/ggh.1"
+	rm -f "$(BASHDIR)/ggh" "$(ZSHDIR)/_ggh" "$(FISHDIR)/ggh.fish"
+	rm -rf "$(DESTDIR)$(PREFIX)/share/good-gh-cli" "$(LICDIR)"
 
 check:
 	bun run typecheck

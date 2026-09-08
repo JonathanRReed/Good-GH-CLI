@@ -48,6 +48,11 @@ untracked rename sources and hook-failure recovery. Cases 45, 46 and 49 also
 assert actual commit messages, successful plugin loading and successful hook
 execution, not merely the absence of an error or canary.
 
+`makefile.test.ts` checks that nested source, package version and lockfile
+changes rebuild the binary and manual. It also installs, runs and uninstalls
+the lean CLI under a prefix containing spaces. These Makefile tests run on
+POSIX hosts with `make` installed.
+
 ## Required automated gates
 
 Run typecheck, lint, all Bun tests, build, man --check and performance budgets.
