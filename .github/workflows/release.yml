@@ -41,7 +41,7 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
       - name: Resolve immutable release identity
@@ -89,7 +89,7 @@ jobs:
           cp man/ggh.1 dist-extra/
           cd dist-extra
           for file in *; do sha256sum "$file" > "$file.sha256"; done
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: release-extra
           path: dist-extra/
@@ -136,7 +136,7 @@ jobs:
             codesign --verify --strict ${{ matrix.asset }}
           fi
           bun -e 'import {createHash} from "node:crypto"; import {readFileSync,writeFileSync} from "node:fs"; const p=process.argv[1]; writeFileSync(p+".sha256",createHash("sha256").update(readFileSync(p)).digest("hex")+"  "+p+"\n")' ${{ matrix.asset }}
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: release-${{ matrix.asset }}
           path: |
@@ -168,10 +168,10 @@ jobs:
         with:
           ref: ${{ needs.verify.outputs.sha }}
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: release-${{ matrix.asset }}
           path: native
@@ -180,7 +180,7 @@ jobs:
       - name: Native regression suite
         if: runner.os != 'Windows'
         run: python3 scripts/audit-regressions.py --binary "$PWD/native/${{ matrix.asset }}" --results regressions.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always() && runner.os != 'Windows'
         with:
           name: regression-results-${{ matrix.asset }}
@@ -200,14 +200,14 @@ jobs:
       NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       VERSION: ${{ needs.verify.outputs.version }}
     steps:
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
       - name: Require configured publication credentials
         run: |
           test -n "$NODE_AUTH_TOKEN" || { echo "PUBLISH_NPM=true requires a valid NPM_TOKEN; publication did not occur."; exit 1; }
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: release-extra
           path: package
@@ -244,7 +244,7 @@ jobs:
           ref: ${{ needs.verify.outputs.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: release-*
           path: artifacts
