@@ -66,7 +66,7 @@ if (-not $actual.AreAccessRulesProtected -or $actual.GetOwner([Security.Principa
 
 
 class Console:
-    def __init__(self, fixture, binary, width=100, direct=False):
+    def __init__(self, fixture, binary, width=100, direct=False, diagnose=False):
         from winpty import PtyProcess
         command = [str(binary), *COMMIT_ARGS] if direct else [os.environ["COMSPEC"], "/D", "/Q", "/K"]
         self.proc = PtyProcess.spawn(command, cwd=str(fixture.repo), env=fixture.env,
@@ -84,8 +84,30 @@ class Console:
                 probe = "import os,sys;print('GGH_TTY',*[os.isatty(i) for i in range(3)]);print('GGH_PYTHON',sys.version);print('GGH_PROBE_DONE')"
                 self.send(subprocess.list2cmdline([sys.executable, "-c", probe]) + "\r")
                 self.expect("\r\nGGH_PROBE_DONE\r\n")
+                for flag, marker in [("--version", "GGH_NATIVE_VERSION"), ("--help", "GGH_NATIVE_HELP")]:
+                    self.send(subprocess.list2cmdline([str(binary), flag]) + "\r")
+                    self.send("echo " + marker + "_%errorlevel%\r")
+                    self.expect("\r\n" + marker + "_0\r\n")
+                if diagnose:
+                    # Diagnostic budget only. It cannot turn a slow commit into a pass.
+                    executable = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+                    script = "[Console]::Out.WriteLine('GGH_PS_CONPTY_DONE')"
+                    encoded = base64.b64encode(script.encode("utf-16le")).decode("ascii")
+                    self.send(subprocess.list2cmdline([str(executable), "-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded]) + "\r")
+                    self.expect("\r\nGGH_PS_CONPTY_DONE\r\n", timeout=60)
+                    self.send("echo GGH_PS_CONPTY_EXIT_%errorlevel%\r")
+                    self.expect("\r\nGGH_PS_CONPTY_EXIT_0\r\n")
                 self.send(subprocess.list2cmdline([str(binary), *COMMIT_ARGS]) + "\r")
-            self.expect("Select commit type:")
+            try:
+                self.expect("Select commit type:")
+            except AssertionError:
+                if diagnose:
+                    try:
+                        self.expect("Select commit type:", timeout=45)
+                    except AssertionError:
+                        pass
+                # The normal 15-second acceptance check still failed.
+                raise
         except Exception as error:
             self.drain()
             error.console_stages = self.stages
@@ -114,11 +136,11 @@ class Console:
     def send(self, text):
         self.proc.write(text)
 
-    def expect(self, text):
+    def expect(self, text, timeout=TIMEOUT):
         started = time.monotonic()
-        stage = {"waitingFor": text, "timeoutSeconds": TIMEOUT}
+        stage = {"waitingFor": text, "timeoutSeconds": timeout}
         self.stages.append(stage)
-        deadline = started + TIMEOUT
+        deadline = started + timeout
         while time.monotonic() < deadline:
             clean = ANSI.sub("", self.output)
             index = clean.find(text, self.offset)
@@ -161,6 +183,7 @@ class Fixture:
         # proxies, provider configuration and inherited config do not.
         allowed = {"SYSTEMROOT", "WINDIR", "COMSPEC", "PATH", "PATHEXT", "TEMP", "TMP"}
         self.env = {k: v for k, v in os.environ.items() if k.upper() in allowed}
+        self.env["PSModulePath"] = str(Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/Modules")
         self.env.update(HOME=str(home), USERPROFILE=str(home), APPDATA=str(home / "appdata"),
                         LOCALAPPDATA=str(home / "local"), XDG_CONFIG_HOME=str(home / "config"),
                         XDG_CACHE_HOME=str(home / "cache"), XDG_DATA_HOME=str(home / "data"),
@@ -210,7 +233,20 @@ def qualify(binary, name, fixture):
             receipt["status"] = "passed"
             return receipt
         direct = name == "windows_forced_termination"
-        console = Console(fixture, binary, width=32 if name == "resize" else 100, direct=direct)
+        if name == "unicode":
+            executable = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+            started_control = time.monotonic()
+            try:
+                control = subprocess.run([str(executable), "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "[Console]::Out.WriteLine('GGH_PS_CAPTURE_DONE')"],
+                                         cwd=fixture.repo, env=fixture.env, capture_output=True,
+                                         encoding="utf-8", errors="replace", timeout=60)
+                receipt["powershellCaptureControl"] = {"exitCode": control.returncode,
+                    "stdout": control.stdout[-2000:], "stderr": control.stderr[-2000:]}
+            except subprocess.TimeoutExpired:
+                receipt["powershellCaptureControl"] = {"status": "timed_out", "timeoutSeconds": 60}
+            receipt["powershellCaptureControl"]["elapsedSeconds"] = round(time.monotonic() - started_control, 3)
+        console = Console(fixture, binary, width=32 if name == "resize" else 100,
+                          direct=direct, diagnose=name == "unicode")
         if direct:
             # Windows TerminateProcess is abrupt. This proves bounded termination,
             # not POSIX SIGTERM handlers or terminal restoration after a signal.
