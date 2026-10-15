@@ -1,0 +1,170 @@
+{
+  "recordedAt": "2026-10-15T06:43:15.707645+00:00",
+  "sourceHead": "3f6f3251a008f0236b7cfe4b6eae135d08cbd1c5",
+  "testedMerge": "5ad72fc31f82e72e364acab8ff7d2482af339efe",
+  "sourceCI": "https://github.com/JonathanRReed/Good-GH-CLI/actions/runs/38693038716",
+  "artifactCI": "https://github.com/JonathanRReed/Good-GH-CLI/actions/runs/38693038649",
+  "sourcePlatforms": [
+    "macOS",
+    "Linux",
+    "Windows"
+  ],
+  "localSourceTests": 569,
+  "localSourceFiles": 62,
+  "windowsPrivacyChecks": 83,
+  "temporaryAccountRemoved": true,
+  "artifacts": [
+    {
+      "asset": "ggh-linux-x64",
+      "sha256": "548b24e8ba087be5398c3dc6dc8c4209f75f690a40fa225baa451ac6d8a4f94e",
+      "installationStages": [
+        "current-source-version",
+        "previous-source-version",
+        "install-previous",
+        "upgrade-current",
+        "rollback-previous",
+        "restore-current",
+        "installed-help-and-agent-contract",
+        "project-runtime-autoload-isolation",
+        "native-local-commit-and-installed-hook",
+        "uninstall-fixture-binary"
+      ],
+      "demoCommands": 14,
+      "terminalCases": [
+        "unicode-paste-typeahead-resize",
+        "word-delete",
+        "ctrl-c-preserves-index",
+        "sigterm-preserves-index",
+        "eof-preserves-index",
+        "closed-stdout"
+      ],
+      "performanceWorkloads": 11,
+      "samplesPerArtifact": 5,
+      "errors": 0,
+      "nativeRegressions": 71
+    },
+    {
+      "asset": "ggh-linux-arm64",
+      "sha256": "bd59daa0e6b9d304e916518acc05200c269b9b238a3055abe1b7ca578a8ceea4",
+      "installationStages": [
+        "current-source-version",
+        "previous-source-version",
+        "install-previous",
+        "upgrade-current",
+        "rollback-previous",
+        "restore-current",
+        "installed-help-and-agent-contract",
+        "project-runtime-autoload-isolation",
+        "native-local-commit-and-installed-hook",
+        "uninstall-fixture-binary"
+      ],
+      "demoCommands": 14,
+      "terminalCases": [
+        "unicode-paste-typeahead-resize",
+        "word-delete",
+        "ctrl-c-preserves-index",
+        "sigterm-preserves-index",
+        "eof-preserves-index",
+        "closed-stdout"
+      ],
+      "performanceWorkloads": 11,
+      "samplesPerArtifact": 5,
+      "errors": 0,
+      "nativeRegressions": 71
+    },
+    {
+      "asset": "ggh-darwin-x64",
+      "sha256": "1eebd420ede12ec5e51f41784de5623833d856b0a8515171151a41716aec8948",
+      "installationStages": [
+        "current-source-version",
+        "previous-source-version",
+        "install-previous",
+        "upgrade-current",
+        "rollback-previous",
+        "restore-current",
+        "installed-help-and-agent-contract",
+        "project-runtime-autoload-isolation",
+        "native-local-commit-and-installed-hook",
+        "uninstall-fixture-binary"
+      ],
+      "demoCommands": 14,
+      "terminalCases": [
+        "unicode-paste-typeahead-resize",
+        "word-delete",
+        "ctrl-c-preserves-index",
+        "sigterm-preserves-index",
+        "eof-preserves-index",
+        "closed-stdout"
+      ],
+      "performanceWorkloads": 11,
+      "samplesPerArtifact": 5,
+      "errors": 0,
+      "nativeRegressions": 71
+    },
+    {
+      "asset": "ggh-darwin-arm64",
+      "sha256": "0c7ced914de6eade06ce06c318e43045af13e1733350f57cdc94afea8ea85397",
+      "installationStages": [
+        "current-source-version",
+        "previous-source-version",
+        "install-previous",
+        "upgrade-current",
+        "rollback-previous",
+        "restore-current",
+        "installed-help-and-agent-contract",
+        "project-runtime-autoload-isolation",
+        "native-local-commit-and-installed-hook",
+        "uninstall-fixture-binary"
+      ],
+      "demoCommands": 14,
+      "terminalCases": [
+        "unicode-paste-typeahead-resize",
+        "word-delete",
+        "ctrl-c-preserves-index",
+        "sigterm-preserves-index",
+        "eof-preserves-index",
+        "closed-stdout"
+      ],
+      "performanceWorkloads": 11,
+      "samplesPerArtifact": 5,
+      "errors": 0,
+      "nativeRegressions": 71
+    },
+    {
+      "asset": "ggh-windows-x64.exe",
+      "sha256": "efe6114987d32c3475e461133f889cb925698995ebf417e47972db9aa7adfcff",
+      "installationStages": [
+        "current-source-version",
+        "previous-source-version",
+        "install-previous",
+        "upgrade-current",
+        "rollback-previous",
+        "restore-current",
+        "installed-help-and-agent-contract",
+        "project-runtime-autoload-isolation",
+        "native-local-commit-and-installed-hook",
+        "uninstall-fixture-binary"
+      ],
+      "demoCommands": 14,
+      "terminalCases": [
+        "unicode",
+        "queued_answers",
+        "word_delete",
+        "bracketed_paste",
+        "resize",
+        "ctrl_c",
+        "windows_forced_termination",
+        "closed_output_pipe"
+      ],
+      "performanceWorkloads": 11,
+      "samplesPerArtifact": 5,
+      "errors": 0
+    }
+  ],
+  "limits": [
+    "No outside human testing required by the sole user.",
+    "Organization/SSO, cross-account forks and working SSH authentication were unavailable.",
+    "No npm registry publication.",
+    "This is a candidate checkpoint. Final tagged artifact checks and macOS notarization are separate release gates."
+  ]
+}

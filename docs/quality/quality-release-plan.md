@@ -40,6 +40,12 @@ Only three priorities are active at once: the current implementation item, its b
 
 Each item ends in a focused behavioral receipt before implementation advances. The final revision must pass typecheck, lint, source tests, generated manual freshness, native and installed-package checks, secret scanning, and hosted platform checks. Live service and signing gates are tracked separately and require direct results. No skipped or unavailable check counts as passed.
 
-## Active tranche
+## Release tranche
 
-Items 01 through 19 have their implementation or experiment receipts. Live GitHub, manual editing, independent agent tasks, Windows cross-user privacy, local terminal checks, and prior native installation checks passed. Final source must still pass the hosted Windows console, offline demo, and performance checks. The final pass is addressing a measured optional-provider status delay and terminal control output. Then refresh exact source/package/platform evidence, merge, and publish 0.5.0-beta.1 with a signed and notarized macOS DMG. Outside human testers remain waived.
+Implementation items 01 through 18 and all six experiments are closed. The final
+cleanup, regression audit, performance and security passes are complete. The
+October 15 platform receipt records passing source checks on all three hosts
+and complete qualification of all five native artifacts. Final tagged builds
+repeat the distribution gates. Finish main integration, final macOS
+notarization, draft asset assembly and public download verification before
+calling the release complete. Outside human testing remains waived.

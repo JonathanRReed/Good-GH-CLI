@@ -2,29 +2,40 @@
 
 The source candidate is 0.5.0-beta.1 on `feat/quality-release`. The [execution plan](quality/quality-release-plan.md) and [continuation record](quality/quality-release-continuation.md) track exact checkpoints. Source, native installation, live GitHub, platform security, signing, and publication are separate gates.
 
-## Current qualification
+## October 15 candidate qualification
 
-- Live private/public repository setup, protected-push rejection, partial recovery,
-  private PNG access, independent commit/stack journeys, and actual vi editing passed.
-  Synthetic PRs and branches were cleaned; both QA repositories are archived.
-- Actual Windows cross-user storage and process-tree qualification passed. All five
-  native architectures passed earlier install/upgrade/rollback/uninstall checks.
-  The final source still requires its complete hosted matrix.
-- macOS/Linux terminal checks passed. Windows ConPTY qualification is required
-  before this beta publishes. A skip does not count as a pass.
-- The offline demo asserts fourteen local commands. Compatibility tests cover the
-  Git 2.31 boundary; actual gh2.48 and gh2.100 have separate recorded scopes.
-- The final pass fixes bounded optional status probes and terminal control output.
-  Fresh source, native, installed-package, performance, and secret checks follow.
-- GitHub release automation creates a draft. Add the exact signed/notarized
-  universal macOS DMG, validate all assets, then publish. npm remains disabled
-  unless explicitly configured; an attached installable tarball is separate.
+All three source platforms and all five native artifact pipelines passed at
+`3f6f325`. The [platform receipt](verification/2026-10-15-platform-qualification.json)
+binds their artifact hashes and checks to the tested merge. The final tag runs
+those gates again. Published checksums and the release qualification asset
+establish the distributed files, separately from this dated checkpoint.
 
-The initial [test audit](verification/2026-10-14-test-audit.md) removed 104 redundant source cases and one duplicate native case. A final independent inventory found no additional suite or dependency to remove. New behavioral regressions protect defects discovered during qualification. Historical receipts retain their original versions and counts.
+- Local source verification passed 569 tests across 62 files. Typecheck, lint,
+  build, manual freshness, actionlint, and source secret scans passed.
+- Each of four POSIX artifacts passed 71 native regressions and six terminal
+  cases. Windows passed eight actual ConPTY cases, 83 cross-user privacy checks,
+  and process-tree qualification. The temporary test account was removed.
+- All five artifacts passed clean install, PATH, upgrade, rollback, restore,
+  local commit/hook and uninstall checks, fourteen offline demo commands, and
+  eleven validated performance workloads with five warm samples per side.
+- Installed Node/Bun packages and the actual npm, Bun-global and lean launchers
+  passed local qualification. Hostile project dotenv/preload files were blocked;
+  explicit caller environment settings remained available.
+- Live private/public setup, protected-push rejection, partial recovery,
+  private PNG access, independent commit/stack journeys, and actual vi editing
+  passed. Synthetic PRs/branches were cleaned and both QA repositories archived.
+- Six ordered experiments were completed and excluded where they added no
+  demonstrated task benefit. The initial audit removed 104 redundant source
+  cases and one duplicate native case. Final review retained distinct coverage.
 
-Jonathan is the sole user. Outside human testing is waived. Organization/SSO,
-a second-account fork, and working SSH credentials were unavailable; they are not
-reported as passes. No provider model generation was needed for qualification.
+The GitHub workflow prepares a draft. Publication requires the exact signed,
+notarized universal macOS DMG, checksum and downloaded-artifact verification.
+Apple acceptance, stapling and Gatekeeper are separate checks. npm registry
+publication remains explicitly disabled; the tested package tarball is included.
+
+Jonathan is the sole user and waived outside human testing. Organization/SSO,
+a second-account fork, and working SSH credentials were unavailable and are not
+reported as passes. Provider model generation was not needed for qualification.
 
 ## Audit closure map
 

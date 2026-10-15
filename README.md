@@ -1,7 +1,7 @@
 # Good GH
 
 [![CI](https://github.com/JonathanRReed/Good-GH-CLI/actions/workflows/ci.yml/badge.svg)](https://github.com/JonathanRReed/Good-GH-CLI/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/JonathanRReed/Good-GH-CLI?label=release)](https://github.com/JonathanRReed/Good-GH-CLI/releases/latest)
+[![Release](https://img.shields.io/github/v/release/JonathanRReed/Good-GH-CLI?include_prereleases&label=release)](https://github.com/JonathanRReed/Good-GH-CLI/releases)
 
 I hated the GitHub CLI. This makes it bearable.
 

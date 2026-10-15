@@ -155,7 +155,7 @@ try {
 
 if (notaryProfile) {
   run("xcrun", ["notarytool", "history", "--keychain-profile", notaryProfile]);
-  run("xcrun", ["notarytool", "submit", dmg, "--keychain-profile", notaryProfile, "--wait"]);
+  run("xcrun", ["notarytool", "submit", dmg, "--keychain-profile", notaryProfile, "--wait", "--output-format", "json", "--no-progress"]);
   run("xcrun", ["stapler", "staple", dmg]);
   run("xcrun", ["stapler", "validate", dmg]);
   run("spctl", ["--assess", "--type", "open", "--context", "context:primary-signature", "--verbose=2", dmg]);
