@@ -125,6 +125,11 @@ try {
     $unsafe = Join-Path $work $case
     [void][IO.Directory]::CreateDirectory($unsafe); Set-Private $unsafe
     $sentinel = Join-Path $unsafe 'sentinel.txt'; [IO.File]::WriteAllText($sentinel, 'unchanged-synthetic')
+    $sentinelSecurity = [Security.AccessControl.FileSecurity]::new()
+    $sentinelSecurity.SetOwner($identity.User)
+    $sentinelSecurity.SetAccessRuleProtection($true, $false)
+    $sentinelSecurity.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($identity.User, 'FullControl', 'Allow'))
+    Set-Acl -LiteralPath $sentinel -AclObject $sentinelSecurity
     switch ($case) {
       'broad-child' {
         $acl = Get-Acl $sentinel

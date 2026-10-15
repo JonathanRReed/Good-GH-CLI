@@ -5,6 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 // Windows modes do not restrict access. Audit DACLs before reading stored data.
 // Machine administrators and SYSTEM can take ownership and are outside isolation.
+// Elevated writers and filtered Git hooks can have different default owner SIDs.
 // Paths travel over stdin, never through PowerShell source or command arguments.
 const WINDOWS_ACL = String.raw`
 $ErrorActionPreference = 'Stop'
@@ -17,7 +18,7 @@ try {
   $root = [IO.Path]::GetFullPath([string]$request.path)
   $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
   $sid = $identity.User
-  $owners = @($sid.Value, $identity.Owner.Value)
+  $owners = @($sid.Value, $identity.Owner.Value, 'S-1-5-18', 'S-1-5-32-544')
   $privileged = @($sid.Value, $identity.Owner.Value, 'S-1-5-18', 'S-1-5-32-544')
   $readers = @($sid.Value, 'S-1-5-18', 'S-1-5-32-544')
   try { $privileged += ([Security.Principal.NTAccount]::new('NT SERVICE\TrustedInstaller')).Translate([Security.Principal.SecurityIdentifier]).Value } catch {}
