@@ -96,6 +96,9 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory(prefix="ggh demo ") as temporary:
         root = Path(temporary)
+        if os.name == "nt":
+            from windows_fixture import secure_fixture_root
+            summary["fixtureACL"] = secure_fixture_root(root)
         repo = root / "repo"
         home = root / "home"
         denied = root / "deny"
