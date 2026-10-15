@@ -34,8 +34,8 @@ function invoke(args: string[], bare: string): string {
 function responses(succeed: boolean, repositoryExists = false): FixtureResponse[] {
   return [
     repositoryExists
-      ? { prefix: ["repo", "view"], stdout: JSON.stringify({ url: "https://github.com/fixture/project", isPrivate: true, visibility: "PRIVATE" }) }
-      : { prefix: ["repo", "view"], stderr: "HTTP 404: Not Found", exitCode: 1 },
+      ? { prefix: ["api", "repos/fixture/project"], stdout: JSON.stringify({ html_url: "https://github.com/fixture/project", private: true, visibility: "private" }) }
+      : { prefix: ["api", "repos/fixture/project"], stderr: "HTTP 404: Not Found", exitCode: 1 },
     { prefix: ["repo", "create"], stdout: "https://github.com/fixture/project\n" },
     { prefix: ["pr", "list"], stdout: "[]" },
     succeed ? { prefix: ["pr", "create"], stdout: "https://github.com/fixture/project/pull/7\n" } : { prefix: ["pr", "create"], stderr: "HTTP 503: temporary failure", exitCode: 1 },
@@ -48,7 +48,7 @@ describe("publication recovery", () => {
     const { root, repo } = fixture();
     const module = (name: string) => JSON.stringify(join(import.meta.dir, "../src/services", name + ".ts"));
     const result = await runFixture([], { root, cwd: repo,
-      responses: [{ prefix: ["repo", "view"], stdout: JSON.stringify({ url: "https://github.com/fixture/project", isPrivate: true, visibility: "PRIVATE" }) }],
+      responses: [{ prefix: ["api", "repos/fixture/project"], stdout: JSON.stringify({ html_url: "https://github.com/fixture/project", private: true, visibility: "private" }) }],
       invoke: `const {startOperation,claimOperationResume,readOperation}=await import(${module("operations")});
         const {setActiveOperation,rememberCommandResult}=await import(${module("runtime")});
         const {executePublication}=await import(${module("publication")});
@@ -149,7 +149,7 @@ describe("publication recovery", () => {
     const id = report.operationId;
     expect(readFileSync(join(repo, ".git", "ggh-operations", `${id}.json`), "utf8")).not.toContain("PRIVATE_DESCRIPTION_CANARY");
     rmSync(hook);
-    const retry = await runFixture([], { root, cwd: repo, responses: [{ prefix: ["repo", "view"], stdout: JSON.stringify({ url: "https://github.com/fixture/project", isPrivate: true, visibility: "PRIVATE" }) }], invoke: invoke(["operation", "resume", id, "--yes", "--agent"], bare) });
+    const retry = await runFixture([], { root, cwd: repo, responses: [{ prefix: ["api", "repos/fixture/project"], stdout: JSON.stringify({ html_url: "https://github.com/fixture/project", private: true, visibility: "private" }) }], invoke: invoke(["operation", "resume", id, "--yes", "--agent"], bare) });
     expect(JSON.parse(retry.stdout)).toMatchObject({ status: "succeeded", operationId: id });
     expect(retry.calls.some(call => call[0] === "repo" && call[1] === "create")).toBe(false);
     expect(git(["rev-parse", "refs/heads/feature"], bare)).toBe(git(["rev-parse", "HEAD"], repo));

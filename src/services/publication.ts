@@ -6,6 +6,7 @@ import { publicationIntent, type PublicationIntent } from "./publication-intent.
 import { run } from "../utils/exec.ts";
 import {
   classifyGitHubError,
+  GitHubError,
   createRepository,
   getActiveHost,
   getGitHubAuthStatus,
@@ -336,8 +337,11 @@ export async function preparePublication(
   }
   const account = await getGitHubAuthStatus(host);
   if (!account.authenticated || !account.login) {
-    throw new Error(
-      "GitHub CLI must be authenticated with an account name to prepare publication.",
+    throw new GitHubError(
+      account.notInstalled ? "not_installed" : "not_authenticated",
+      account.notInstalled
+        ? "GitHub CLI (`gh`) is not installed. Install it from https://cli.github.com."
+        : "GitHub CLI must be authenticated with an account name to prepare publication.",
     );
   }
   const accountHost = account.host ?? host;
@@ -751,7 +755,7 @@ async function inspectExistingRepository(
   | { exists: "unknown"; error: string }
 > {
   const result = await ghGlobal(
-    ["repo", "view", plan.target, "--json", "url,isPrivate,visibility"],
+    ["api", `repos/${plan.target}`, "--hostname", plan.host],
     { cwd: plan.cwd, reject: false, env: githubEnv(plan) },
   );
   if (result.exitCode === 0) {
@@ -760,20 +764,20 @@ async function inspectExistingRepository(
       if (
         typeof parsed === "object" &&
         parsed !== null &&
-        "url" in parsed &&
-        typeof parsed.url === "string" &&
-        "isPrivate" in parsed &&
-        typeof parsed.isPrivate === "boolean" &&
+        "html_url" in parsed &&
+        typeof parsed.html_url === "string" &&
+        "private" in parsed &&
+        typeof parsed.private === "boolean" &&
         "visibility" in parsed &&
-        (parsed.visibility === "PUBLIC" ||
-          parsed.visibility === "PRIVATE" ||
-          parsed.visibility === "INTERNAL")
+        (parsed.visibility === "public" ||
+          parsed.visibility === "private" ||
+          parsed.visibility === "internal")
       ) {
         return {
           exists: true,
-          url: parsed.url,
-          isPrivate: parsed.isPrivate,
-          visibility: parsed.visibility,
+          url: parsed.html_url,
+          isPrivate: parsed.private,
+          visibility: parsed.visibility === "public" ? "PUBLIC" : parsed.visibility === "private" ? "PRIVATE" : "INTERNAL",
         };
       }
       return {
@@ -787,13 +791,13 @@ async function inspectExistingRepository(
       };
     }
   }
+  if (/\bHTTP 404\b/i.test(result.stderr)) return { exists: false };
   const classified = classifyGitHubError(
     new Error(
-      result.stderr || `gh repo view exited with code ${result.exitCode}`,
+      result.stderr || `gh api exited with code ${result.exitCode}`,
     ),
     "repository view",
   );
-  if (classified.kind === "not_found") return { exists: false };
   return { exists: "unknown", error: classified.message };
 }
 

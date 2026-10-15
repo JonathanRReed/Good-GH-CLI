@@ -71,8 +71,8 @@ function setupRewrite(bare: string): string {
 }
 
 const privateRepositoryView = {
-  prefix: ["repo", "view", "fixture/project", "--json", "url,isPrivate,visibility"],
-  stdout: '{"url":"https://github.com/fixture/project","isPrivate":true,"visibility":"PRIVATE"}',
+  prefix: ["api", "repos/fixture/project"],
+  stdout: '{"html_url":"https://github.com/fixture/project","private":true,"visibility":"private"}',
 };
 
 afterEach(() => {
@@ -124,7 +124,7 @@ describe("publication service", () => {
       invoke: `const creationHosts=[]; const originalSpawn=Bun.spawn.bind(Bun); Bun.spawn=(args,options)=>{if(args[0]==='gh'&&args[1]==='repo'&&args[2]==='create')creationHosts.push(options?.env?.GH_HOST);return originalSpawn(args,options);}; ${serviceInvoke("const prepared=await preparePublication({kind:'repo',name:'github.enterprise.test/fixture/project'});const result=prepared.status==='ready'?await executePublication(prepared.plan):prepared;process.stdout.write(JSON.stringify({result,creationHosts}));")}`,
       responses: [
         { prefix: ["auth", "status"], stdout: JSON.stringify(account) },
-        { prefix: ["repo", "view"], stderr: "HTTP 404: Not Found", exitCode: 1 },
+        { prefix: ["api", "repos/fixture/project"], stderr: "HTTP 404: Not Found", exitCode: 1 },
         { prefix: ["repo", "create"], stdout: "https://github.enterprise.test/fixture/project\n" },
       ],
     });
@@ -133,7 +133,7 @@ describe("publication service", () => {
 
   test("preserves a completed push when local upstream setup fails and repairs it on retry", async () => {
     const { repo, bare } = makeRepository(tempRoot());
-    const responses = [{ prefix: ["repo", "view"], stdout: JSON.stringify({ url: "https://github.com/fixture/project", isPrivate: true, visibility: "PRIVATE" }) }];
+    const responses = [{ prefix: ["api", "repos/fixture/project"], stdout: JSON.stringify({ html_url: "https://github.com/fixture/project", private: true, visibility: "private" }) }];
     const failUpstream = "const originalSpawn=Bun.spawn.bind(Bun);Bun.spawn=(args,options)=>args[0]==='git'&&args[1]==='branch'&&args.includes('--set-upstream-to')?{pid:2147483647,stdout:new Blob([]).stream(),stderr:new Blob(['fixture upstream failure']).stream(),exited:Promise.resolve(1),kill(){},stdin:null}:originalSpawn(args,options);";
     const first = await runFixture([], { root: repo, cwd: repo, responses,
       invoke: `${setupRewrite(bare)} ${failUpstream} ${serviceInvoke("const prepared=await preparePublication({kind:'repo'}); const result=prepared.status==='ready'?await executePublication(prepared.plan):prepared;process.stdout.write(JSON.stringify(result));")}`,
@@ -311,7 +311,7 @@ describe("publication service", () => {
       invoke,
       responses: [
         { prefix: ["auth", "status"], stdout: JSON.stringify(account) },
-        { prefix: ["repo", "view"], stderr: "HTTP 404: Not Found", exitCode: 1 },
+        { prefix: ["api", "repos/fixture/checkout"], stderr: "HTTP 404: Not Found", exitCode: 1 },
         { prefix: ["repo", "create"], stdout: "https://github.com/fixture/checkout\n" },
       ],
     });
@@ -358,7 +358,7 @@ describe("publication service", () => {
       ),
       responses: [
         enterpriseAuth,
-        { prefix: ["repo", "view", "fixture/project", "--json", "url,isPrivate,visibility"], stdout: '{"url":"https://github.enterprise.test/fixture/project","isPrivate":true,"visibility":"PRIVATE"}' },
+        { prefix: ["api", "repos/fixture/project"], stdout: '{"html_url":"https://github.enterprise.test/fixture/project","private":true,"visibility":"private"}' },
       ],
     });
     expect(JSON.parse(enterprise.stdout)).toMatchObject({
@@ -481,7 +481,7 @@ describe("publication service", () => {
       invoke,
       responses: [
         {
-          prefix: ["repo", "view"],
+          prefix: ["api", "repos/fixture/project"],
           stderr: "HTTP 404: Not Found",
           exitCode: 1,
         },
@@ -499,7 +499,7 @@ describe("publication service", () => {
     });
     expect(created.calls.map((call) => call.slice(0, 2))).toEqual([
       ["auth", "status"],
-      ["repo", "view"],
+      ["api", "repos/fixture/project"],
       ["repo", "create"],
     ]);
     expect(created.calls[2]).toContain("--description");
@@ -509,7 +509,7 @@ describe("publication service", () => {
       root,
       invoke,
       responses: [
-        { prefix: ["repo", "view"], stderr: "connection refused", exitCode: 1 },
+        { prefix: ["api", "repos/fixture/project"], stderr: "connection refused", exitCode: 1 },
       ],
     });
     expect(JSON.parse(failedLookup.stdout)).toMatchObject({
@@ -519,7 +519,7 @@ describe("publication service", () => {
     });
     expect(failedLookup.calls.map((call) => call.slice(0, 2))).toEqual([
       ["auth", "status"],
-      ["repo", "view"],
+      ["api", "repos/fixture/project"],
     ]);
   });
 
@@ -535,9 +535,9 @@ describe("publication service", () => {
       invoke,
       responses: [
         {
-          prefix: ["repo", "view"],
+          prefix: ["api", "repos/fixture/collision"],
           stdout:
-            '{"url":"https://github.com/fixture/collision","isPrivate":false,"visibility":"PUBLIC"}',
+            '{"html_url":"https://github.com/fixture/collision","private":false,"visibility":"public"}',
         },
       ],
     });
@@ -550,7 +550,7 @@ describe("publication service", () => {
     expect(gitOptional(["--git-dir", bare, "show-ref"], rootOf(bare))).toBe("");
     expect(publicCollision.calls.map((call) => call.slice(0, 2))).toEqual([
       ["auth", "status"],
-      ["repo", "view"],
+      ["api", "repos/fixture/collision"],
     ]);
 
     const unknownVisibility = await runFixture([], {
@@ -559,8 +559,8 @@ describe("publication service", () => {
       invoke,
       responses: [
         {
-          prefix: ["repo", "view"],
-          stdout: '{"url":"https://github.com/fixture/collision","isPrivate":true}',
+          prefix: ["api", "repos/fixture/collision"],
+          stdout: '{"html_url":"https://github.com/fixture/collision","private":true}',
         },
       ],
     });
@@ -571,7 +571,7 @@ describe("publication service", () => {
     });
     expect(unknownVisibility.calls.map((call) => call.slice(0, 2))).toEqual([
       ["auth", "status"],
-      ["repo", "view"],
+      ["api", "repos/fixture/collision"],
     ]);
 
     const internalCollision = await runFixture([], {
@@ -580,9 +580,9 @@ describe("publication service", () => {
       invoke,
       responses: [
         {
-          prefix: ["repo", "view"],
+          prefix: ["api", "repos/fixture/collision"],
           stdout:
-            '{"url":"https://github.com/fixture/collision","isPrivate":true,"visibility":"INTERNAL"}',
+            '{"html_url":"https://github.com/fixture/collision","private":true,"visibility":"internal"}',
         },
       ],
     });
@@ -606,9 +606,9 @@ describe("publication service", () => {
       ),
       responses: [
         {
-          prefix: ["repo", "view"],
+          prefix: ["api", "repos/fixture/.github"],
           stdout:
-            '{"url":"https://github.com/fixture/.github","isPrivate":true,"visibility":"PRIVATE"}',
+            '{"html_url":"https://github.com/fixture/.github","private":true,"visibility":"private"}',
         },
       ],
     });
@@ -621,7 +621,7 @@ describe("publication service", () => {
     expect(git(["remote"], repo)).toBe("origin");
     expect(result.calls.map((call) => call.slice(0, 2))).toEqual([
       ["auth", "status"],
-      ["repo", "view"],
+      ["api", "repos/fixture/.github"],
     ]);
   });
 

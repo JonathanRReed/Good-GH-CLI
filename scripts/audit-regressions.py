@@ -53,6 +53,8 @@ elif a[:2]==['repo','create'] and os.getenv('AUDIT_PUBLICATION')=='1':
  print('https://github.com/'+a[2])
 elif a[:2]==['pr','create'] and os.getenv('AUDIT_PUBLICATION')=='1':
  print('--attach <file>' if '--help' in a else 'https://github.com/audit-user/repo/pull/7')
+elif len(a)>1 and a[0]=='api' and a[1].startswith('repos/') and os.getenv('AUDIT_PUBLICATION')=='1':
+ print('HTTP 404: Not Found',file=sys.stderr);sys.exit(1)
 elif a and a[0]=='api':
  print('[]')
 else:

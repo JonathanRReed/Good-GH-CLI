@@ -137,7 +137,7 @@ describe("commit publication", () => {
         root,
         cwd: repo,
         responses: [
-          { prefix: ["repo", "view", "fixture/project", "--json", "url,isPrivate,visibility"], stdout: '{"url":"https://github.com/fixture/project","isPrivate":true,"visibility":"PRIVATE"}' },
+          { prefix: ["api", "repos/fixture/project"], stdout: '{"html_url":"https://github.com/fixture/project","private":true,"visibility":"private"}' },
           { prefix: ["pr", "list"], stdout: "[]" },
           {
             prefix: ["pr", "create"],
@@ -273,7 +273,7 @@ describe("commit publication", () => {
         root,
         cwd: repo,
         responses: [
-          { prefix: ["repo", "view", "fixture/project", "--json", "url,isPrivate,visibility"], stdout: '{"url":"https://github.com/fixture/project","isPrivate":true,"visibility":"PRIVATE"}' },
+          { prefix: ["api", "repos/fixture/project"], stdout: '{"html_url":"https://github.com/fixture/project","private":true,"visibility":"private"}' },
           { prefix: ["pr", "list"], stdout: "[]" },
           {
             prefix: ["pr", "create"],

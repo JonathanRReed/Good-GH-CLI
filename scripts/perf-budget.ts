@@ -19,9 +19,10 @@ async function within(
     cwd: root,
     timeoutMs: ms,
     reject: false,
-  }).catch((err: unknown) => {
+  }).catch(async (err: unknown) => {
     const msg = String(err);
     if (/timed out|timeout/i.test(msg)) {
+      if (label === "status --json") await diagnoseStatusBudget();
       console.error(`BUDGET BREACH: ${label} exceeded ${ms}ms`);
       process.exit(1);
     }
@@ -32,6 +33,23 @@ async function within(
   if (result.exitCode !== 0) {
     console.error(`BUDGET BREACH: ${label} exited with ${result.exitCode}`);
     process.exit(1);
+  }
+}
+
+async function diagnoseStatusBudget(): Promise<void> {
+  try {
+    const result = await run("bun", ["run", join(root, "scripts", "status-probes.ts")], {
+      cwd: root,
+      timeoutMs: 22_000,
+      reject: false,
+      maxOutputBytes: 8_192,
+    });
+    const allowed = /^probe (?:getStatus|getRepoRoot|worktreeList|getAheadBehind|getAheadOfDefault|getActivePullRequest|getGitHubAuthStatus|checkSubmodules|getAvailableProviders|getConfig) elapsed=\d+ms success=(?:true|false)(?: errorKind=(?:exec|error|deadline))?$/;
+    for (const line of `${result.stdout}\n${result.stderr}`.split(/\r?\n/)) {
+      if (allowed.test(line)) console.error(line);
+    }
+  } catch {
+    // Keep the original budget failure as the only report if probes cannot run.
   }
 }
 

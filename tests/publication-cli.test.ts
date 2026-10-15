@@ -33,7 +33,7 @@ function invoke(args: string[], bare: string): string {
   return `const {run}=await import(${JSON.stringify(execPath)}); await run('git',['config','--global',${JSON.stringify(`url.${pathToFileURL(bare).href}.insteadOf`)},'https://github.com/fixture/project.git']); const {runCli}=await import(${JSON.stringify(entry)}); await runCli(['bun','ggh',...${JSON.stringify(args)}]);`;
 }
 const responses: FixtureResponse[] = [
-  { prefix: ["repo", "view"], stderr: "HTTP 404: Not Found", exitCode: 1 },
+  { prefix: ["api", "repos/fixture/project"], stderr: "HTTP 404: Not Found", exitCode: 1 },
   { prefix: ["repo", "create"], stdout: "https://github.com/fixture/project\n" },
   { prefix: ["pr", "list"], stdout: "[]" },
   { prefix: ["pr", "create"], stdout: "https://github.com/fixture/project/pull/7\n" },

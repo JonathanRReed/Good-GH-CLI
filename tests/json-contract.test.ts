@@ -53,7 +53,7 @@ describe("command JSON contracts", () => {
   it("returns the created repository URL as JSON", async () => {
     const result = await runFixture(["repo", "create", "demo", "--private", "-y", "--json"], {
       root, responses: [
-        { prefix: ["repo", "view"], stderr: "HTTP 404: Not Found", exitCode: 1 },
+        { prefix: ["api", "repos/fixture/demo"], stderr: "HTTP 404: Not Found", exitCode: 1 },
         { prefix: ["repo", "create"], stdout: "https://github.com/fixture/demo\n" },
       ],
     });

@@ -273,7 +273,7 @@ async function fetchAuthStatus(host: string): Promise<GitHubAccount> {
   const args = ["auth", "status", "--json", "hosts"];
   args.push("--hostname", host || "github.com");
   try {
-    const { stdout } = await ghGlobal(args);
+    const { stdout, stderr, exitCode } = await ghGlobal(args, { reject: false });
     if (stdout && stdout.trim()) {
       const parsed = JSON.parse(stdout);
       const hostsObj = parsed?.hosts;
@@ -287,7 +287,7 @@ async function fetchAuthStatus(host: string): Promise<GitHubAccount> {
           const activeAccount =
             accountList.find((acc) => acc.active === true) ?? accountList[0];
           if (!activeAccount) return { authenticated: false };
-          const isAuthenticated = activeAccount.state === "success" || activeAccount.active === true;
+          const isAuthenticated = activeAccount.state === "success";
           const finalHost = String(activeAccount.host || hostKey || host || "github.com");
           cachedHost = finalHost;
           return {
@@ -299,24 +299,19 @@ async function fetchAuthStatus(host: string): Promise<GitHubAccount> {
         }
       }
     }
+    if (exitCode !== 0 && /unknown flag: --json|unknown shorthand flag.*json|flag provided but not defined.*json/i.test(stderr)) {
+      const { stdout: login } = await ghGlobal(["api", "user", "--hostname", host, "--jq", ".login"]);
+      if (/^[A-Za-z0-9][A-Za-z0-9-]*$/.test(login.trim())) {
+        let protocol: "https" | "ssh" = "https";
+        const config = await ghGlobal(["config", "get", "git_protocol", "--host", host], { reject: false });
+        if (config.exitCode === 0 && config.stdout.trim() === "ssh") protocol = "ssh";
+        cachedHost = host;
+        return { authenticated: true, login: login.trim(), host, protocol };
+      }
+    }
   } catch (err) {
     if (isMissingBinary(err)) {
       return { authenticated: false, notInstalled: true };
-    }
-    try {
-      const tokenArgs = ["auth", "token"];
-      if (host && host !== "github.com") tokenArgs.push("--hostname", host);
-      const { stdout: token } = await ghGlobal(tokenArgs);
-      if (token.trim().length > 0) {
-        cachedHost = host || "github.com";
-        return {
-          authenticated: true,
-          host: cachedHost,
-          protocol: "https",
-        };
-      }
-    } catch {
-      // Not authenticated
     }
   }
   return { authenticated: false, host };

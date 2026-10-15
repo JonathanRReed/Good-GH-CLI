@@ -1,0 +1,40 @@
+{
+  "scenario": "Synthetic invalid environment token, preserving stored GitHub credentials",
+  "remoteWrites": 0,
+  "before": {
+    "status": "failed",
+    "errorCode": "operation_failed",
+    "effects": {
+      "completed": [],
+      "pending": [],
+      "uncertain": [
+        "command_effects"
+      ]
+    }
+  },
+  "after": {
+    "binarySha256": "b08b3f366bdec593489bb5acfa5a72b18f9d10d8c58b4c66d2a43ccb6a1111ff",
+    "invalid": {
+      "status": "failed",
+      "error": {
+        "code": "authentication_required",
+        "message": "GitHub CLI must be authenticated with an account name to prepare publication.",
+        "retryability": "after_input"
+      },
+      "effects": {
+        "completed": [],
+        "pending": [],
+        "uncertain": []
+      }
+    },
+    "valid": {
+      "status": "planned",
+      "target": "JonathanRReed/ggh-qa-auth-preflight"
+    }
+  },
+  "focusedTests": {
+    "passed": 24,
+    "failed": 0
+  },
+  "scope": "Local compiled candidate with live GitHub authentication checks; complete release gates rerun at final revision."
+}

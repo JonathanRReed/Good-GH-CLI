@@ -49,7 +49,7 @@ test("live base comparison preserves the local branch and rejects subsequent rem
   git(["switch", "main"], repo); writeFileSync(join(repo, "upstream"), "remote"); git(["add", "."], repo); git(["commit", "-m", "remote"], repo);
   const remoteBase = git(["rev-parse", "HEAD"], repo);
   git(["push", bare, "main:main"], repo); git(["reset", "--hard", base], repo); git(["switch", "feature"], repo); git(["remote", "add", "origin", "https://github.com/fixture/project.git"], repo);
-  const result = await runFixture([], { root, cwd: repo, responses: [{ prefix: ["repo", "view"], stdout: JSON.stringify({ url: "https://github.com/fixture/project", isPrivate: true, visibility: "PRIVATE" }) }], invoke: `${rewrite(bare)} const {preparePublication,executePublication}=await import(${JSON.stringify(service)}); const prepared=await preparePublication({kind:'pr',base:'main'}); await run('git',['--git-dir',${JSON.stringify(bare)},'update-ref','refs/heads/main',${JSON.stringify(base)}]); const result=await executePublication(prepared.plan,{title:'T',body:'B'}); process.stdout.write(JSON.stringify({prepared,result}));` });
+  const result = await runFixture([], { root, cwd: repo, responses: [{ prefix: ["api", "repos/fixture/project"], stdout: JSON.stringify({ html_url: "https://github.com/fixture/project", private: true, visibility: "private" }) }], invoke: `${rewrite(bare)} const {preparePublication,executePublication}=await import(${JSON.stringify(service)}); const prepared=await preparePublication({kind:'pr',base:'main'}); await run('git',['--git-dir',${JSON.stringify(bare)},'update-ref','refs/heads/main',${JSON.stringify(base)}]); const result=await executePublication(prepared.plan,{title:'T',body:'B'}); process.stdout.write(JSON.stringify({prepared,result}));` });
   const value = JSON.parse(result.stdout);
   expect(value.prepared.plan).toMatchObject({ baseTip: remoteBase, localBaseTip: base, remoteBaseTip: remoteBase });
   expect(value.result.status).toBe("failed"); expect(value.result.error).toContain("Remote base");
@@ -68,7 +68,7 @@ test("unavailable live base requires an explicit fetch without changing refs", a
 
 test("repo approval mismatch blocks creation and an exact snapshot confirms without yes", async () => {
   const { root, repo, bare } = fixture();
-  const responses = [{ prefix: ["repo", "view"], exitCode: 1, stderr: "HTTP 404: Not Found" }, { prefix: ["repo", "create"], stdout: "https://github.com/fixture/project" }];
+  const responses = [{ prefix: ["api", "repos/fixture/project"], exitCode: 1, stderr: "HTTP 404: Not Found" }, { prefix: ["repo", "create"], stdout: "https://github.com/fixture/project" }];
   const invoke = (args: string[]) => `${rewrite(bare)} const {runCli}=await import(${JSON.stringify(entry)}); await runCli(['bun','ggh',...${JSON.stringify(args)}]);`;
   const args = ["repo", "create", "fixture/project", "--no-push", "--json"];
   const preview = await runFixture([], { root, cwd: repo, responses, invoke: invoke([...args, "--dry-run"]) });
@@ -83,7 +83,7 @@ test("repo approval mismatch blocks creation and an exact snapshot confirms with
 
 test("PR snapshot approval binds the supplied body before any creation", async () => {
   const { root, repo, bare } = fixture();
-  const responses = [{ prefix: ["repo", "view"], exitCode: 1, stderr: "HTTP 404: Not Found" }, { prefix: ["repo", "create"], stdout: "https://github.com/fixture/project" }, { prefix: ["pr", "list"], stdout: "[]" }, { prefix: ["pr", "create"], stdout: "https://github.com/fixture/project/pull/1" }];
+  const responses = [{ prefix: ["api", "repos/fixture/project"], exitCode: 1, stderr: "HTTP 404: Not Found" }, { prefix: ["repo", "create"], stdout: "https://github.com/fixture/project" }, { prefix: ["pr", "list"], stdout: "[]" }, { prefix: ["pr", "create"], stdout: "https://github.com/fixture/project/pull/1" }];
   const invoke = (args: string[]) => `${rewrite(bare)} const {runCli}=await import(${JSON.stringify(entry)}); await runCli(['bun','ggh',...${JSON.stringify(args)}]);`;
   const args = ["pr", "create", "--base", "main", "--title", "Title", "--body", "Body", "--no-ai", "--json"];
   const preview = await runFixture([], { root, cwd: repo, responses, invoke: invoke([...args, "--dry-run"]) });
@@ -111,8 +111,8 @@ test("execution rechecks selected attachment bytes after approval", async () => 
 test("existing target visibility is authoritative and changes invalidate approval", async () => {
   const { root, repo, bare } = fixture();
   git(["remote", "add", "origin", "https://github.com/fixture/project.git"], repo);
-  const responses = [{ prefix: ["repo", "view"], stdout: JSON.stringify({ url: "https://github.com/fixture/project", isPrivate: false, visibility: "PUBLIC" }) }];
-  const invoke = `${rewrite(bare)} const original=Bun.spawn.bind(Bun); let changed=false; Bun.spawn=(args,options)=>changed&&args[0]==='gh'&&args[1]==='repo'&&args[2]==='view'?{pid:0,stdout:new Blob([JSON.stringify({url:'https://github.com/fixture/project',isPrivate:true,visibility:'PRIVATE'})]).stream(),stderr:new Blob([]).stream(),exited:Promise.resolve(0),kill(){},stdin:null}:original(args,options); const {preparePublication,executePublication}=await import(${JSON.stringify(service)}); const prepared=await preparePublication({kind:'pr',base:'main'}); changed=true; const result=prepared.status==='ready'?await executePublication(prepared.plan,{title:'T',body:'B'}):prepared; process.stdout.write(JSON.stringify({prepared,result}));`;
+  const responses = [{ prefix: ["api", "repos/fixture/project"], stdout: JSON.stringify({ html_url: "https://github.com/fixture/project", private: false, visibility: "public" }) }];
+  const invoke = `${rewrite(bare)} const original=Bun.spawn.bind(Bun); let changed=false; Bun.spawn=(args,options)=>changed&&args[0]==='gh'&&args[1]==='api'&&args[2]==='repos/fixture/project'?{pid:0,stdout:new Blob([JSON.stringify({html_url:'https://github.com/fixture/project',private:true,visibility:'private'})]).stream(),stderr:new Blob([]).stream(),exited:Promise.resolve(0),kill(){},stdin:null}:original(args,options); const {preparePublication,executePublication}=await import(${JSON.stringify(service)}); const prepared=await preparePublication({kind:'pr',base:'main'}); changed=true; const result=prepared.status==='ready'?await executePublication(prepared.plan,{title:'T',body:'B'}):prepared; process.stdout.write(JSON.stringify({prepared,result}));`;
   const result = await runFixture([], { root, cwd: repo, responses, invoke });
   const value = JSON.parse(result.stdout);
   expect(value.prepared.plan.visibility).toBe("public");
@@ -123,8 +123,8 @@ test("existing target visibility is authoritative and changes invalidate approva
 test("unavailable existing target cannot become an approved private default", async () => {
   const { root, repo, bare } = fixture();
   git(["remote", "add", "origin", "https://github.com/fixture/project.git"], repo);
-  for (const response of [{ exitCode: 1, stderr: "HTTP 404: Not Found" }, { stdout: JSON.stringify({ url: "https://github.com/fixture/project" }) }]) {
-    const result = await runFixture([], { root, cwd: repo, responses: [{ prefix: ["repo", "view"], ...response }], invoke: `${rewrite(bare)} const {preparePublication}=await import(${JSON.stringify(service)}); process.stdout.write(JSON.stringify(await preparePublication({kind:'pr',base:'main'})));` });
+  for (const response of [{ exitCode: 1, stderr: "HTTP 404: Not Found" }, { stdout: JSON.stringify({ html_url: "https://github.com/fixture/project" }) }]) {
+    const result = await runFixture([], { root, cwd: repo, responses: [{ prefix: ["api", "repos/fixture/project"], ...response }], invoke: `${rewrite(bare)} const {preparePublication}=await import(${JSON.stringify(service)}); process.stdout.write(JSON.stringify(await preparePublication({kind:'pr',base:'main'})));` });
     expect(JSON.parse(result.stdout)).toMatchObject({ status: "needs_input", required: "repository" });
     expect(result.calls.some(args => args[1] === "create")).toBe(false);
   }

@@ -1,4 +1,5 @@
 import pc from "picocolors";
+import { GitHubError } from "../services/github/client.ts";
 import {
   describeAIFailure,
   type AIAttempt,
@@ -76,7 +77,11 @@ export function fail(message: string, metadata: Pick<CommandIssue, "code" | "req
  * same ternary across command files.
  */
 export function failFromGitHub(err: unknown): void {
-  fail(err instanceof Error ? err.message : String(err));
+  const code = err instanceof GitHubError
+    ? err.kind === "not_authenticated" ? "authentication_required"
+      : err.kind === "not_installed" ? "provider_unavailable" : undefined
+    : undefined;
+  fail(err instanceof Error ? err.message : String(err), { code });
   if (err instanceof PartialGitHubMutationError) {
     jsonOut({ status: "partially_completed", url: err.resourceUrl, attachments: err.attachments, error: { message: err.message } });
   } else if (err instanceof PartialAttachmentOperationError) {
