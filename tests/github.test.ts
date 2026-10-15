@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { normalizeCloneUrl, trimRepositorySuffix } from "../src/services/github.ts";
+import { normalizeCloneUrl, trimRepositorySuffix, parseRepoFlag } from "../src/services/github.ts";
 
 describe("github service", () => {
   it("normalizes owner/repo shorthand to HTTPS and SSH URLs", () => {
@@ -38,6 +38,8 @@ describe("github service", () => {
   it("trims repository suffixes in one pass for long untrusted input", () => {
     const prefix = `owner/${"repo".repeat(10_000)}`;
     expect(trimRepositorySuffix(`${prefix}.git${"/".repeat(10_000)}`)).toBe(prefix);
+    expect(parseRepoFlag(`github.com/owner/repo.git${"/".repeat(100_000)}`)?.nameWithOwner).toBe("owner/repo");
+    expect(() => parseRepoFlag(`owner/${"/".repeat(30_000)}x`)).toThrow();
   });
 
   it("returns no repository matches for an empty or whitespace query", async () => {

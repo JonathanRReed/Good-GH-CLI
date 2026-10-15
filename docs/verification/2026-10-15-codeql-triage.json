@@ -1,0 +1,73 @@
+{
+  "falsePositives": [
+    {
+      "number": 5,
+      "disposition": "false positive",
+      "reason": "Controlled test fixture values are embedded as complete JSON literals in JavaScript passed directly to Bun -e through an argv array. There is no shell or HTML parser. Hostile quotes, backticks and Unicode separators round-trip without executing code. These tests are not shipped."
+    },
+    {
+      "number": 6,
+      "disposition": "false positive",
+      "reason": "Controlled test fixture values are embedded as complete JSON literals in JavaScript passed directly to Bun -e through an argv array. There is no shell or HTML parser. Hostile quotes, backticks and Unicode separators round-trip without executing code. These tests are not shipped."
+    },
+    {
+      "number": 7,
+      "disposition": "false positive",
+      "reason": "Controlled test fixture values are embedded as complete JSON literals in JavaScript passed directly to Bun -e through an argv array. There is no shell or HTML parser. Hostile quotes, backticks and Unicode separators round-trip without executing code. These tests are not shipped."
+    },
+    {
+      "number": 8,
+      "disposition": "false positive",
+      "reason": "Controlled test fixture values are embedded as complete JSON literals in JavaScript passed directly to Bun -e through an argv array. There is no shell or HTML parser. Hostile quotes, backticks and Unicode separators round-trip without executing code. These tests are not shipped."
+    },
+    {
+      "number": 9,
+      "disposition": "false positive",
+      "reason": "Controlled test fixture values are embedded as complete JSON literals in JavaScript passed directly to Bun -e through an argv array. There is no shell or HTML parser. Hostile quotes, backticks and Unicode separators round-trip without executing code. These tests are not shipped."
+    },
+    {
+      "number": 10,
+      "disposition": "false positive",
+      "reason": "Controlled test fixture values are embedded as complete JSON literals in JavaScript passed directly to Bun -e through an argv array. There is no shell or HTML parser. Hostile quotes, backticks and Unicode separators round-trip without executing code. These tests are not shipped."
+    },
+    {
+      "number": 11,
+      "disposition": "false positive",
+      "reason": "Controlled test fixture values are embedded as complete JSON literals in JavaScript passed directly to Bun -e through an argv array. There is no shell or HTML parser. Hostile quotes, backticks and Unicode separators round-trip without executing code. These tests are not shipped."
+    },
+    {
+      "number": 13,
+      "disposition": "false positive",
+      "reason": "Controlled test fixture values are embedded as complete JSON literals in JavaScript passed directly to Bun -e through an argv array. There is no shell or HTML parser. Hostile quotes, backticks and Unicode separators round-trip without executing code. These tests are not shipped."
+    },
+    {
+      "number": 14,
+      "disposition": "false positive",
+      "reason": "Controlled test fixture values are embedded as complete JSON literals in JavaScript passed directly to Bun -e through an argv array. There is no shell or HTML parser. Hostile quotes, backticks and Unicode separators round-trip without executing code. These tests are not shipped."
+    },
+    {
+      "number": 16,
+      "disposition": "false positive",
+      "reason": "Controlled test fixture values are embedded as complete JSON literals in JavaScript passed directly to Bun -e through an argv array. There is no shell or HTML parser. Hostile quotes, backticks and Unicode separators round-trip without executing code. These tests are not shipped."
+    },
+    {
+      "number": 15,
+      "disposition": "false positive",
+      "reason": "This substitutes one Git refspec wildcard and compares the result only to a validated tracking-ref string. It is not a sanitizer or executable code. Git refspecs permit one wildcard per side. A replacement callback separately preserves literal dollar characters in branch names."
+    }
+  ],
+  "realFixes": [
+    {
+      "alert": 17,
+      "path": "src/services/github/client.ts",
+      "change": "Reuse linear repository suffix trimming instead of an unanchored trailing-slash regex."
+    },
+    {
+      "path": "src/services/publication.ts",
+      "change": "Use a replacement callback so valid dollar characters stay literal in refspec comparisons.",
+      "redTest": "Existing wildcard mapping was unnecessarily extended for topic/x$&."
+    }
+  ],
+  "unpublishedPreflightTag": "v0.5.0-beta.1",
+  "publicReleaseVersion": "0.5.0-beta.2"
+}

@@ -94,6 +94,6 @@ Run locally with a trusted native artifact:
 
 ```bash
 python3 scripts/measure-performance.py --binary /absolute/path/to/ggh \
-  --expected-version 0.5.0-beta.1 --baseline /absolute/path/to/previous-ggh \
+  --expected-version 0.5.0-beta.2 --baseline /absolute/path/to/previous-ggh \
   --results performance.json
 ```
