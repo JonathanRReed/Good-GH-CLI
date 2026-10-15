@@ -1,3 +1,4 @@
+import { CapabilityError } from "../dependency-compatibility.ts";
 /**
  * GitHub CLI attachment validation and transport.
  *
@@ -205,8 +206,8 @@ export async function prepareAttachmentPlan(input: AttachmentPlanInput): Promise
 
   const executable = getConfig(cwd).attachment_upload_command?.trim() ?? "";
   if (!executable) {
-    if (!nativeHost) throw new Error(`Native attachments require GitHub.com or a GHE.com tenant. Host ${host} needs configured storage for a verified public target.`);
-    throw new Error(`This gh ${input.operation.startsWith("pr-") ? "pr" : "issue"} command does not support --attach. Upgrade GitHub CLI or configure attachment_upload_command for a verified public target.`);
+    if (!nativeHost) throw new CapabilityError(`Native attachments require GitHub.com or a GHE.com tenant. Host ${host} needs configured storage for a verified public target.`);
+    throw new CapabilityError(`This gh ${input.operation.startsWith("pr-") ? "pr" : "issue"} command does not support --attach. Upgrade GitHub CLI at https://cli.github.com/ or configure attachment_upload_command for a verified public target.`);
   }
   if (!isAbsolute(executable)) throw new Error("attachment_upload_command must be an absolute executable path.");
   if (input.visibility === "private") {

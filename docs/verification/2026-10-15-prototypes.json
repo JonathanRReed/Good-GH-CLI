@@ -1,0 +1,121 @@
+{
+  "binarySha256": "19dab132ba7239a7fa66dfabf47ae23265236015bbc1a1982cf58e6df086b574",
+  "orderedExperiments": [
+    {
+      "experiment": "recovery timeline",
+      "observedBenefit": "Ordered effects remain visible together.",
+      "limitations": "Three archived recorded states tested. No current remote claims or recovery execution. Existing view preserves order and recover already groups effect certainty. Recorded cases were cancelled with no steps, partially completed with confirmed/pending steps, and succeeded. No recorded uncertain effect was available in the selected cases; uncertain rendering has source inspection only.",
+      "artifacts": [
+        "/tmp/ggh-quality-prototypes/artifacts/01-timeline.json"
+      ],
+      "assertions": [
+        "three distinct recorded step/status states",
+        "only view/recover executed"
+      ],
+      "workerRecommendation": "discard",
+      "releaseDecision": "exclude"
+    },
+    {
+      "experiment": "local rehearsal",
+      "observedBenefit": "Actual sandbox commit proves staged tree and parent history; unstaged and untracked content excluded.",
+      "limitations": "Copies synthetic objects only. No GitHub permission or server acceptance evidence. No human comparison.",
+      "artifacts": [
+        "/tmp/ggh-quality-prototypes/artifacts/02-rehearsal.json"
+      ],
+      "assertions": [
+        "original HEAD/index/files byte hashes unchanged",
+        "sandbox tree equals staged tree",
+        "sandbox parent equals original HEAD",
+        "unstaged/untracked exclusions checked"
+      ],
+      "workerRecommendation": "keep",
+      "releaseDecision": "exclude"
+    },
+    {
+      "experiment": "deterministic next actions",
+      "observedBenefit": "Adds bounded argv suggestions to numeric status. Interrupted and conflicted states suppress commit suggestions.",
+      "limitations": "Rules tested with explicit state inputs, not full live state extraction. Recover already provides inspection commands. Keep recommendation covers further bounded exploration only; live repository-state integration remains unproven.",
+      "artifacts": [
+        "/tmp/ggh-quality-prototypes/artifacts/03-actions.json"
+      ],
+      "assertions": [
+        "four exact-output cases",
+        "interrupted overrides conflicts and staged",
+        "conflicts override staged",
+        "all suggestions unexecuted"
+      ],
+      "workerRecommendation": "keep",
+      "releaseDecision": "exclude"
+    },
+    {
+      "experiment": "metadata handoff",
+      "observedBenefit": "Separate consumer identifies the inspect-only continuation from JSON alone. Export excludes prompt/body/source and evidence file content.",
+      "limitations": "Consumer validates a declared continuation, not autonomous recovery. Existing view/recover JSON supplies nearly all fields; no measured savings.",
+      "artifacts": [
+        "/tmp/ggh-quality-prototypes/artifacts/04-handoff.json",
+        "/tmp/ggh-quality-prototypes/artifacts/04-consumer-result.json"
+      ],
+      "assertions": [
+        "privacy canaries excluded",
+        "evidence file referenced only",
+        "recorded and current revisions separate",
+        "consumer subprocess exits zero"
+      ],
+      "workerRecommendation": "discard",
+      "releaseDecision": "exclude"
+    },
+    {
+      "experiment": "synthetic incident fixture",
+      "observedBenefit": "Minimal local lock fixture reproduces refusal while preserving original state.",
+      "limitations": "Reproduces local Git lock failure only. Cannot reproduce actual remote failures or account state. The saved JSON recipe describes file writes rather than providing a standalone executable exporter.",
+      "artifacts": [
+        "/tmp/ggh-quality-prototypes/artifacts/05-incident.json"
+      ],
+      "assertions": [
+        "nonzero exit",
+        "HEAD/index/worktree unchanged",
+        "foreign lock retained until fixture cleanup"
+      ],
+      "workerRecommendation": "keep",
+      "releaseDecision": "exclude"
+    },
+    {
+      "experiment": "keyboard stack view",
+      "observedBenefit": "PTY keyboard selection shows an inspection plan; Ctrl-C cancels without state changes.",
+      "limitations": "Synthetic PR/CI and drift are labeled. Prototype uses j plus Enter, not full arrow navigation or terminal resizing. Existing remote list already joins CI/review; no user evidence of better navigation.",
+      "artifacts": [
+        "/tmp/ggh-quality-prototypes/artifacts/06-keyboard.json"
+      ],
+      "assertions": [
+        "real POSIX PTY select and Ctrl-C paths",
+        "no plan execution",
+        "original branch/HEAD/index/worktree preserved"
+      ],
+      "workerRecommendation": "discard",
+      "releaseDecision": "exclude"
+    }
+  ],
+  "environment": {
+    "isolatedHome": "/tmp/ggh-quality-prototypes/home",
+    "isolatedXdg": "/tmp/ggh-quality-prototypes/xdg",
+    "gitConfig": "system disabled; global /dev/null; protocol.allow=never; GIT_ALLOW_PROTOCOL empty; core.hooksPath empty owned directory",
+    "deniedExecutables": [
+      "gh",
+      "codex",
+      "claude",
+      "grok",
+      "ollama",
+      "curl",
+      "wget",
+      "ssh"
+    ],
+    "deniedInvocationCount": 5,
+    "processTimeoutSeconds": 15,
+    "PTYDeadlineSeconds": 8,
+    "nativeBinaryPreserved": true,
+    "projectFilesChanged": false,
+    "remoteActions": "none",
+    "cleanup": "All subprocesses exited. Foreign lock removed. Synthetic repositories retained as evidence."
+  },
+  "decision": "All six experiments completed in order. None demonstrated an improvement over an observed task sufficient to add a production command."
+}

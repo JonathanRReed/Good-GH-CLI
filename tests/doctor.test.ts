@@ -12,7 +12,7 @@ import packageJson from "../package.json";
 const roots: string[] = [];
 const providerIds = ["codex", "grok", "claude", "ollama"] as const;
 
-async function setup(options: { git?: boolean; gh?: boolean } = {}) {
+async function setup(options: { git?: boolean; gh?: boolean; gitVersion?: string } = {}) {
   const root = await mkdtemp(join(tmpdir(), "ggh-doctor-"));
   roots.push(root);
   const calls: string[] = [];
@@ -29,7 +29,7 @@ async function setup(options: { git?: boolean; gh?: boolean } = {}) {
     run: async (command, args) => {
       const call = [command, ...args].join(" ");
       calls.push(call);
-      if (call === "git --version") return { stdout: "git version 2.50.0\n", stderr: "", exitCode: 0 };
+      if (call === "git --version") return { stdout: `${options.gitVersion ?? "git version 2.50.0"}\n`, stderr: "", exitCode: 0 };
       if (call === "gh --version") return { stdout: "gh version 2.88.0 (fixture)\n", stderr: "", exitCode: 0 };
       if (call in attachmentHelp) return { stdout: `${attachmentHelp[call]}\n`, stderr: "", exitCode: 0 };
       return { stdout: "", stderr: "", exitCode: 91 };
@@ -93,11 +93,28 @@ afterEach(async () => {
 });
 
 describe("configuration doctor local tool checks", () => {
+  it("reports unsupported and unparseable Git with upgrade guidance", async () => {
+    for (const gitVersion of ["git version 2.30.9", "unrecognized"]) {
+      const result = await doctor(await setup({ gitVersion }));
+      expect(result.exitCode).toBe(1);
+      expect(result.output.localTools).toMatchObject({ git: { installed: true, version: gitVersion, minimumVersion: "2.31.0", supported: false } });
+      expect(JSON.stringify(result.output.problems)).toContain("https://git-scm.com/downloads");
+    }
+  });
+
+  it("accepts the minimum Git version with vendor suffixes", async () => {
+    for (const gitVersion of ["git version 2.31.0", "git version 2.31.0 (Apple Git-1)", "git version 2.31.0.windows.1"]) {
+      const result = await doctor(await setup({ gitVersion }));
+      expect(result.exitCode).toBe(0);
+      expect(result.output.localTools).toMatchObject({ git: { minimumVersion: "2.31.0", supported: true } });
+    }
+  });
+
   it("reads Git and gh versions plus attachment flags from fake local help", async () => {
     const fixture = await setup();
     const result = await doctor(fixture);
     const tools = result.output.localTools as {
-      git: { installed: boolean; version?: string };
+      git: { installed: boolean; version?: string; minimumVersion: string; supported: boolean };
       gh: { installed: boolean; version?: string; attachments: Record<string, boolean | null> };
     };
     expect(result.exitCode).toBe(0);
@@ -115,7 +132,7 @@ describe("configuration doctor local tool checks", () => {
       expect(guidance.installCommands.join("\n")).toContain(".local");
     }
     expect(getInstallationGuidance("win32", "arm64", packageJson.version)).toMatchObject({ supported: false, asset: null, downloadCommands: [], installCommands: [] });
-    expect(tools.git).toEqual({ installed: true, version: "git version 2.50.0" });
+    expect(tools.git).toEqual({ installed: true, version: "git version 2.50.0", minimumVersion: "2.31.0", supported: true });
     expect(tools.gh).toMatchObject({ installed: true, version: "gh version 2.88.0 (fixture)" });
     expect(fixture.calls).toHaveLength(8);
     expect(tools.gh.attachments).toEqual({

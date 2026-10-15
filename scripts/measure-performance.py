@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 COMMAND_TIMEOUT_SECONDS = 20
+SETUP_TIMEOUT_SECONDS = 120
 DEFAULT_SAMPLES = 5
 FIXTURES = (("small", 20), ("large", 5_000), ("monorepo", 10_000))
 PROVIDER_CLIENTS = ("gh", "codex", "grok", "claude", "ollama")
@@ -46,9 +47,9 @@ def sha256(path: Path) -> str:
 
 
 def git(args: list[str], cwd: Path, env: dict[str, str]) -> str:
-    result = subprocess.run(["git", *args], cwd=cwd, env=env, text=True,
+    result = subprocess.run(["git", *args], cwd=cwd, env=env, encoding="utf-8",
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            timeout=COMMAND_TIMEOUT_SECONDS, check=False)
+                            timeout=SETUP_TIMEOUT_SECONDS, check=False)
     if result.returncode:
         raise MeasurementError(f"git {' '.join(args)} failed ({result.returncode}): {result.stderr.strip()}")
     return result.stdout.strip()
@@ -200,7 +201,7 @@ def invoke(binary: Path, args: list[str], cwd: Path | None, env: dict[str, str],
     process: subprocess.Popen[str] | None = None
     try:
         flags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
-        process = subprocess.Popen([str(binary), *args], cwd=cwd, env=env, text=True,
+        process = subprocess.Popen([str(binary), *args], cwd=cwd, env=env, encoding="utf-8",
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                    start_new_session=os.name != "nt", creationflags=flags)
         stdout, stderr = process.communicate(timeout=COMMAND_TIMEOUT_SECONDS)
@@ -281,7 +282,7 @@ def main() -> int:
         result_doc["system"] = {
             "platform": platform.platform(), "os": platform.system(), "architecture": platform.machine(),
             "cpu_count": os.cpu_count(), "load_average": list(os.getloadavg()) if hasattr(os, "getloadavg") else None,
-            "git_version": subprocess.run(["git", "--version"], text=True, stdout=subprocess.PIPE,
+            "git_version": subprocess.run(["git", "--version"], encoding="utf-8", stdout=subprocess.PIPE,
                                            stderr=subprocess.PIPE, timeout=COMMAND_TIMEOUT_SECONDS, check=True).stdout.strip(),
         }
         fixture_root = temp_root / "fixtures"

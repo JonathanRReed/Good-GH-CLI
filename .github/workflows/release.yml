@@ -210,19 +210,10 @@ jobs:
           retention-days: 7
       - name: Restore downloaded executable permissions
         if: runner.os != 'Windows'
-        run: chmod +x native/${{ matrix.asset }}
+        run: chmod +x native/${{ matrix.asset }} previous/${{ matrix.asset }}
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.13'
-      - name: Measure validated native workloads
-        shell: bash
-        run: python scripts/measure-performance.py --binary "$PWD/native/${{ matrix.asset }}" --expected-version '${{ needs.verify.outputs.version }}' --baseline "$PWD/previous/${{ matrix.asset }}" --results performance.json
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        if: always()
-        with:
-          name: performance-results-${{ matrix.asset }}
-          path: performance.json
-          retention-days: 7
       - name: Native regression suite
         if: runner.os != 'Windows'
         run: python3 scripts/audit-regressions.py --binary "$PWD/native/${{ matrix.asset }}" --results regressions.json
@@ -237,6 +228,24 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: python scripts/qualify-terminal-windows.py --binary "$PWD/native/${{ matrix.asset }}" --results terminal.json
+      - name: Measure validated native workloads
+        shell: bash
+        run: python scripts/measure-performance.py --binary "$PWD/native/${{ matrix.asset }}" --expected-version '${{ needs.verify.outputs.version }}' --baseline "$PWD/previous/${{ matrix.asset }}" --results performance.json
+      - name: Assert the offline tour against the native artifact
+        shell: bash
+        run: python scripts/demo.py --binary "$PWD/native/${{ matrix.asset }}" --results demo.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: demo-results-${{ matrix.asset }}
+          path: demo.json
+          retention-days: 7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: performance-results-${{ matrix.asset }}
+          path: performance.json
+          retention-days: 7
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
@@ -289,7 +298,7 @@ jobs:
           echo "Published and verified good-gh-cli@$VERSION ($DIST_TAG)." >> "$GITHUB_STEP_SUMMARY"
 
   release:
-    name: Publish verified GitHub assets
+    name: Prepare verified draft GitHub release
     needs: [verify, binaries, smoke, npm]
     if: always() && github.event_name != 'pull_request' && needs.verify.result == 'success' && needs.binaries.result == 'success' && needs.smoke.result == 'success' && (needs.npm.result == 'success' || needs.npm.result == 'skipped')
     runs-on: ubuntu-latest
@@ -340,4 +349,4 @@ jobs:
           set -euo pipefail
           EXTRA=()
           [[ "$TAG" != *-* ]] || EXTRA+=(--prerelease)
-          gh release create "$TAG" --title "$TAG" --notes-file RELEASE_NOTES.md --verify-tag "${EXTRA[@]}" artifacts/*
+          gh release create "$TAG" --draft --title "$TAG" --notes-file RELEASE_NOTES.md --verify-tag "${EXTRA[@]}" artifacts/*

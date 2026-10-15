@@ -1,3 +1,4 @@
+import { CapabilityError } from "./services/dependency-compatibility.ts";
 import { registerAgentCommand } from "./commands/agent.ts";
 import { finalizeJsonOutput } from "./utils/output.ts";
 import { beginCommandOutput, setCommandPath, recordCommandIssue, rememberCommandResult } from "./services/runtime.ts";
@@ -304,13 +305,14 @@ export async function runCli(argv: string[]): Promise<void> {
       err.message += ` Use ggh git ${args.join(" ")} for Git's native syntax.`;
     }
     if (agentRequested) {
-      recordCommandIssue({ status: "failed", code: err instanceof CommanderError ? "invalid_arguments" : "operation_failed", message: err instanceof Error ? err.message : String(err) });
+      recordCommandIssue({ status: "failed", code: err instanceof CapabilityError ? "provider_unavailable" : err instanceof CommanderError ? "invalid_arguments" : "operation_failed", message: err instanceof Error ? err.message : String(err) });
       process.exitCode = 1;
       const { finishCommandOperation } = await import("./services/command-operations.ts");
       await finishCommandOperation();
       finalizeJsonOutput();
       return;
     }
+    if (err instanceof CapabilityError) { fail(err.message, { code: "provider_unavailable" }); finalizeJsonOutput(); return; }
     throw err;
   }
 }

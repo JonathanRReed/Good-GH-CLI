@@ -42,4 +42,4 @@ Each item ends in a focused behavioral receipt before implementation advances. T
 
 ## Active tranche
 
-Items 01 through 05 passed their focused checks. Item 06 local install qualification passed. The first hosted run found platform-specific fixture errors, now repaired locally; its exact-artifact jobs await a successful source gate. Item 07 Windows storage and subprocess-tree changes are implemented with a dedicated cross-user qualification job. Run that checkpoint on Windows before closing these gates or starting live GitHub qualification. Outside human testers remain waived.
+Items 01 through 19 have their implementation or experiment receipts. Live GitHub, manual editing, independent agent tasks, Windows cross-user privacy, local terminal checks, and prior native installation checks passed. Final source must still pass the hosted Windows console, offline demo, and performance checks. The final pass is addressing a measured optional-provider status delay and terminal control output. Then refresh exact source/package/platform evidence, merge, and publish 0.5.0-beta.1 with a signed and notarized macOS DMG. Outside human testers remain waived.

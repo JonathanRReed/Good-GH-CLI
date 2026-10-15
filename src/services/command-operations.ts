@@ -1,3 +1,4 @@
+import { assertSupportedGit } from "./dependency-compatibility.ts";
 import { finalizeJsonOutput } from "../utils/output.ts";
 import type { Command } from "commander";
 import { startOperation, updateOperation, readOperation, type OperationRecord, type OperationStep } from "./operations.ts";
@@ -8,6 +9,7 @@ import { run } from "../utils/exec.ts";
 import { fail, jsonOut } from "../utils/ui.ts";
 import { getAIUsageReports } from "./ai/index.ts";
 
+const MANAGED_GIT_DOMAINS = new Set(["commit", "stack", "worktree", "stash", "discard", "undo", "resolve", "squash", "rename", "sync", "switch", "clone", "hook", "ignore", "draft", "operation"]);
 const READ_ACTIONS = new Set(["list", "view", "get", "doctor", "diff", "status", "log", "show", "inspect", "download"]);
 const LOCAL_MUTATIONS = new Set(["commit", "discard", "sync", "squash", "undo", "rename", "resolve", "switch", "clone"]);
 const READ_DOMAINS = new Set(["status", "log", "search", "browse", "checks", "mcp", "completion", "operation"]);
@@ -19,9 +21,14 @@ function commandParts(command: Command): string[] {
 }
 
 function shouldRecord(command: Command, names: string[]): boolean {
+  if (process.env.GGH_NO_RECORDS === "1") return false;
+  return wouldRecord(command, names);
+}
+
+function wouldRecord(command: Command, names: string[]): boolean {
   const domain = names[0] ?? "";
   const action = names.at(-1) ?? "";
-  if (process.env.GGH_NO_RECORDS === "1" || getFlags().dryRun || READ_DOMAINS.has(domain)) return false;
+  if (getFlags().dryRun || READ_DOMAINS.has(domain)) return false;
   if (!getFlags().aiDisabled && (action === "triage" || action === "review" || action === "summarize")) return true;
   if (!DRY_RUN_CAPABLE.has(domain)) return false;
   const options = command.opts();
@@ -117,6 +124,8 @@ export async function finishCommandOperation(): Promise<void> {
 export function registerCommandOperations(program: Command): void {
   program.hook("preAction", async (_program, command) => {
     const names = commandParts(command);
+    const domain = names[0] ?? "";
+    if (wouldRecord(command, names) || MANAGED_GIT_DOMAINS.has(domain)) await assertSupportedGit();
     if (!shouldRecord(command, names)) return;
     const cwd = process.cwd();
     const record = await startOperation({ command: names.join(" "), target: parseRepoFlag()?.nameWithOwner, revision: await revision(cwd), cwd });

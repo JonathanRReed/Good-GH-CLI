@@ -145,3 +145,15 @@ WindowsConPTY fixture previously inherited broad ancestor permissions and was co
 All synthetic GitHub resources were cleaned: PR1–5 closed, known non-main test branches removed, private/public QA repositories archived, IDs verified. Updated live receipt records no openPRs and only main. No token scopes changed.
 
 Current next17 asserted hermetic demo is being written in scripts/demo.py with a Bash compatibility entry. Then18 dependency compatibility, six experiments, final cleanup/debloat/security/performance, reviewed main integration and0.5.0-beta.1 release remain. Do not stop at this checkpoint.
+
+## 17 demo, 18 compatibility, and 19 experiments
+
+The offline demo now asserts 14 local commands with isolated configuration and denied GitHub/provider executables. Native and source runs passed, including a source checkout with spaces and Unicode. A fake CLI returning zero was rejected by its JSON assertion. Receipts docs/verification/2026-10-15-offline-demo-{native,source}.json. Windows execution is implemented but awaits the hosted run.
+
+Managed workflows now require Git >=2.31 before journal creation or repository effects, including GGH_NO_RECORDS=1. Doctor exposes support status. Actual checksum-verified gh2.48 passed legacy identity authentication and publication preview; unsupported private attachments failed with provider_unavailable and no effects. Receipt docs/verification/2026-10-15-gh-compatibility.json; docs/COMPATIBILITY.md distinguishes fixtures from actual dependency execution. Focused compatibility and doctor tests, typecheck, lint, and actionlint passed.
+
+All six disposable experiments completed in order. Root reviewed their asserted outcomes and excluded all six from the release because none demonstrated improvement over an observed task sufficient to justify a production interface. docs/quality/2026-10-15-prototype-decisions.md and docs/verification/2026-10-15-prototypes.json record the individual reasons and limits. This closes the experiment task rather than leaving speculative implementation open.
+
+After restart, recovered sessions83735/90988/53766/20254 all exited zero. HEAD381bba4 CI38683485461 and CodeQL38683485466 passed. Release38683485419 failed before terminal qualification because the prior raw Linux binary lacked executable mode and Windows fixture git setup exceeded20seconds. Current workflow chmods both artifacts; fixture-only setup gets120seconds while measured command limits stay20. Console checks now precede performance. UTF-8 decoding prevents Windows path encoding confusion.
+
+Final pass has one measured defect: status with AI disabled and a slow optional Codex executable took15763ms. Status-specific provider probes need a bounded fix without changing normal provider availability semantics or poisoning their cache. A safe intercepted-output probe also confirmed OSC52 reaches human note output; sanitize managed human output while preserving JSON and native escapes. Independent workers own those disjoint fixes. Read-only test/dependency cleanup inventory is running. Do not merge or release until these fixes and exact hosted/package/trust gates pass.

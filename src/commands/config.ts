@@ -1,3 +1,4 @@
+import { MIN_GIT_VERSION, GIT_UPGRADE_URL, isSupportedGitVersion } from "../services/dependency-compatibility.ts";
 import { Command } from "commander";
 import packageJson from "../../package.json";
 import { getInstallationGuidance } from "../services/install-guidance.ts";
@@ -30,7 +31,7 @@ const GH_ATTACHMENT_COMMANDS = [
 ] as const;
 
 interface LocalToolDiagnostics {
-  git: { installed: boolean; version?: string };
+  git: { installed: boolean; version?: string; minimumVersion: string; supported: boolean };
   gh: {
     installed: boolean;
     version?: string;
@@ -102,7 +103,7 @@ async function inspectLocalTools(dependencies: ConfigDoctorProbeDependencies = {
     "issue.comment": supportsAttachFlag(helpOutputs[5]),
   };
   return {
-    git: { installed: gitInstalled, ...(firstLine(gitVersionOutput) ? { version: firstLine(gitVersionOutput) } : {}) },
+    git: { installed: gitInstalled, minimumVersion: MIN_GIT_VERSION, supported: isSupportedGitVersion(gitVersionOutput ?? ""), ...(firstLine(gitVersionOutput) ? { version: firstLine(gitVersionOutput) } : {}) },
     gh: { installed: ghInstalled, ...(firstLine(ghVersionOutput) ? { version: firstLine(ghVersionOutput) } : {}), attachments },
   };
 }
@@ -294,6 +295,9 @@ export function registerConfigCommand(program: Command, doctorDependencies: Conf
       }
       if (!localTools.git.installed) {
         problems.push("Git is required but was not found on PATH. Install Git before using Good-GH-CLI.");
+      }
+      if (localTools.git.installed && !localTools.git.supported) {
+        problems.push(`Git ${MIN_GIT_VERSION} or newer is required for managed workflows. ${localTools.git.version ? `Found ${localTools.git.version}.` : "Could not determine the installed Git version."} Upgrade Git: ${GIT_UPGRADE_URL}`);
       }
       if (!localTools.gh.installed) {
         problems.push("GitHub CLI (gh) was not found on PATH. Install it to use GitHub features such as pull requests and issues.");

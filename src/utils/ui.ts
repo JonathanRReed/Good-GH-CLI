@@ -1,3 +1,4 @@
+import { CapabilityError } from "../services/dependency-compatibility.ts";
 import pc from "picocolors";
 import { GitHubError } from "../services/github/client.ts";
 import {
@@ -77,7 +78,7 @@ export function fail(message: string, metadata: Pick<CommandIssue, "code" | "req
  * same ternary across command files.
  */
 export function failFromGitHub(err: unknown): void {
-  const code = err instanceof GitHubError
+  const code = err instanceof CapabilityError ? "provider_unavailable" : err instanceof GitHubError
     ? err.kind === "not_authenticated" ? "authentication_required"
       : err.kind === "not_installed" ? "provider_unavailable" : undefined
     : undefined;
