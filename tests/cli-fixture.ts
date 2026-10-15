@@ -11,6 +11,40 @@ export interface FixtureResponse {
   exitCode?: number;
 }
 
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function stopFixtureProcessTree(child: Bun.Subprocess): Promise<void> {
+  if (process.platform === "win32") {
+    const systemRoot = process.env.SystemRoot ?? process.env.SYSTEMROOT;
+    if (systemRoot) {
+      try {
+        const killer = Bun.spawn([join(systemRoot, "System32", "taskkill.exe"), "/PID", String(child.pid), "/T", "/F"], {
+          stdin: "ignore", stdout: "ignore", stderr: "ignore",
+        });
+        const stopped = await Promise.race([killer.exited, delay(2_000).then(() => undefined)]);
+        if (stopped === 0) {
+          await child.exited;
+          return;
+        }
+        killer.kill("SIGKILL");
+      } catch {
+        // Fall through to the direct child if taskkill is unavailable.
+      }
+    }
+  } else {
+    try {
+      process.kill(-child.pid, "SIGKILL");
+      await child.exited;
+      return;
+    } catch {
+      // Bun may not start this child in its own process group.
+    }
+  }
+
+  try { child.kill("SIGKILL"); } catch { /* The fixture already exited. */ }
+  await child.exited;
+}
+
 export async function runFixture(
   args: string[],
   options: { root: string; cwd?: string; responses?: FixtureResponse[]; invoke?: string; config?: Record<string, unknown> },
@@ -60,18 +94,33 @@ export async function runFixture(
     env: { ...env, HOME: runRoot, XDG_CONFIG_HOME: runRoot, GGH_NO_PLUGINS: "1", GIT_CONFIG_NOSYSTEM: "1", NO_COLOR: "1" },
     stdin: "ignore", stdout: "pipe", stderr: "pipe",
   });
-  const timer = setTimeout(() => child.kill(), 10_000);
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const [stdout, stderr, exitCode] = await Promise.all([
+    const completed = Promise.all([
       new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited,
     ]);
+    const outcome = await Promise.race([
+      completed.then((result) => ({ kind: "completed" as const, result })),
+      new Promise<{ kind: "timeout" }>((resolve) => {
+        timer = setTimeout(() => resolve({ kind: "timeout" }), 10_000);
+      }),
+    ]);
+    if (outcome.kind === "timeout") {
+      await stopFixtureProcessTree(child);
+      const captured = await Promise.race([completed, delay(1_000).then(() => undefined)]);
+      const detail = captured
+        ? ` stdout=${JSON.stringify(captured[0])} stderr=${JSON.stringify(captured[1])} exit=${captured[2]}`
+        : " stdout/stderr did not close after the child tree exited";
+      throw new Error(`CLI fixture timed out after 10000ms (pid ${child.pid}).${detail}`);
+    }
+    const [stdout, stderr, exitCode] = outcome.result;
     let calls: string[][] = [];
     if (existsSync(trace)) calls = readFileSync(trace, "utf8").trim().split("\n").filter(Boolean).map(line => JSON.parse(line));
     const providerCalls: string[][] = existsSync(providerTrace) ? readFileSync(providerTrace, "utf8").trim().split("\n").filter(Boolean).map(line => JSON.parse(line)) : [];
     const inputs: Array<{ args: string[]; text: string }> = existsSync(inputTrace) ? readFileSync(inputTrace, "utf8").trim().split("\n").filter(Boolean).map(line => JSON.parse(line)) : [];
     return { stdout, stderr, exitCode, calls, providerCalls, inputs };
   } finally {
-    clearTimeout(timer);
+    if (timer !== undefined) clearTimeout(timer);
   }
 }
 

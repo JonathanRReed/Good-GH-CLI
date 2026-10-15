@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { mkdtemp, writeFile, readFile, readdir, rm } from "node:fs/promises";
-import { devNull, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const cli = resolve("src/index.ts");
@@ -10,14 +10,19 @@ describe("Git compatibility boundary", () => {
     it(`rejects Git 2.30 before commit effects, records disabled: ${noRecords}`, async () => {
       const root = await mkdtemp(join(tmpdir(), "ggh-old-git-"));
       const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(GIT_|GH_|GITHUB_|GGH_)/.test(key)));
-      Object.assign(env, { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: devNull, GIT_TERMINAL_PROMPT: "0", GGH_NO_PLUGINS: "1" });
+      Object.assign(env, { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: join(root, "empty-gitconfig"), GIT_TERMINAL_PROMPT: "0", GGH_NO_PLUGINS: "1" });
       const git = async (...args: string[]) => {
         const child = Bun.spawn(["git", ...args], { cwd: root, env, stdout: "pipe", stderr: "pipe" });
-        const output = await new Response(child.stdout).text();
-        expect(await child.exited).toBe(0);
+        const [output, stderr, exitCode] = await Promise.all([
+          new Response(child.stdout).text(),
+          new Response(child.stderr).text(),
+          child.exited,
+        ]);
+        expect(exitCode, `git ${args.join(" ")} failed in ${root}: ${stderr.trim()}`).toBe(0);
         return output;
       };
       try {
+        await writeFile(join(root, "empty-gitconfig"), "");
         await git("init", "-q");
         await git("config", "user.name", "Fixture");
         await git("config", "user.email", "fixture@example.com");
@@ -41,7 +46,7 @@ describe("Git compatibility boundary", () => {
         expect(await readFile(join(root, ".git/index"))).toEqual(before.index);
         expect(await readFile(join(root, "file.txt"), "utf8")).toBe("unstaged\n");
         expect(await readdir(join(root, ".git"))).toEqual(before.entries);
-        expect((await readdir(root)).sort()).toEqual([".git", "file.txt"]);
+        expect((await readdir(root)).sort()).toEqual([".git", "empty-gitconfig", "file.txt"]);
       } finally { await rm(root, { recursive: true, force: true }); }
     });
   }

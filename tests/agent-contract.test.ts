@@ -1,10 +1,14 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { rmSync } from "node:fs";
 import { fixtureRoot, runFixture } from "./cli-fixture.ts";
 import { agentEnvelope } from "../src/services/agent-contract.ts";
 import { startOperation, updateOperation, readOperation } from "../src/services/operations.ts";
 
 const root = fixtureRoot("ggh-agent-");
+beforeAll(() => {
+  const initialized = Bun.spawnSync(["git", "init", root], { stdout: "ignore", stderr: "pipe" });
+  expect(initialized.exitCode).toBe(0);
+});
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
 describe("agent contract", () => {
