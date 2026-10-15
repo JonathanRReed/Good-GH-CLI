@@ -59,3 +59,9 @@ Developer ID identity is available. Existing Keychain profile `waves-notary` was
 ## Final gates
 
 Do not claim completion before full source, native, package, platform, privacy, signing, live-service, terminal, failure, agent-task, cleanup and performance checks. Preserve each receipt separately. User authorized checkpoint commits as necessary for exact-SHA PR CI before final merge. Do not stage compiled ggh/ggh.sha256 or temp artifacts as source. Final commit/tag and public release require exact revision/artifact checks.
+
+## Latest hosted iteration
+
+9109ac1 is pushed. CI38673751551, Release38673751592, CodeQL38673751570. Windows helper module isolation worked: the dedicated receipt reached actual storage creation and confirmed protected, current-user-only DACLs and current-user ownership on all6roots. Public control read and private directory child creation denial passed. The probe stopped on Directory.Move's access-denied IOException, which its UnauthorizedAccessException-only catch did not recognize. Current script catches IOException only when native HRESULT error is5; unrelated I/O errors still fail. PS parser and embedded C# compile passed. Add error type/HResult to failed receipts for diagnosis. Commit/push this probe correction next. Receipt /tmp/ggh-07-privacy-9109/windows-privacy.json. Native and other source jobs for9109 are still running; inspect them before restarting work.
+
+Live-service read-only prerequisites: gh2.100.0 installed, account belongs to0organizations, public project is the only matching ggh repository. T3 browser default profile is signed out; its background tab is tab_1_0ce9e498-2ca5-440f-8d9d-09ae4f056e1e. No synthetic repos have been created yet. Avoid assuming browser-based deletion or org/fork-account rights exist. GH token lacks delete_repo scope, so live QA resources need an explicit clean retention/deletion approach without changing unrelated repositories or credentials.

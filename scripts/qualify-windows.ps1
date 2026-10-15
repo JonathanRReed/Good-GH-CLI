@@ -57,6 +57,7 @@ public static class PrivacyProbe {
         }
         return false;
       } catch (UnauthorizedAccessException) { return true; }
+        catch (IOException error) when ((error.HResult & 0xffff) == 5) { return true; }
     });
   }
 }
@@ -163,6 +164,8 @@ try {
   $receipt.passed = $true
 } catch {
   $receipt.error = $_.Exception.Message
+  $receipt.errorType = $_.Exception.GetBaseException().GetType().FullName
+  $receipt.errorHResult = $_.Exception.GetBaseException().HResult
   throw
 } finally {
   if ($null -ne $token) { $token.Dispose() }
