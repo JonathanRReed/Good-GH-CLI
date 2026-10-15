@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { lstatSync, mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 // Windows modes do not restrict access. Audit DACLs before reading stored data.
 // Machine administrators and SYSTEM can take ownership and are outside isolation.
@@ -113,8 +113,11 @@ export function assertWindowsPrivateDirectory(path: string, create = true, refre
   }
   if (!current && !create) return;
   const executable = join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  // PowerShell 7 module paths cannot be loaded by Windows PowerShell 5.1.
+  const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toUpperCase() !== "PSMODULEPATH"));
+  environment.PSModulePath = join(dirname(executable), "Modules");
   const result = spawnSync(executable, ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(WINDOWS_ACL, "utf16le").toString("base64")], {
-    input: JSON.stringify({ path: root, create }), encoding: "utf8", windowsHide: true, timeout: 15_000, maxBuffer: 128 * 1024,
+    input: JSON.stringify({ path: root, create }), env: environment, encoding: "utf8", windowsHide: true, timeout: 15_000, maxBuffer: 128 * 1024,
   });
   let accepted = false;
   let reason = "inspection_failed";

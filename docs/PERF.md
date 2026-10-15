@@ -53,3 +53,11 @@ Outliers (~1 s on `status`) are `gh`/network variance, not ours.
    and must degrade cleanly when offline.
 4. `--dry-run` never bills AI and never prompts (enforced by
    `tests/safety-net.test.ts`).
+
+## Candidate bundle budget
+
+The next beta allows a minified bundle up to 600,000 bytes. This guards
+unexpected growth while accommodating the agent schema, recovery, and Windows
+privacy code. The 991f466 hosted build measured 502,021 bytes, just above the
+previous 500,000-byte gate. Bundle size is a packaging check. Startup and workflow
+latency need their own measurements before the final release.

@@ -208,6 +208,9 @@ jobs:
           name: install-results-${{ matrix.asset }}
           path: native-smoke.json
           retention-days: 7
+      - name: Restore downloaded executable permissions
+        if: runner.os != 'Windows'
+        run: chmod +x native/${{ matrix.asset }}
       - name: Native regression suite
         if: runner.os != 'Windows'
         run: python3 scripts/audit-regressions.py --binary "$PWD/native/${{ matrix.asset }}" --results regressions.json

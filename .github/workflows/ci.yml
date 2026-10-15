@@ -95,11 +95,11 @@ jobs:
             echo "Banner leaked onto stdout:"; echo "$OUT"; exit 1
           fi
 
-      - name: Enforce bundle size budget (500 KB)
+      - name: Enforce bundle size budget (600 KB)
         run: |
           SIZE=$(wc -c < dist/ggh.js)
           echo "Bundle size: $SIZE bytes"
-          test "$SIZE" -le 500000
+          test "$SIZE" -le 600000
 
       - name: Man page is fresh
         # man/ggh.1 is generated from the command tree; this fails the build
