@@ -38,7 +38,7 @@ export interface AIProvider {
   readonly defaultModel: string;
   /** Models to try in order, cheapest-but-capable last, when the configured model fails. */
   readonly fallbackModels: readonly string[];
-  isAvailable(): Promise<boolean>;
+  isAvailable(options?: { timeoutMs: number }): Promise<boolean>;
   getDiagnostics(): Promise<AIProviderDiagnostics>;
   getLastUsage(): AIUsage | undefined;
   resetLastUsage(): void;

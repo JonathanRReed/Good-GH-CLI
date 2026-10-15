@@ -10,13 +10,13 @@ import { getFlags, getCommandIssue, getPreview, hasJsonOutput, recordCommandIssu
  * never silences them.
  */
 function writeErr(line: string): void {
-  process.stderr.write(`${line}\n`);
+  process.stderr.write(`${terminalText(line)}\n`);
 }
 
 /** The one channel that writes to stdout. Everything else is chrome. */
 export function data(line: string): void {
   if (getFlags().agent) { emitJson(line); return; }
-  process.stdout.write(`${line}\n`);
+  process.stdout.write(`${process.stdout.isTTY ? terminalText(line) : line}\n`);
 }
 
 /** Emits a value as JSON on stdout and nothing else. */
@@ -105,6 +105,8 @@ export function cancel(text = ""): void {
 /** A boxed aside, used for proposed commit messages and PR bodies. */
 export function note(body: string, title = ""): void {
   if (chromeSuppressed()) return;
+  body = terminalText(body);
+  title = terminalText(title);
   const lines = body.split("\n");
   const width = Math.max(
     title.length + 2,
@@ -117,6 +119,17 @@ export function note(body: string, title = ""): void {
     writeErr(`${BAR()}  ${line}${pad}  ${BAR()}`);
   }
   writeErr(`${pc.dim("├" + "─".repeat(width + 4))}╯`);
+}
+
+/** Keep styling, but discard terminal commands from managed human output. */
+function terminalText(text: string): string {
+  // String controls may be unterminated. Discard the remaining payload in that case.
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/(?:\x1b\]|\x9d)[\s\S]*?(?:\x07|\x1b\\|\x9c|$)|(?:\x1b[P^_X]|[\x90\x98\x9e\x9f])[\s\S]*?(?:\x1b\\|\x9c|$)/g, "")
+    // eslint-disable-next-line no-control-regex
+    .replace(/(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]|(?:\x1b\[|\x9b)[0-?]*[ -/]*$/g, (sequence) => /^\x1b\[[0-9;]*m$/.test(sequence) ? sequence : "")
+    // eslint-disable-next-line no-control-regex
+    .replace(/\x1b(?!\[[0-9;]*m)[ -/]*[0-~]?|[\x00-\x08\x0b-\x1a\x1c-\x1f\x7f-\x9f]/g, "");
 }
 
 export function stripAnsi(str: string): string {
@@ -170,7 +183,7 @@ export function spinner(): Spinner {
 
   return {
     start(message = ""): void {
-      current = message;
+      current = terminalText(message);
       active = true;
       if (chromeSuppressed()) return;
       if (!animate) {
@@ -182,7 +195,7 @@ export function spinner(): Spinner {
       timer = setInterval(render, 90);
     },
     message(message: string): void {
-      current = message;
+      current = terminalText(message);
       if (!active || chromeSuppressed()) return;
       if (!animate) writeErr(`${pc.cyan("◒")}  ${current}`);
     },

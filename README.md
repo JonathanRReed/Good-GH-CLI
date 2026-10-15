@@ -11,11 +11,11 @@ Git and GitHub commands are explicit. Use `ggh git <args>` for Git, `ggh gh <arg
 
 ## Install
 
-Follow the [platform installation and repair guide](docs/INSTALL.md) for checksum, PATH, and dependency steps.
+Follow the [platform installation and repair guide](docs/INSTALL.md) for checksum, PATH, and dependency steps. See [dependency compatibility](docs/COMPATIBILITY.md) for the supported Git floor and tested GitHub CLI capabilities.
 
 Download your platform's binary from [Releases](https://github.com/JonathanRReed/Good-GH-CLI/releases), verify its SHA-256 file, and place it on your PATH as `ggh`.
 
-Standalone binaries need Git, but not Bun or Node. GitHub operations also need `gh`. Local commits with an explicit message need neither a provider CLI nor `gh`; AI commands need a configured provider CLI.
+Standalone binaries need Git 2.31 or newer, but not Bun or Node. GitHub operations also need `gh`. Local commits with an explicit message need neither a provider CLI nor `gh`; AI commands need a configured provider CLI.
 
 Package installs require Node 22+, Bun 1.4+, and Git. Releases include a tarball even when npm publication is disabled:
 
@@ -25,7 +25,7 @@ bun add -g ./good-gh-cli-<version>.tgz
 
 Use `bun add -g good-gh-cli@<version>` only when that release's notes confirm npm publication. Prereleases use the `beta` tag, not necessarily the default npm tag.
 
-`main` contains the `0.4.0-beta.3` candidate. A source commit is not a published release. Signed and notarized macOS DMGs are separate uploads; bare macOS binaries have ad-hoc signatures, not Developer ID notarization. See [packaging](docs/PACKAGING.md).
+The source version is `0.5.0-beta.1`. A source commit is not a published release. Signed and notarized macOS DMGs are separate uploads; bare macOS binaries have ad-hoc signatures, not Developer ID notarization. See [packaging](docs/PACKAGING.md).
 
 To build from source:
 

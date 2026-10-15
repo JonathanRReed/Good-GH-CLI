@@ -23,7 +23,7 @@ export class GrokProvider extends CliAIProvider {
     { name: "JSON output", pattern: /--output-format/ },
   ] as const;
 
-  async isAvailable(): Promise<boolean> {
+  async isAvailable(options?: { timeoutMs: number }): Promise<boolean> {
     try {
       if (!commandExists("grok")) {
         return false;
@@ -31,11 +31,11 @@ export class GrokProvider extends CliAIProvider {
       if (existsSync(join(homedir(), ".grok", "auth.json"))) {
         return true;
       }
-      const { stdout, stderr } = await run("grok", ["models"], {
+      const { stdout, stderr, exitCode } = await run("grok", ["models"], {
         reject: false,
-        timeoutMs: 15_000,
+        timeoutMs: options?.timeoutMs ?? 15_000,
       });
-      return !/not authenticated|please (?:run )?grok login/i.test(`${stdout} ${stderr}`);
+      return exitCode === 0 && !/not authenticated|please (?:run )?grok login/i.test(`${stdout} ${stderr}`);
     } catch {
       return false;
     }

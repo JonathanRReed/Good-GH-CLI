@@ -3,7 +3,26 @@
 All notable changes to this project are documented here.
 This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## 0.5.0-beta.1 - 2026-10-15
+
+### Workflow and release qualification
+
+- Add versioned `--agent` output and schema discovery, exact approval snapshots,
+  metadata-only publication recovery, and owner-aware operation locks.
+- Add recoverable multiline PR editing through the configured Git editor.
+- Fix stack PR head selection and branch upstream setup in single-branch clones.
+- Require Git 2.31 before managed workflow effects. Detect installed `gh`
+  capabilities and provide versioned platform installation and repair guidance.
+- Bound optional provider checks during status. Keep normal AI availability
+  checks independent, and preserve JSON and native escape output.
+- Remove terminal control commands from managed human output while retaining
+  styling, Unicode, and machine-readable values.
+- Add real terminal, cross-user Windows storage, process-tree, native installation,
+  offline demo, and validated packaged performance checks to release qualification.
+- Audit regression coverage, remove redundant assertions, and retain behavioral
+  protections for cancellation, partial publication, stale approval, and recovery.
+
+
 
 ### Added
 

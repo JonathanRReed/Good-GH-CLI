@@ -19,12 +19,12 @@ export class OllamaProvider extends CliAIProvider {
     { name: "local model inspection", pattern: /\bshow\b/ },
   ] as const;
 
-  async isAvailable(): Promise<boolean> {
+  async isAvailable(options?: { timeoutMs: number }): Promise<boolean> {
     try {
       if (!commandExists("ollama")) return false;
       // `ollama list` fails when the daemon is not running, which is the state
       // that matters: an installed binary with no server cannot answer.
-      const { exitCode, stdout } = await run("ollama", ["list"], { reject: false, timeoutMs: 5_000 });
+      const { exitCode, stdout } = await run("ollama", ["list"], { reject: false, timeoutMs: options?.timeoutMs ?? 5_000 });
       return exitCode === 0 && stdout.trim().split("\n").length > 1;
     } catch {
       return false;

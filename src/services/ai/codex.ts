@@ -24,7 +24,7 @@ export class CodexProvider extends CliAIProvider {
     { name: "JSON event output", pattern: /--json/ },
   ] as const;
 
-  async isAvailable(): Promise<boolean> {
+  async isAvailable(options?: { timeoutMs: number }): Promise<boolean> {
     try {
       if (!commandExists("codex")) {
         return false;
@@ -33,8 +33,9 @@ export class CodexProvider extends CliAIProvider {
       if (existsSync(join(codexHome, "auth.json"))) {
         return true;
       }
-      const result = await run("codex", ["login", "status"], { reject: false, timeoutMs: 15_000 });
-      return `${result.stdout} ${result.stderr}`.toLowerCase().includes("logged in");
+      const result = await run("codex", ["login", "status"], { reject: false, timeoutMs: options?.timeoutMs ?? 15_000 });
+      return result.exitCode === 0 && /\blogged in\b/i.test(`${result.stdout} ${result.stderr}`) &&
+        !/\bnot logged in\b/i.test(`${result.stdout} ${result.stderr}`);
     } catch {
       return false;
     }

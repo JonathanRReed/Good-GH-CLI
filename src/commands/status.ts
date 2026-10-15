@@ -3,7 +3,7 @@ import { getFlags } from "../services/runtime.ts";
 import { checkSubmodules, getAheadBehind, getAheadOfDefault, getRepoRoot, getStatus, worktreeList } from "../services/git.ts";
 import { getActivePullRequest, getGitHubAuthStatus, type GitHubAccount } from "../services/github.ts";
 import { getConfig } from "../services/config.ts";
-import { buildAttemptChain, getAvailableProviders, getProviderById, PROVIDER_ORDER } from "../services/ai/index.ts";
+import { buildAttemptChain, getStatusProviders, getProviderById, PROVIDER_ORDER } from "../services/ai/index.ts";
 import { fail, header, p, pc, jsonOut } from "../utils/ui.ts";
 import { isDryRun } from "../utils/flags.ts";
 
@@ -47,7 +47,7 @@ async function renderStatus(): Promise<void> {
       getActivePullRequest().catch(() => null),
       getGitHubAuthStatus().catch((): GitHubAccount => ({ authenticated: false })),
       checkSubmodules().catch(() => []),
-      getAvailableProviders(),
+      getStatusProviders(),
     ]);
 
   const config = getConfig();

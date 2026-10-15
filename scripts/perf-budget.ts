@@ -3,7 +3,7 @@
  * Performance budgets (see docs/PERF.md). Exits non-zero on breach.
  * Portable alternative to `timeout(1)`, which macOS lacks.
  */
-import { run } from "../src/utils/exec.ts";
+import { ExecError, run } from "../src/utils/exec.ts";
 import { join } from "node:path";
 
 const root = join(import.meta.dir, "..");
@@ -44,12 +44,16 @@ async function diagnoseStatusBudget(): Promise<void> {
       reject: false,
       maxOutputBytes: 8_192,
     });
-    const allowed = /^probe (?:getStatus|getRepoRoot|worktreeList|getAheadBehind|getAheadOfDefault|getActivePullRequest|getGitHubAuthStatus|checkSubmodules|getAvailableProviders|getConfig) elapsed=\d+ms success=(?:true|false)(?: errorKind=(?:exec|error|deadline))?$/;
-    for (const line of `${result.stdout}\n${result.stderr}`.split(/\r?\n/)) {
-      if (allowed.test(line)) console.error(line);
-    }
-  } catch {
-    // Keep the original budget failure as the only report if probes cannot run.
+    reportStatusProbes(`${result.stdout}\n${result.stderr}`);
+  } catch (error) {
+    if (error instanceof ExecError) reportStatusProbes(`${error.stdout}\n${error.stderr}`);
+  }
+}
+
+function reportStatusProbes(output: string): void {
+  const allowed = /^probe (?:getStatus|getRepoRoot|worktreeList|getAheadBehind|getAheadOfDefault|getActivePullRequest|getGitHubAuthStatus|checkSubmodules|getStatusProviders|getConfig|expandAliasCold|createProgramCold|getConfigCold) elapsed=\d+ms success=(?:true|false)(?: errorKind=(?:exec|error|deadline))?$/;
+  for (const line of output.split(/\r?\n/)) {
+    if (allowed.test(line) || /^probe-start (?:getStatus|getRepoRoot|worktreeList|getAheadBehind|getAheadOfDefault|getActivePullRequest|getGitHubAuthStatus|checkSubmodules|getStatusProviders|getConfig|expandAliasCold|createProgramCold|getConfigCold)$/.test(line)) console.error(line);
   }
 }
 

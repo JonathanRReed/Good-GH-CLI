@@ -17,6 +17,7 @@ import time
 
 DEPENDENCY = "2.0.15"
 TIMEOUT = 15
+FIXTURE_TIMEOUT = 120
 COMMIT_ARGS = ["commit", "--no-ai", "--yes", "--no-verify"]
 
 
@@ -58,7 +59,7 @@ if (-not $actual.AreAccessRulesProtected -or $actual.GetOwner([Security.Principa
     result = subprocess.run([str(executable), "-NoLogo", "-NoProfile", "-NonInteractive",
                              "-EncodedCommand", base64.b64encode(script.encode("utf-16le")).decode("ascii")],
                             input=str(root), encoding="utf-8", capture_output=True, env=environment,
-                            timeout=TIMEOUT, check=True)
+                            timeout=FIXTURE_TIMEOUT, check=True)
     metadata = json.loads(result.stdout)
     metadata["elapsedSeconds"] = round(time.monotonic() - started, 3)
     return metadata

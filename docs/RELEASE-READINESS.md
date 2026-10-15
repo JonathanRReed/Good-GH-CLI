@@ -1,46 +1,30 @@
 # Release readiness
 
-This is a release checklist, not a claim of perfect software or a security
-certification. The first section below tracks the October 14 implementation
-batch in the current dirty checkout. The audit map that follows records the
-earlier 0.4.0-beta.3 candidate. Published assets and registry versions are
-separate from code on main.
+The source candidate is 0.5.0-beta.1 on `feat/quality-release`. The [execution plan](quality/quality-release-plan.md) and [continuation record](quality/quality-release-continuation.md) track exact checkpoints. Source, native installation, live GitHub, platform security, signing, and publication are separate gates.
 
-## October 14 implementation batch
+## Current qualification
 
-Local acceptance passed on macOS. After test pruning, typecheck, lint, 500
-source tests, and 71 compiled-artifact regressions passed. The
-[test audit](verification/2026-10-14-test-audit.md) records removals and retained
-coverage across all 50 source test files.
+- Live private/public repository setup, protected-push rejection, partial recovery,
+  private PNG access, independent commit/stack journeys, and actual vi editing passed.
+  Synthetic PRs and branches were cleaned; both QA repositories are archived.
+- Actual Windows cross-user storage and process-tree qualification passed. All five
+  native architectures passed earlier install/upgrade/rollback/uninstall checks.
+  The final source still requires its complete hosted matrix.
+- macOS/Linux terminal checks passed. Windows ConPTY qualification is required
+  before this beta publishes. A skip does not count as a pass.
+- The offline demo asserts fourteen local commands. Compatibility tests cover the
+  Git 2.31 boundary; actual gh2.48 and gh2.100 have separate recorded scopes.
+- The final pass fixes bounded optional status probes and terminal control output.
+  Fresh source, native, installed-package, performance, and secret checks follow.
+- GitHub release automation creates a draft. Add the exact signed/notarized
+  universal macOS DMG, validate all assets, then publish. npm remains disabled
+  unless explicitly configured; an attached installable tarball is separate.
 
-The earlier [acceptance receipt](verification/2026-10-14-local-acceptance.md)
-records the exact npm tarball, Node and Bun launcher checks, two local commits,
-native checksum, commit, hook, terminal editing, manual freshness, and runtime
-budgets. This test audit preserved the native and bundle hashes.
+The initial [test audit](verification/2026-10-14-test-audit.md) removed 104 redundant source cases and one duplicate native case. A final independent inventory found no additional suite or dependency to remove. New behavioral regressions protect defects discovered during qualification. Historical receipts retain their original versions and counts.
 
-The changes remain uncommitted and have no release tag. GitHub writes and
-provider generation in the regressions used local mocks. The source implements
-explicit Git and gh escapes, AI opt-in, repo and PR setup, media attachments,
-operation records, restack recovery, and an optional PR-and-CI stack view.
-See [complaint coverage](COMPLAINT-COVERAGE.md) for the behavior map.
-
-### Remaining launch checks
-
-- Run the Linux and Windows native and installed-package checks at the final
-  source revision. The prepared CI matrix covers all three platforms. Verify
-  private filesystem permissions on Windows directly.
-- Use a separately authorized disposable GitHub repository for live
-  publication, private access, native attachments, retries, and partial
-  failure checks. Mocked CLI fixtures do not establish these behaviors against
-  GitHub.
-- The macOS PTY probe passed ESC-DEL word deletion and Ctrl-C exit 130. Native
-  terminal checks on Linux and Windows remain open.
-- Run the new doctor tests and inspect their results on supported installed
-  tools. The doctor checks Git and `gh` versions and attachment flags, then
-  checks provider CLI versions and help capabilities. It does not check
-  authentication or provider model access.
-- Verify Developer ID signing and notarization, npm publication, and release
-  asset availability separately. None follows from passing source tests.
+Jonathan is the sole user. Outside human testing is waived. Organization/SSO,
+a second-account fork, and working SSH credentials were unavailable; they are not
+reported as passes. No provider model generation was needed for qualification.
 
 ## Audit closure map
 

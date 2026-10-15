@@ -55,7 +55,7 @@ export abstract class CliAIProvider implements AIProvider {
   protected abstract readonly diagnosticsHelpArgs: readonly string[];
   protected abstract readonly diagnosticsCapabilities: readonly { name: string; pattern: RegExp }[];
 
-  abstract isAvailable(): Promise<boolean>;
+  abstract isAvailable(options?: { timeoutMs: number }): Promise<boolean>;
 
   /** Runs one prompt and returns the raw assistant text. */
   protected abstract invoke(prompt: string, model: string, timeoutMs: number): Promise<string>;

@@ -107,6 +107,20 @@ export async function getAvailableProviders(): Promise<AIProvider[]> {
   return refreshProviders();
 }
 
+let cachedStatusAvailability: { at: number; providers: AIProvider[] } | null = null;
+
+/** Optional status probes have a short budget and never populate the AI generation cache. */
+export async function getStatusProviders(): Promise<AIProvider[]> {
+  if (cachedStatusAvailability && Date.now() - cachedStatusAvailability.at < AVAILABILITY_TTL_MS) {
+    return cachedStatusAvailability.providers;
+  }
+  const providers = PROVIDER_ORDER.map(getProviderById);
+  const availability = await Promise.all(providers.map((provider) => provider.isAvailable({ timeoutMs: 1_000 })));
+  const available = providers.filter((_, index) => availability[index]);
+  cachedStatusAvailability = { at: Date.now(), providers: available };
+  return available;
+}
+
 /** Bypass the cache and probe every provider right now. */
 export async function refreshProviders(): Promise<AIProvider[]> {
   const providers = PROVIDER_ORDER.map(getProviderById);
