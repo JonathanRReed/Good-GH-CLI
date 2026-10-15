@@ -134,7 +134,7 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: Build and checksum
         run: |
-          bun build bin/ggh.ts --compile --minify --target=${{ matrix.target }} --outfile ${{ matrix.asset }}
+          bun build bin/ggh.ts --compile --no-compile-autoload-dotenv --no-compile-autoload-bunfig --minify --target=${{ matrix.target }} --outfile ${{ matrix.asset }}
           if [ "$RUNNER_OS" = macOS ]; then
             codesign --force --sign - ${{ matrix.asset }}
             codesign --verify --strict ${{ matrix.asset }}

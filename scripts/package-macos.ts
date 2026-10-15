@@ -59,8 +59,8 @@ mkdirSync(outputDir, { recursive: true });
 const arm = join(buildRoot, "ggh-arm64");
 const intel = join(buildRoot, "ggh-x64");
 const binary = join(payload, "bin", "ggh");
-run("bun", ["build", "bin/ggh.ts", "--compile", "--minify", "--target=bun-darwin-arm64", `--outfile=${arm}`]);
-run("bun", ["build", "bin/ggh.ts", "--compile", "--minify", "--target=bun-darwin-x64", `--outfile=${intel}`]);
+run("bun", ["build", "bin/ggh.ts", "--compile", "--no-compile-autoload-dotenv", "--no-compile-autoload-bunfig", "--minify", "--target=bun-darwin-arm64", `--outfile=${arm}`]);
+run("bun", ["build", "bin/ggh.ts", "--compile", "--no-compile-autoload-dotenv", "--no-compile-autoload-bunfig", "--minify", "--target=bun-darwin-x64", `--outfile=${intel}`]);
 run("lipo", ["-create", arm, intel, "-output", binary]);
 chmodSync(binary, 0o755);
 

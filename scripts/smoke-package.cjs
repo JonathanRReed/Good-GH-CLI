@@ -99,6 +99,7 @@ try {
       return { version, agentContract: 'ggh.agent v1', commit: subject };
     });
   }
+  stage('node-launcher-project-autoload-isolation', () => run(process.execPath, [path.join(__dirname, 'smoke-launcher-isolation.cjs'), process.execPath, launcher]));
   console.log(`Verified installed package ${version}: Node and Bun launchers, agent JSON, and local commits.`);
 } catch (error) {
   results.status = 'failed';

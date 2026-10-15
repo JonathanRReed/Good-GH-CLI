@@ -149,6 +149,9 @@ try {
     assert.equal(schema.envelope.properties.contract.const, 'ggh.agent');
     return { help: 'passed', agentSchema: 'ggh.agent v1' };
   });
+  stage('project-runtime-autoload-isolation', () => run(process.execPath, [
+    path.join(__dirname, 'smoke-launcher-isolation.cjs'), installed,
+  ]));
   stage('native-local-commit-and-installed-hook', () => {
     run('git', ['init', '-b', 'main']);
     run('git', ['config', 'user.name', 'Artifact test']);

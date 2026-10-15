@@ -9,7 +9,7 @@ tree at build time.
 
 | Shape | Artifact | Runtime requirements |
 | --- | --- | --- |
-| Standalone | Native executable with Bun embedded | Git; gh for GitHub operations |
+| Standalone | Native executable with Bun embedded | Git 2.31+; gh for GitHub operations |
 | Lean | Minified JS bundle and shell wrapper | Bun 1.4+, Git; gh for GitHub operations |
 | npm tarball | Node launcher, bundle, source, package metadata | Node 22+, Bun 1.4+, Git; gh for GitHub operations |
 
@@ -23,7 +23,8 @@ identity and, for notarization, Keychain profile.
 ### Release gates
 
 Pull requests run the same artifact build/install/smoke pipeline without
-publishing. Manual releases resolve `refs/tags/<tag>` once, verify its package
+publishing. Tagged builds create a draft GitHub release; publish it only after
+adding and checking the separate signed/notarized macOS DMG. Manual releases resolve `refs/tags/<tag>` once, verify its package
 version, and pass that immutable commit SHA to every build. Bun is pinned to
 1.4.0. Native jobs download and test the exact artifacts that will be uploaded,
 including checksums, PATH discovery, a real commit, and an installed pre-commit
@@ -69,6 +70,18 @@ installer into a temporary prefix, and writes a SHA-256 file. Set
 `GGH_NOTARY_PROFILE` to a valid `notarytool` Keychain profile to submit, staple,
 and Gatekeeper-check the same artifact. The Makefile uses ad-hoc signing only
 for local developer builds.
+
+## Repository runtime configuration
+
+Native builds disable Bun's automatic dotenv and bunfig loading. Installed Node
+and lean launchers pass `--no-env-file` and an installed empty Bun configuration.
+A repository cannot enable AI, redirect user configuration, or run a Bun preload
+through those files. Explicit caller environment settings remain supported.
+
+Use the installed `ggh` command. Direct `bun script` invocations load Bun runtime
+configuration before launcher code starts unless the caller supplies the same
+flags. That is a development invocation, rather than the installed bootstrap.
+The artifact and package smoke checks include hostile dotenv/preload fixtures.
 
 ## Runtime behaviour packagers should know
 

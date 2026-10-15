@@ -15,6 +15,8 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   capabilities and provide versioned platform installation and repair guidance.
 - Bound optional provider checks during status. Keep normal AI availability
   checks independent, and preserve JSON and native escape output.
+- Disable repository dotenv and Bun preload configuration in native builds and
+  installed launchers so repository files cannot change user AI policy.
 - Remove terminal control commands from managed human output while retaining
   styling, Unicode, and machine-readable values.
 - Add real terminal, cross-user Windows storage, process-tree, native installation,

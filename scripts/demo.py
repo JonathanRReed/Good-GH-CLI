@@ -145,7 +145,7 @@ public static class GghClientDeny {
             compiled = subprocess.run(
                 [str(powershell), "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", powershell_command],
                 cwd=root, env=shim_env, encoding="utf-8", stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                timeout=TIMEOUT_SECONDS, check=False,
+                timeout=120, check=False,
             )
             if compiled.returncode != 0 or not assembly.is_file():
                 raise AssertionError(f"could not compile Windows client-deny shim: {compiled.stdout.strip()}")
@@ -183,7 +183,7 @@ public static class GghClientDeny {
         expected_attempts = []
         for name in CLIENTS:
             result = subprocess.run(
-                [name], cwd=repo, env=env, encoding="utf-8",
+                [str(denied / (name + ".exe" if os.name == "nt" else name))], cwd=repo, env=env, encoding="utf-8",
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 timeout=TIMEOUT_SECONDS, check=False,
             )

@@ -11,7 +11,7 @@ describe.skipIf(process.platform === "win32" || !Bun.which("make"))("Makefile pa
     const prefix = join(root, "install space");
     try {
       for (const dir of ["src", "bin", "dist", "man"]) mkdirSync(join(root, dir));
-      for (const file of ["Makefile", "LICENSE", "man/ggh.1"]) copyFileSync(join(repo, file), join(root, file));
+      for (const file of ["Makefile", "LICENSE", "man/ggh.1", "bin/bunfig.toml"]) copyFileSync(join(repo, file), join(root, file));
       const build = Bun.spawnSync([process.execPath, "build", join(repo, "bin/ggh.ts"), "--target=bun", `--outfile=${join(root, "dist/ggh.js")}`], {
         cwd: repo, stdout: "pipe", stderr: "pipe",
       });
