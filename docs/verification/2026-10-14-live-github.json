@@ -1,0 +1,88 @@
+{
+  "date": "2026-10-14",
+  "binarySha256": "949afcb3a44a0979e3640158b9b3104ba5eaac2b9e884a633de21fcd0d560f9c",
+  "repositories": {
+    "private": {
+      "target": "JonathanRReed/ggh-qa-private-20261014-a592cc3c",
+      "branches": [
+        "main",
+        "qa-feature"
+      ],
+      "id": 1420144573,
+      "url": "https://github.com/JonathanRReed/ggh-qa-private-20261014-a592cc3c",
+      "private": true
+    },
+    "public": {
+      "target": "JonathanRReed/ggh-qa-public-20261014-a592cc3c",
+      "branches": [
+        "main"
+      ],
+      "id": 1420145274,
+      "url": "https://github.com/JonathanRReed/ggh-qa-public-20261014-a592cc3c",
+      "private": false
+    }
+  },
+  "privatePublication": {
+    "operationId": "36c2d789-0d3a-4482-8aae-6c1ddff6b48e",
+    "headPreserved": true,
+    "initialStatus": "partially_completed",
+    "resumeStatus": "succeeded",
+    "repeatStatus": "no_op",
+    "pullRequest": {
+      "number": 1,
+      "url": "https://github.com/JonathanRReed/ggh-qa-private-20261014-a592cc3c/pull/1"
+    },
+    "metadataExcludedContent": true,
+    "attachmentAnonymousStatus": 404,
+    "authenticatedBytesMatch": true
+  },
+  "publicPublication": {
+    "status": "succeeded"
+  },
+  "protectedPush": {
+    "rejected": true,
+    "remoteUnchanged": true,
+    "localCommitPreserved": true,
+    "operationId": "60406c2e-4a3f-4ab8-9b33-eeb41b22ba35",
+    "error": {
+      "code": "operation_failed",
+      "message": "git push -- origin 728a17b1338e392a41fc92352a0b4604212c8ae8:refs/heads/main exited with code 1\nremote: error: GH006: Protected branch update failed for refs/heads/main.        \nremote: \nremote: - Changes must be made through a pull request.        \nTo https://github.com/JonathanRReed/ggh-qa-public-20261014-a592cc3c.git\n ! [remote rejected] 728a17b1338e392a41fc92352a0b4604212c8ae8 -> main (protected branch hook declined)\nerror: failed to push some refs to 'https://github.com/JonathanRReed/ggh-qa-public-20261014-a592cc3c.git'",
+      "retryability": "after_inspection"
+    }
+  },
+  "branchProtectionRemoved": true,
+  "authentication": "Existing authorized gh credentials, no token copied or scopes changed",
+  "transport": {
+    "https": "passed",
+    "ssh": "unavailable: Permission denied (publickey)"
+  },
+  "unavailableCases": {
+    "organizationAndSSO": "Authenticated account has no organizations",
+    "crossAccountFork": "No second account available"
+  },
+  "cleanup": {
+    "verified": [
+      {
+        "kind": "private",
+        "id": 1420144573,
+        "target": "JonathanRReed/ggh-qa-private-20261014-a592cc3c",
+        "archived": true,
+        "branches": [
+          "main"
+        ],
+        "openPullRequests": 0
+      },
+      {
+        "kind": "public",
+        "id": 1420145274,
+        "target": "JonathanRReed/ggh-qa-public-20261014-a592cc3c",
+        "archived": true,
+        "branches": [
+          "main"
+        ],
+        "openPullRequests": 0
+      }
+    ],
+    "method": "Closed five known synthetic PRs, removed known test branches, archived both repositories. No deletion scope or unrelated resource changes."
+  }
+}

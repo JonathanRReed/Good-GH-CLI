@@ -1,0 +1,71 @@
+{
+  "checked_at": "2026-10-15T00:27:54.637492+00:00",
+  "base_commit": "4b1657e3d922e4feb73a73800615a315a84e8c42",
+  "branch": "main",
+  "working_tree": "uncommitted implementation",
+  "platform": {
+    "os": "Darwin",
+    "architecture": "arm64"
+  },
+  "source_file_count": 166,
+  "source_digest_sha256": "5e1dba4c9439d5e3ca0877099b2e96c6dab34af80c9e7a8af17da3e70c6f2474",
+  "versions": {
+    "bun": "1.4.3",
+    "node": "v26.8.1",
+    "git": "git version 2.54.0 (Apple Git-157)",
+    "gh": "gh version 2.100.0 (2026-09-03)"
+  },
+  "checks": {
+    "typecheck": "passed",
+    "lint": "passed",
+    "source_tests": {
+      "passed": 604,
+      "failed": 0,
+      "files": 50
+    },
+    "native_regressions": {
+      "passed": 72,
+      "failed": 0,
+      "github": "local mocks",
+      "git_pushes": "local bare repositories",
+      "terminal": "real macOS PTY; ESC DEL and Ctrl-C exit 130"
+    },
+    "manual_freshness": "passed",
+    "startup_status_budgets": "passed on final retry",
+    "native_checksum_commit_hook": "passed",
+    "installed_package": {
+      "version": "0.4.0-beta.3",
+      "tarball_sha256": "b7d0897a31765199d25a13eea37d0bdfebff71396d8eb8f27ff29a023014b33a",
+      "node_launcher": "passed",
+      "bun_launcher": "passed",
+      "installed_package_commits": 2,
+      "native_checksum_commit_hook": "passed"
+    }
+  },
+  "artifacts": {
+    "native_sha256": "9d26bee5f334d9d1c871a6ac4957c18d1c93ffac7f2375c407967151f5debdda",
+    "bundle_sha256": "3614d9afa5f1611efa21144ac6f61f201eb4902f6931e050a65d97cefe3ff890",
+    "bundle_bytes": 453328,
+    "bundle_budget_bytes": 500000
+  },
+  "performance_context": {
+    "final_startup_ms": 281,
+    "final_status_json_ms": 3156,
+    "earlier_startup_timeouts": 1,
+    "observed_host_load_averages": [
+      313.6,
+      272.82,
+      179.01
+    ],
+    "logical_cores": 14,
+    "interpretation": "Budget acceptance only; no speed comparison."
+  },
+  "unverified": [
+    "Linux native execution",
+    "Windows native execution and private filesystem permissions",
+    "Live GitHub publication, permissions, private media and upload recovery",
+    "Live ggh provider generation and reported usage",
+    "Developer ID signing, notarization and quarantine acceptance",
+    "Public release and npm publication"
+  ]
+}

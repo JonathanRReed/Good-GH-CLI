@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { getFlags } from "../services/runtime.ts";
+import { getFlags, isAIExplicitlyDisabled, setFlags } from "../services/runtime.ts";
 import {
   cancelWorkflowRun,
   getFailedRunLog,
@@ -179,6 +179,7 @@ export function registerRunCommand(program: Command): void {
       if (!(await confirmOrAbort(`Re-run failed jobs for run ${id}?`, { assumeYes, cancelText: null }))) return;
       try {
         await rerunWorkflowRun(id, { failedOnly: true });
+        if (jsonOut({ action: "rerun", runId: id, failedOnly: true })) return;
         p.log.success(pc.green("Re-run requested."));
         p.outro("Done.");
       } catch (err) {
@@ -206,7 +207,14 @@ export function registerRunCommand(program: Command): void {
       return;
     }
 
+    if (isAIExplicitlyDisabled()) {
+      p.log.info(pc.dim("AI is disabled. Printing the failed log instead."));
+      data(log.endsWith("\n") ? log.slice(0, -1) : log);
+      return;
+    }
+
     const prepared = prepareLogForAI(log);
+    setFlags({ aiDisabled: false });
     if (prepared.redactedCount > 0) {
       p.log.info(pc.dim(`${prepared.redactedCount} secret-like value(s) redacted from the log before AI analysis.`));
     }
@@ -256,6 +264,7 @@ export function registerRunCommand(program: Command): void {
       if (!(await confirmOrAbort(`Re-run ${options?.failed ? "failed jobs of " : ""}run ${id}?`, { assumeYes: options?.yes, cancelText: null }))) return;
       try {
         await rerunWorkflowRun(id, { failedOnly: options?.failed });
+        if (jsonOut({ action: "rerun", runId: id, failedOnly: options?.failed === true })) return;
         p.log.success(pc.green("Re-run requested."));
         p.outro("Done.");
       } catch (err) {
@@ -278,6 +287,7 @@ export function registerRunCommand(program: Command): void {
       if (!(await confirmOrAbort(`Cancel run ${id}?`, { assumeYes: options?.yes, cancelText: null }))) return;
       try {
         await cancelWorkflowRun(id);
+        if (jsonOut({ action: "cancel", runId: id })) return;
         p.log.success(pc.green("Cancellation requested."));
         p.outro("Done.");
       } catch (err) {

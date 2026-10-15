@@ -85,6 +85,7 @@ describe("audit edge cases", () => {
     expect(await isDetachedHead(tempRepo)).toBe(true);
     status = await getStatus(tempRepo);
     expect(status.isDetached).toBe(true);
+    expect(status.isRepo).toBe(true);
     expect(status.branch).toBe("HEAD");
 
     // Attempting push from detached HEAD must fail with clear error

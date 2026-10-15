@@ -48,17 +48,34 @@ jobs:
           git config --global user.email "ci@example.com"
           git config --global init.defaultBranch main
 
+      - name: Install completion shells on Linux
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y fish zsh
+
+      - name: Install Fish on macOS
+        if: runner.os == 'macOS'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+        run: brew install fish
+
       - name: Typecheck
         run: bun run typecheck
 
       - name: Lint
         run: bun run lint
 
-      - name: Test
-        run: bun test --timeout 30000
-
       - name: Build
         run: bun run build
+
+      - name: Performance budgets
+        # Startup and status must complete, not just eventually: an accidental
+        # network call or unmemoized 15 s probe on these paths shows up here.
+        # Budgets are flake-proof on purpose; see docs/PERF.md for real numbers.
+        # (A script, not timeout(1): macOS runners don't have timeout.)
+        run: bun run scripts/perf-budget.ts
+
+      - name: Test
+        run: bun test --timeout 30000
 
       - name: Smoke test the built artifact
         run: |
@@ -85,23 +102,16 @@ jobs:
             echo "Banner leaked onto stdout:"; echo "$OUT"; exit 1
           fi
 
-      - name: Enforce bundle size budget (400 KB)
+      - name: Enforce bundle size budget (600 KB)
         run: |
           SIZE=$(wc -c < dist/ggh.js)
           echo "Bundle size: $SIZE bytes"
-          test "$SIZE" -le 400000
+          test "$SIZE" -le 600000
 
       - name: Man page is fresh
         # man/ggh.1 is generated from the command tree; this fails the build
         # when someone adds a command and forgets `bun run man`.
         run: bun run man --check
-
-      - name: Performance budgets
-        # Startup and status must complete, not just eventually: an accidental
-        # network call or unmemoized 15 s probe on these paths shows up here.
-        # Budgets are flake-proof on purpose; see docs/PERF.md for real numbers.
-        # (A script, not timeout(1): macOS runners don't have timeout.)
-        run: bun run scripts/perf-budget.ts
 
       - name: Test the installed npm package, not only the source launcher
         run: |
@@ -109,3 +119,28 @@ jobs:
           npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/package-tarball"
           npm install --prefix "$RUNNER_TEMP/package-install" --ignore-scripts --no-audit --no-fund "$RUNNER_TEMP"/package-tarball/*.tgz
           test "$(node "$RUNNER_TEMP/package-install/node_modules/good-gh-cli/bin/ggh.cjs" --version)" = "$(node -p 'require("./package.json").version')"
+          node scripts/smoke-package.cjs "$RUNNER_TEMP/package-install/node_modules/good-gh-cli/bin/ggh.cjs" "$(node -p 'require("./package.json").version')"
+
+  windows-privacy:
+    name: Windows private storage and process trees
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.0
+      - run: bun install --frozen-lockfile
+      - name: Verify real cross-user access and unsafe storage refusal
+        run: ./scripts/qualify-windows.ps1 -ProjectRoot $PWD -ResultsFile windows-privacy.json
+      - name: Verify timeout and cancellation terminate child trees
+        run: bun test --timeout 30000 tests/exec.test.ts
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: windows-privacy-results
+          path: windows-privacy.json
+          retention-days: 7

@@ -1,10 +1,13 @@
 import { getFlags } from "../runtime.ts";
+import { commandExists, run } from "../../utils/exec.ts";
 import {
   AIGenerationError,
   classifyAIFailure,
   extractFailureDetail,
   type AIProvider,
+  type AIProviderDiagnostics,
   type AIProviderId,
+  type AIUsage,
 } from "./provider.ts";
 import {
   buildBranchNamePrompt,
@@ -47,17 +50,59 @@ export abstract class CliAIProvider implements AIProvider {
   abstract readonly displayName: string;
   abstract readonly defaultModel: string;
   abstract readonly fallbackModels: readonly string[];
+  protected abstract readonly cliCommand: string;
+  protected abstract readonly diagnosticsVersionArgs: readonly string[];
+  protected abstract readonly diagnosticsHelpArgs: readonly string[];
+  protected abstract readonly diagnosticsCapabilities: readonly { name: string; pattern: RegExp }[];
 
-  abstract isAvailable(): Promise<boolean>;
+  abstract isAvailable(options?: { timeoutMs: number }): Promise<boolean>;
 
   /** Runs one prompt and returns the raw assistant text. */
   protected abstract invoke(prompt: string, model: string, timeoutMs: number): Promise<string>;
 
   protected timeoutMs = DEFAULT_AI_TIMEOUT_MS;
+  private lastUsage?: AIUsage;
+
+  getLastUsage(): AIUsage | undefined {
+    return this.lastUsage && { ...this.lastUsage };
+  }
+
+  resetLastUsage(): void {
+    this.lastUsage = undefined;
+  }
+
+  protected setLastUsage(value: unknown): void {
+    this.lastUsage = normalizeAIUsage(value);
+  }
+
+  async getDiagnostics(): Promise<AIProviderDiagnostics> {
+    if (!commandExists(this.cliCommand)) return { installed: false, capabilities: [] };
+
+    const [versionResult, helpResult] = await Promise.all([
+      run(this.cliCommand, [...this.diagnosticsVersionArgs], {
+        reject: false,
+        timeoutMs: 5_000,
+        maxOutputBytes: 64 * 1024,
+      }).catch(() => undefined),
+      run(this.cliCommand, [...this.diagnosticsHelpArgs], {
+        reject: false,
+        timeoutMs: 5_000,
+        maxOutputBytes: 64 * 1024,
+      }).catch(() => undefined),
+    ]);
+    const versionText = `${versionResult?.stdout ?? ""}\n${versionResult?.stderr ?? ""}`;
+    const helpText = `${helpResult?.stdout ?? ""}\n${helpResult?.stderr ?? ""}`;
+    const version = versionText.split(/\r?\n/).map((line) => line.trim()).find(Boolean)?.slice(0, 120);
+    const capabilities = this.diagnosticsCapabilities
+      .filter((capability) => capability.pattern.test(helpText))
+      .map((capability) => capability.name);
+    return { installed: true, ...(version ? { version } : {}), capabilities };
+  }
 
   /** Wraps `invoke` so every failure surfaces as a classified AIGenerationError. */
   protected async runPrompt(prompt: string, model: string): Promise<string> {
     if (getFlags().aiDisabled || getFlags().dryRun) throw new Error("AI invocation is disabled for this operation.");
+    this.resetLastUsage();
     let raw: string;
     try {
       raw = await this.invoke(sanitizeForAI(prompt, 80_000).text, model, this.timeoutMs);
@@ -239,4 +284,27 @@ export abstract class CliAIProvider implements AIProvider {
 
     return { title, body: String(parsed.body ?? "").trim() };
   }
+}
+
+/** Accept only provider-reported scalar values with the expected units. */
+export function normalizeAIUsage(value: unknown): AIUsage | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const source = new Map<string, unknown>(Object.entries(value));
+  const usage: AIUsage = {};
+  const tokenFields = [
+    ["inputTokens", source.get("inputTokens")],
+    ["outputTokens", source.get("outputTokens")],
+    ["cachedInputTokens", source.get("cachedInputTokens")],
+    ["cacheWriteInputTokens", source.get("cacheWriteInputTokens")],
+  ] as const;
+  for (const [key, candidate] of tokenFields) {
+    if (typeof candidate === "number" && Number.isSafeInteger(candidate) && candidate >= 0) {
+      usage[key] = candidate;
+    }
+  }
+  const costUsd = source.get("costUsd");
+  if (typeof costUsd === "number" && Number.isFinite(costUsd) && costUsd >= 0) {
+    usage.costUsd = costUsd;
+  }
+  return Object.keys(usage).length ? usage : undefined;
 }

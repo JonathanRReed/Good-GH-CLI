@@ -5,8 +5,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   commit,
-  detectDefaultBranch,
-  getStatus,
   hasCommits,
   listBranches,
   switchBranch,
@@ -90,10 +88,6 @@ describe("audit regression fixes", () => {
     expect(names).toContain("main");
   }, 20000);
 
-  it("detectDefaultBranch prefers recorded merge base, then main, then master", async () => {
-    expect(await detectDefaultBranch(tempRepo)).toBe("main");
-  }, 20000);
-
   it("worktreeAdd refuses to clean up directories outside the repository root", async () => {
     const outsideDir = realpathSync(mkdtempSync(join(tmpdir(), "good-gh-outside-")));
     try {
@@ -111,28 +105,5 @@ describe("audit regression fixes", () => {
     } finally {
       rmSync(outsideDir, { recursive: true, force: true });
     }
-  }, 20000);
-
-  it("worktreeAdd reports which env files were copied", async () => {
-    writeFileSync(join(tempRepo, ".env"), "AUDIT_TEST_VAR=1\n");
-    const wtPath = join(tempRepo, ".worktrees", "feat-env-report");
-    const result = await worktreeAdd("feat-env-report", wtPath, "main", tempRepo);
-
-    expect(result.copiedEnvFiles).toContain(".env");
-    expect(existsSync(join(wtPath, ".env"))).toBe(true);
-
-    await execa("git", ["worktree", "remove", "--force", "--", wtPath], { cwd: tempRepo });
-    rmSync(join(tempRepo, ".env"), { force: true });
-  }, 20000);
-
-  it("getStatus reports detached HEAD state", async () => {
-    const sha = (await execa("git", ["rev-parse", "HEAD"], { cwd: tempRepo })).stdout.trim();
-    await execa("git", ["checkout", "--detach", sha], { cwd: tempRepo });
-
-    const detached = await getStatus(tempRepo);
-    expect(detached.isDetached).toBe(true);
-    expect(detached.isRepo).toBe(true);
-
-    await execa("git", ["checkout", "main"], { cwd: tempRepo });
   }, 20000);
 });

@@ -58,9 +58,11 @@ jobs:
           test "$TAG" = "v$VERSION"
           SHA=$(git rev-parse HEAD)
           if [ "$GITHUB_EVENT_NAME" != pull_request ]; then test "$SHA" = "$(git rev-parse "refs/tags/$TAG^{commit}")"; fi
-          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          {
+            echo "sha=$SHA"
+            echo "version=$VERSION"
+            echo "tag=$TAG"
+          } >> "$GITHUB_OUTPUT"
           printf 'Release %s from commit %s\n' "$TAG" "$SHA" >> "$GITHUB_STEP_SUMMARY"
       - run: bun install --frozen-lockfile
       - name: Configure test identity
@@ -83,9 +85,11 @@ jobs:
           test -f "$PACKAGE"
           npm install --prefix "$RUNNER_TEMP/package-smoke" --ignore-scripts --no-audit --no-fund "$PACKAGE"
           test "$(node "$RUNNER_TEMP/package-smoke/node_modules/good-gh-cli/bin/ggh.cjs" --version)" = "${{ steps.identity.outputs.version }}"
+          node scripts/smoke-package.cjs "$RUNNER_TEMP/package-smoke/node_modules/good-gh-cli/bin/ggh.cjs" "${{ steps.identity.outputs.version }}"
           bun run bin/ggh.ts completion bash > dist-extra/ggh.bash
           bun run bin/ggh.ts completion zsh > dist-extra/_ggh
           bun run bin/ggh.ts completion fish > dist-extra/ggh.fish
+          bun run bin/ggh.ts completion powershell > dist-extra/ggh.ps1
           cp man/ggh.1 dist-extra/
           cd dist-extra
           for file in *; do sha256sum "$file" > "$file.sha256"; done
@@ -130,7 +134,7 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: Build and checksum
         run: |
-          bun build bin/ggh.ts --compile --minify --target=${{ matrix.target }} --outfile ${{ matrix.asset }}
+          bun build bin/ggh.ts --compile --no-compile-autoload-dotenv --no-compile-autoload-bunfig --minify --target=${{ matrix.target }} --outfile ${{ matrix.asset }}
           if [ "$RUNNER_OS" = macOS ]; then
             codesign --force --sign - ${{ matrix.asset }}
             codesign --verify --strict ${{ matrix.asset }}
@@ -175,11 +179,79 @@ jobs:
         with:
           name: release-${{ matrix.asset }}
           path: native
-      - name: Checksum and real Git operations without rebuilding
-        run: node scripts/smoke-artifact.cjs native/${{ matrix.asset }} ${{ needs.verify.outputs.version }}
+      - name: Download the previous published artifact for upgrade and rollback
+        if: runner.os != 'macOS'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download v0.4.0-beta.2 --repo JonathanRReed/Good-GH-CLI --pattern '${{ matrix.asset }}' --pattern '${{ matrix.asset }}.sha256' --dir previous
+      - name: Extract the previous signed macOS release for rollback
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release download v0.4.0-beta.2 --repo JonathanRReed/Good-GH-CLI --pattern 'Good-GH-CLI-0.4.0-beta.2-universal.dmg*' --dir previous
+          (cd previous; shasum -a 256 -c Good-GH-CLI-0.4.0-beta.2-universal.dmg.sha256)
+          MOUNT="$RUNNER_TEMP/ggh-previous-mount"
+          hdiutil attach -readonly -nobrowse -mountpoint "$MOUNT" previous/Good-GH-CLI-0.4.0-beta.2-universal.dmg
+          trap 'hdiutil detach "$MOUNT"' EXIT
+          codesign --verify --strict "$MOUNT/bin/ggh"
+          cp "$MOUNT/bin/ggh" previous/${{ matrix.asset }}
+          (cd previous; shasum -a 256 '${{ matrix.asset }}' > '${{ matrix.asset }}.sha256')
+      - name: Verify checksum, clean install, PATH, upgrade, rollback and uninstall
+        run: node scripts/smoke-artifact.cjs native/${{ matrix.asset }} ${{ needs.verify.outputs.version }} previous/${{ matrix.asset }} native-smoke.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: install-results-${{ matrix.asset }}
+          path: native-smoke.json
+          retention-days: 7
+      - name: Restore downloaded executable permissions
+        if: runner.os != 'Windows'
+        run: chmod +x native/${{ matrix.asset }} previous/${{ matrix.asset }}
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
       - name: Native regression suite
         if: runner.os != 'Windows'
         run: python3 scripts/audit-regressions.py --binary "$PWD/native/${{ matrix.asset }}" --results regressions.json
+      - name: Qualify native POSIX terminal behavior
+        if: runner.os != 'Windows'
+        run: python3 scripts/qualify-terminal.py --binary "$PWD/native/${{ matrix.asset }}" --results terminal.json
+      - name: Install the Windows console qualification dependency
+        if: runner.os == 'Windows'
+        run: |
+          python -m pip install --only-binary=:all: pywinpty==2.0.15
+      - name: Qualify native Windows console behavior
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: python scripts/qualify-terminal-windows.py --binary "$PWD/native/${{ matrix.asset }}" --results terminal.json
+      - name: Measure validated native workloads
+        shell: bash
+        run: python scripts/measure-performance.py --binary "$PWD/native/${{ matrix.asset }}" --expected-version '${{ needs.verify.outputs.version }}' --baseline "$PWD/previous/${{ matrix.asset }}" --results performance.json
+      - name: Assert the offline tour against the native artifact
+        shell: bash
+        run: python scripts/demo.py --binary "$PWD/native/${{ matrix.asset }}" --results demo.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: demo-results-${{ matrix.asset }}
+          path: demo.json
+          retention-days: 7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: performance-results-${{ matrix.asset }}
+          path: performance.json
+          retention-days: 7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: terminal-results-${{ matrix.asset }}
+          path: terminal.json
+          retention-days: 7
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always() && runner.os != 'Windows'
         with:
@@ -226,7 +298,7 @@ jobs:
           echo "Published and verified good-gh-cli@$VERSION ($DIST_TAG)." >> "$GITHUB_STEP_SUMMARY"
 
   release:
-    name: Publish verified GitHub assets
+    name: Prepare verified draft GitHub release
     needs: [verify, binaries, smoke, npm]
     if: always() && github.event_name != 'pull_request' && needs.verify.result == 'success' && needs.binaries.result == 'success' && needs.smoke.result == 'success' && (needs.npm.result == 'success' || needs.npm.result == 'skipped')
     runs-on: ubuntu-latest
@@ -257,7 +329,7 @@ jobs:
           for asset in ggh-linux-x64 ggh-linux-arm64 ggh-darwin-x64 ggh-darwin-arm64 ggh-windows-x64.exe "good-gh-cli-$VERSION.tgz"; do test -s "artifacts/$asset"; done
           node scripts/release-notes.cjs CHANGELOG.md "$VERSION" > RELEASE_NOTES.md
           {
-            printf '\nSource commit: `%s`\n\n' "$SOURCE_SHA"
+            printf '\nSource commit: %s\n\n' "$SOURCE_SHA"
             echo 'Download the native executable for your operating system and verify its accompanying SHA-256 checksum.'
             echo 'The macOS executables are not Developer-ID signed or notarized by this workflow. Signed DMGs are a separate packaging step.'
             echo ''
@@ -277,4 +349,4 @@ jobs:
           set -euo pipefail
           EXTRA=()
           [[ "$TAG" != *-* ]] || EXTRA+=(--prerelease)
-          gh release create "$TAG" --title "$TAG" --notes-file RELEASE_NOTES.md --verify-tag "${EXTRA[@]}" artifacts/*
+          gh release create "$TAG" --draft --title "$TAG" --notes-file RELEASE_NOTES.md --verify-tag "${EXTRA[@]}" artifacts/*

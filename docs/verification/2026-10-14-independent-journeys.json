@@ -1,0 +1,60 @@
+{
+  "method": "Two independent agents used documented CLI/help/schema against isolated synthetic clones and a frozen native artifact. Initial mistakes and failed stack submission retained. Root inspected GitHub PR relations afterward.",
+  "commitJourney": {
+    "status": "passed",
+    "sourceRevision": "d6ed17b",
+    "exactBinarySHA": "e229247d77b53ab8796aa9a19bf41ba885938b96c7773f8e15333003bfac63a6",
+    "method": "Independent native CLI via isolated wrapper. README and help discovery. Agent envelopes for managed actions; native git and gh escapes for remote configuration and verification. AI disabled. Exact dry-run plan approved.",
+    "goals": {
+      "attachExistingCheckout": "passed",
+      "createAuthorizedBranch": "passed",
+      "syntheticFileCommit": "passed",
+      "oneDraftPRAgainstMain": "passed",
+      "pngAttachment": "passed",
+      "localVerificationReference": "passed",
+      "mainUnchanged": "passed"
+    },
+    "urls": [
+      "https://github.com/JonathanRReed/ggh-qa-private-20261014-a592cc3c/pull/2"
+    ],
+    "operationIds": [
+      "a4aedc6c-fcc2-4741-adc2-0c61b69f7614",
+      "8ff641fe-2466-4184-ada1-aee9675cd7a3"
+    ]
+  },
+  "stackJourney": {
+    "status": "passed",
+    "originalResultPreserved": "/tmp/ggh-agent-qualification/stack/result.json",
+    "source": "d6ed17b plus head-binding fix supplied by root",
+    "nativePath": "/tmp/ggh-agent-qualification/ggh-stack-after-fix",
+    "nativeSHA256": "2cf87c538de54c91a0c90d41daa97f22f1841cfb260e2e775e372249d859e83e",
+    "wrapper": "/tmp/ggh-agent-qualification/ggh-stack-fixed",
+    "method": "Independent retry from inspected partial state using documented stack submit; AI config verified false. No implementation edits.",
+    "pullRequests": [
+      {
+        "number": 3,
+        "url": "https://github.com/JonathanRReed/ggh-qa-private-20261014-a592cc3c/pull/3",
+        "head": "qa-stack-parent",
+        "base": "main",
+        "headOid": "0d8ab35f3a0edefcb4e1e195e615c2c5f8705407",
+        "baseOid": "d15d6f3d9d201ed220a6dc64322c24d944cb9544",
+        "isDraft": true
+      },
+      {
+        "number": 4,
+        "url": "https://github.com/JonathanRReed/ggh-qa-private-20261014-a592cc3c/pull/4",
+        "head": "qa-stack-child",
+        "base": "qa-stack-parent",
+        "headOid": "b698af6c88e2a0b1bbddf7cc076ad885b1acc50e",
+        "baseOid": "0d8ab35f3a0edefcb4e1e195e615c2c5f8705407",
+        "isDraft": true
+      }
+    ],
+    "goal": "Completed original local conflict/continue journey with explicit publication and exact remote verification. PR marker-title rule waived by root."
+  },
+  "findingsRepaired": [
+    "README schema example included unsupported --json",
+    "Stack PR creation omitted explicit head after pushing planned branch"
+  ],
+  "cleanup": "Known QA resources remain through manual-editor qualification. Exact four PR numbers/head/base pairs recorded in maintainer state."
+}

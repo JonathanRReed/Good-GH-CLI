@@ -1,0 +1,125 @@
+{
+  "branchHead": "7cc039deb5b99f672ad5048cd274f605431b98c3",
+  "executedMergeRevision": "febb50abb6724415617543d68d0ee21d88a8d742",
+  "releaseWorkflow": 38674742994,
+  "sourceWorkflow": 38674743074,
+  "codeQLWorkflow": 38674743008,
+  "publication": "PR run; no publication",
+  "artifacts": [
+    {
+      "asset": "ggh-darwin-arm64",
+      "platform": "darwin",
+      "architecture": "arm64",
+      "version": "0.4.0-beta.3",
+      "sha256": "dac19f8c3089c9e1ca57201a11df475d9014edc6ad030df235e82f7f65433b05",
+      "install": "passed",
+      "stages": [
+        "current-source-version",
+        "previous-source-version",
+        "install-previous",
+        "upgrade-current",
+        "rollback-previous",
+        "restore-current",
+        "installed-help-and-agent-contract",
+        "native-local-commit-and-installed-hook",
+        "uninstall-fixture-binary"
+      ],
+      "nativeRegressions": 71
+    },
+    {
+      "asset": "ggh-darwin-x64",
+      "platform": "darwin",
+      "architecture": "x64",
+      "version": "0.4.0-beta.3",
+      "sha256": "f785d76937967bbb011ddd23d8ad791bf97497dbb425174fbdf191027eb1de42",
+      "install": "passed",
+      "stages": [
+        "current-source-version",
+        "previous-source-version",
+        "install-previous",
+        "upgrade-current",
+        "rollback-previous",
+        "restore-current",
+        "installed-help-and-agent-contract",
+        "native-local-commit-and-installed-hook",
+        "uninstall-fixture-binary"
+      ],
+      "nativeRegressions": 71
+    },
+    {
+      "asset": "ggh-linux-arm64",
+      "platform": "linux",
+      "architecture": "arm64",
+      "version": "0.4.0-beta.3",
+      "sha256": "bd324d993db3e0506c52d5bf94b7e11948d1cac033fa5317f457acc1e48e9804",
+      "install": "passed",
+      "stages": [
+        "current-source-version",
+        "previous-source-version",
+        "install-previous",
+        "upgrade-current",
+        "rollback-previous",
+        "restore-current",
+        "installed-help-and-agent-contract",
+        "native-local-commit-and-installed-hook",
+        "uninstall-fixture-binary"
+      ],
+      "nativeRegressions": 71
+    },
+    {
+      "asset": "ggh-linux-x64",
+      "platform": "linux",
+      "architecture": "x64",
+      "version": "0.4.0-beta.3",
+      "sha256": "7aff9727ab09068216f76bf388424a4e4ac409efa17e6d65ccde917f4631d919",
+      "install": "passed",
+      "stages": [
+        "current-source-version",
+        "previous-source-version",
+        "install-previous",
+        "upgrade-current",
+        "rollback-previous",
+        "restore-current",
+        "installed-help-and-agent-contract",
+        "native-local-commit-and-installed-hook",
+        "uninstall-fixture-binary"
+      ],
+      "nativeRegressions": 71
+    },
+    {
+      "asset": "ggh-windows-x64.exe",
+      "platform": "win32",
+      "architecture": "x64",
+      "version": "0.4.0-beta.3",
+      "sha256": "e6e222cca03cfc00f2dd897e11e2ec9035b38b1702e89c9b2ea905932a59f811",
+      "install": "passed",
+      "stages": [
+        "current-source-version",
+        "previous-source-version",
+        "install-previous",
+        "upgrade-current",
+        "rollback-previous",
+        "restore-current",
+        "installed-help-and-agent-contract",
+        "native-local-commit-and-installed-hook",
+        "uninstall-fixture-binary"
+      ]
+    }
+  ],
+  "windowsPrivacy": {
+    "checks": 83,
+    "passed": true,
+    "temporaryAccountRemoved": true,
+    "sourceManifestIncludedInHostedReceipt": true
+  },
+  "sourceChecks": {
+    "linux": "passed",
+    "macOS": "passed",
+    "Windows": "5 fixture failures; locally repaired before next checkpoint"
+  },
+  "localFixtureRepairs": {
+    "lineEndings": "Isolated autocrlf=true global config reproduced all four stack failures; repo-local autocrlf=false passed all four with the same environment.",
+    "repositoryIdentity": "Compare actual filesystem device/inode instead of short and long path spellings."
+  },
+  "remaining": "Fresh Windows source matrix after test-only fixes; final revision and release qualification after remaining roadmap."
+}

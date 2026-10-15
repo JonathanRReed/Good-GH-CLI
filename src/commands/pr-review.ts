@@ -1,4 +1,5 @@
 import type { Command } from "commander";
+import { getFlags } from "../services/runtime.ts";
 import {
   filterReviewComments,
   getActivePullRequest,
@@ -16,6 +17,7 @@ import {
 import { sanitizeDiffForAI } from "../utils/diff.ts";
 import { dryRun } from "../utils/flags.ts";
 import { applyPatch } from "../services/git.ts";
+import { parsePositiveSafeInteger } from "../utils/numeric-target.ts";
 import {
   confirmOrAbort, jsonOut,
   fail,
@@ -84,13 +86,22 @@ export function registerPrReviewCommand(pr: Command): void {
       guidance?: string; approve?: boolean; requestChanges?: boolean;
       comment?: boolean; local?: boolean; fix?: boolean; yes?: boolean;
     }) => {
-      header("AI Pull Request Review");
+      let num: number | undefined;
+      if (prNumber !== undefined) {
+        const parsed = parsePositiveSafeInteger(prNumber);
+        if (parsed === null) {
+          fail(`Invalid PR number: ${prNumber}`);
+          return;
+        }
+        num = parsed;
+      }
 
-      let num: number | undefined = prNumber ? Number.parseInt(prNumber, 10) : undefined;
-      if (num !== undefined && Number.isNaN(num)) {
-        fail(`Invalid PR number: ${prNumber}`);
+      header("AI Pull Request Review");
+      if (getFlags().aiDisabled) {
+        p.log.info(pc.dim("AI is disabled for this invocation. Pass --ai to allow a review."));
         return;
       }
+
       if (num === undefined) {
         const active = await getActivePullRequest();
         if (!active) {

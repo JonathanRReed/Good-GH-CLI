@@ -39,6 +39,22 @@ they do not appear in process arguments. AI prompts use owner-only temporary
 files where a provider requires a file and remove them after use. Config and
 cache files use owner-only permissions on POSIX systems.
 
+On Windows, `private-storage.ts` creates protected current-user DACLs and audits
+existing owned trees before content access. It rejects ordinary-account access,
+foreign owners, null DACLs, reparse points, and ancestors that another ordinary
+account can replace. Successful tree audits are cached only within the current
+process and invalidated when directory identity changes. SYSTEM and machine
+administrators remain outside this isolation guarantee. Existing unsafe storage
+is refused; caching is disabled when its private storage cannot be verified.
+Provider workspaces use the same private temporary root. Windows PowerShell is
+required for ACL inspection. The helper receives paths through stdin.
+
+Cancellation waits for tracked subprocess trees to terminate. Windows uses the
+system `taskkill /T /F` utility, with a bounded timeout and direct-child fallback;
+Unix uses process groups where available. A failing tree utility cannot prove
+that a helper stopped. Hosted child/grandchild checks verify the normal cleanup
+path separately from the implementation.
+
 ### Untrusted repository policy
 
 A cloned repository must not choose a hosted provider, enable fallback, select

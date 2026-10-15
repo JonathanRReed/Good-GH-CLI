@@ -1,0 +1,83 @@
+{
+  "mode": "native",
+  "platform": "darwin",
+  "binary": "/Users/jonathanreed/Downloads/Good-GH-CLI/ggh",
+  "binarySha256": "19dab132ba7239a7fa66dfabf47ae23265236015bbc1a1982cf58e6df086b574",
+  "bun": null,
+  "commands": [
+    {
+      "command": "ggh ignore '*.log' .env --json",
+      "exitCode": 0,
+      "elapsedMs": 843
+    },
+    {
+      "command": "ggh ignore --list --json",
+      "exitCode": 0,
+      "elapsedMs": 357
+    },
+    {
+      "command": "ggh commit --all --message 'feat: add local demo file' --yes --json",
+      "exitCode": 0,
+      "elapsedMs": 1526
+    },
+    {
+      "command": "ggh log -n 3 --json",
+      "exitCode": 0,
+      "elapsedMs": 301
+    },
+    {
+      "command": "ggh alias lg log --json",
+      "exitCode": 0,
+      "elapsedMs": 581
+    },
+    {
+      "command": "ggh alias --json",
+      "exitCode": 0,
+      "elapsedMs": 124
+    },
+    {
+      "command": "ggh lg -n 3 --json",
+      "exitCode": 0,
+      "elapsedMs": 297
+    },
+    {
+      "command": "ggh hook install pre-commit --yes --json",
+      "exitCode": 0,
+      "elapsedMs": 839
+    },
+    {
+      "command": "ggh hook list --json",
+      "exitCode": 0,
+      "elapsedMs": 271
+    },
+    {
+      "command": "ggh hook remove pre-commit --yes --json",
+      "exitCode": 0,
+      "elapsedMs": 967
+    },
+    {
+      "command": "ggh stack next demo/child --json",
+      "exitCode": 0,
+      "elapsedMs": 1153
+    },
+    {
+      "command": "ggh stack list --json",
+      "exitCode": 0,
+      "elapsedMs": 348
+    },
+    {
+      "command": "ggh stash push --message 'demo local change' --json",
+      "exitCode": 0,
+      "elapsedMs": 637
+    },
+    {
+      "command": "ggh stash list --json",
+      "exitCode": 0,
+      "elapsedMs": 361
+    }
+  ],
+  "passed": true,
+  "head": "5790a501d839efe82a9fd8486cb731e70cc3d819",
+  "stashCount": 1,
+  "clientAttempts": []
+}

@@ -40,11 +40,9 @@ describe("closestMatch", () => {
     expect(closestMatch("pxz", ["pr", "ps", "am"])).toBeNull();
   });
 
-  it("mirrors the runCli policy cases", () => {
+  it("rejects a ggh typo when only Git commands are candidates", () => {
     // typo of a ggh command, far from git's vocabulary
-    expect(closestMatch("prr", git)).not.toBe("prune");
-    // typo shared with git stays git's (git wins ties at distance <= 1)
-    expect(editDistance("chekout", "checkout")).toBe(1);
+    expect(closestMatch("prr", git)).toBeNull();
   });
 });
 

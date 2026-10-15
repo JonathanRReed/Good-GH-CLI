@@ -17,13 +17,31 @@ import type {
 
 export type AIProviderId = "codex" | "grok" | "claude" | "ollama";
 
+/** Usage values reported by a provider's own structured response. */
+export interface AIUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  cachedInputTokens?: number;
+  cacheWriteInputTokens?: number;
+  costUsd?: number;
+}
+
+export interface AIProviderDiagnostics {
+  installed: boolean;
+  version?: string;
+  capabilities: string[];
+}
+
 export interface AIProvider {
   readonly id: AIProviderId;
   readonly displayName: string;
   readonly defaultModel: string;
   /** Models to try in order, cheapest-but-capable last, when the configured model fails. */
   readonly fallbackModels: readonly string[];
-  isAvailable(): Promise<boolean>;
+  isAvailable(options?: { timeoutMs: number }): Promise<boolean>;
+  getDiagnostics(): Promise<AIProviderDiagnostics>;
+  getLastUsage(): AIUsage | undefined;
+  resetLastUsage(): void;
   generateCommit(input: CommitPromptInput, model?: string): Promise<CommitMessageResult>;
   generatePr(input: PrPromptInput, model?: string): Promise<PrContentResult>;
   generateBranchName(taskDescription: string, model?: string): Promise<string>;

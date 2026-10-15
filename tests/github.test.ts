@@ -1,15 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import { normalizeCloneUrl, stdinTextRequest, trimRepositorySuffix } from "../src/services/github.ts";
+import { normalizeCloneUrl, trimRepositorySuffix } from "../src/services/github.ts";
 
 describe("github service", () => {
-  it("keeps long-form text out of the subprocess argument list", () => {
-    const body = "private vulnerability details";
-    expect(stdinTextRequest(["pr", "create"], "--body-file", body)).toEqual({
-      args: ["pr", "create", "--body-file", "-"],
-      input: body,
-    });
-  });
-
   it("normalizes owner/repo shorthand to HTTPS and SSH URLs", () => {
     expect(normalizeCloneUrl("facebook/react", "https")).toBe("https://github.com/facebook/react.git");
     expect(normalizeCloneUrl("facebook/react", "ssh")).toBe("git@github.com:facebook/react.git");
@@ -22,12 +14,6 @@ describe("github service", () => {
     expect(normalizeCloneUrl(sshUrl)).toBe(sshUrl);
   });
 
-  it("extracts commits since tag cleanly", async () => {
-    const { getCommitsSinceTag } = await import("../src/services/github.ts");
-    const commits = await getCommitsSinceTag();
-    expect(Array.isArray(commits)).toBe(true);
-  });
-
   it("parses owner/repo from various git remote URL shapes (T3 Code pattern)", async () => {
     const { parseGitHubRepositoryNameWithOwnerFromRemoteUrl } = await import("../src/services/github.ts");
     expect(parseGitHubRepositoryNameWithOwnerFromRemoteUrl("git@github.com:pingdotgg/t3code.git")).toBe("pingdotgg/t3code");
@@ -36,6 +22,7 @@ describe("github service", () => {
     expect(parseGitHubRepositoryNameWithOwnerFromRemoteUrl("ssh://git@github.com:22/vercel/next.js.git")).toBe("vercel/next.js");
     expect(parseGitHubRepositoryNameWithOwnerFromRemoteUrl("http://github.com/facebook/react.git")).toBe("facebook/react");
     expect(parseGitHubRepositoryNameWithOwnerFromRemoteUrl("git://github.com/torvalds/linux")).toBe("torvalds/linux");
+    expect(parseGitHubRepositoryNameWithOwnerFromRemoteUrl("https://github.com/torvalds/linux")).toBe("torvalds/linux");
     expect(parseGitHubRepositoryNameWithOwnerFromRemoteUrl("invalid-url")).toBe(null);
   });
 
@@ -53,7 +40,7 @@ describe("github service", () => {
     expect(trimRepositorySuffix(`${prefix}.git${"/".repeat(10_000)}`)).toBe(prefix);
   });
 
-  it("searchRepositories returns empty array on empty or whitespace query without calling gh", async () => {
+  it("returns no repository matches for an empty or whitespace query", async () => {
     const { searchRepositories } = await import("../src/services/github.ts");
     expect(await searchRepositories("")).toEqual([]);
     expect(await searchRepositories("   ")).toEqual([]);

@@ -11,6 +11,10 @@ class StubProvider extends CliAIProvider {
   readonly displayName = "Stub";
   readonly defaultModel = "stub-1";
   readonly fallbackModels: readonly string[] = [];
+  protected readonly cliCommand = "unused-test-command";
+  protected readonly diagnosticsVersionArgs = ["--version"] as const;
+  protected readonly diagnosticsHelpArgs = ["--help"] as const;
+  protected readonly diagnosticsCapabilities: readonly { name: string; pattern: RegExp }[] = [];
 
   constructor(private readonly output: string) {
     super();

@@ -1,8 +1,41 @@
 # Release readiness
 
-This is a release checklist, not a claim of perfect software or a security
-certification. The 0.4.0-beta.3 candidate addresses the September 4 pre-adoption
-audit and the September 7 completion pass. Published assets and registry versions are separate from code on main.
+The source candidate is 0.5.0-beta.1 on `feat/quality-release`. The [execution plan](quality/quality-release-plan.md) and [continuation record](quality/quality-release-continuation.md) track exact checkpoints. Source, native installation, live GitHub, platform security, signing, and publication are separate gates.
+
+## October 15 candidate qualification
+
+All three source platforms and all five native artifact pipelines passed at
+`3f6f325`. The [platform receipt](verification/2026-10-15-platform-qualification.json)
+binds their artifact hashes and checks to the tested merge. The final tag runs
+those gates again. Published checksums and the release qualification asset
+establish the distributed files, separately from this dated checkpoint.
+
+- Local source verification passed 569 tests across 62 files. Typecheck, lint,
+  build, manual freshness, actionlint, and source secret scans passed.
+- Each of four POSIX artifacts passed 71 native regressions and six terminal
+  cases. Windows passed eight actual ConPTY cases, 83 cross-user privacy checks,
+  and process-tree qualification. The temporary test account was removed.
+- All five artifacts passed clean install, PATH, upgrade, rollback, restore,
+  local commit/hook and uninstall checks, fourteen offline demo commands, and
+  eleven validated performance workloads with five warm samples per side.
+- Installed Node/Bun packages and the actual npm, Bun-global and lean launchers
+  passed local qualification. Hostile project dotenv/preload files were blocked;
+  explicit caller environment settings remained available.
+- Live private/public setup, protected-push rejection, partial recovery,
+  private PNG access, independent commit/stack journeys, and actual vi editing
+  passed. Synthetic PRs/branches were cleaned and both QA repositories archived.
+- Six ordered experiments were completed and excluded where they added no
+  demonstrated task benefit. The initial audit removed 104 redundant source
+  cases and one duplicate native case. Final review retained distinct coverage.
+
+The GitHub workflow prepares a draft. Publication requires the exact signed,
+notarized universal macOS DMG, checksum and downloaded-artifact verification.
+Apple acceptance, stapling and Gatekeeper are separate checks. npm registry
+publication remains explicitly disabled; the tested package tarball is included.
+
+Jonathan is the sole user and waived outside human testing. Organization/SSO,
+a second-account fork, and working SSH credentials were unavailable and are not
+reported as passes. Provider model generation was not needed for qualification.
 
 ## Audit closure map
 

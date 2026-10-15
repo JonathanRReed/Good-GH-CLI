@@ -192,6 +192,7 @@ export function registerGistCommand(program: Command): void {
     try {
       await ghGlobal(args);
       s.stop(pc.green("Gist updated."));
+      if (jsonOut({ action: "edit", id })) return;
       p.outro("Done.");
     } catch (err) {
       s.stop(pc.red("Failed to edit gist."));
@@ -207,6 +208,7 @@ export function registerGistCommand(program: Command): void {
     try {
       await ghGlobal(["gist", "delete", id, "--yes"]);
       s.stop(pc.green("Gist deleted."));
+      if (jsonOut({ action: "delete", id })) return;
       p.outro("Done.");
     } catch (err) {
       s.stop(pc.red("Failed to delete gist."));

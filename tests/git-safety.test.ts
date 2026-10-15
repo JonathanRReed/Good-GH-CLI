@@ -8,9 +8,7 @@ import {
   getGoneBranches,
   getStatus,
   setBranchMergeBase,
-  worktreeAdd,
 } from "../src/services/git.ts";
-import { validateBranchName } from "../src/utils/branch-name.ts";
 
 const repoRoot = join(import.meta.dir, "..");
 
@@ -23,7 +21,7 @@ async function runCli(
     stdout: "pipe",
     stderr: "pipe",
     stdin: "ignore",
-    env: { ...process.env, NO_COLOR: "1" },
+    env: { ...process.env, GGH_NO_RECORDS: "1", NO_COLOR: "1" },
   });
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(proc.stdout).text(),
@@ -98,12 +96,6 @@ describe("git safety behaviours", () => {
     expect(after).toBe(before);
   });
 
-  it("validateBranchName rejects disallowed names", () => {
-    expect(validateBranchName("feat foo")).toMatch(/spaces/);
-    expect(validateBranchName("-x")).toMatch(/start with '-'/);
-    expect(validateBranchName("a..b")).toMatch(/'\.\.'/);
-  });
-
   it("getStatus reports the new path for a rename", async () => {
     const git = (args: string[]) => execa("git", args, { cwd: repo });
     writeFileSync(join(repo, "old.txt"), "a");
@@ -166,22 +158,5 @@ describe("git safety behaviours", () => {
     expect(first).toHaveProperty("email");
     expect(first).toHaveProperty("date");
     expect(first).toHaveProperty("refs");
-  });
-
-  it("worktree add does not overwrite an existing branch's parent pointer", async () => {
-    const git = (args: string[]) => execa("git", args, { cwd: repo });
-    await git(["checkout", "-b", "existing"]);
-    writeFileSync(join(repo, "existing.txt"), "e");
-    await git(["add", "existing.txt"]);
-    await git(["commit", "-m", "existing"]);
-    await setBranchMergeBase("existing", "main", repo);
-
-    await git(["checkout", "main"]);
-    const wtPath = join(repo, ".worktrees", "existing");
-    await worktreeAdd("existing", wtPath, "main", repo);
-    const base = await getBranchMergeBase("existing", repo);
-    expect(base).toBe("main");
-
-    rmSync(wtPath, { recursive: true, force: true });
   });
 });

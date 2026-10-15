@@ -1,6 +1,7 @@
+import { assertWindowsPrivateDirectory, privateTemporaryDirectory } from "../private-storage.ts";
 import { commandExists, run } from "../../utils/exec.ts";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { existsSync, readFileSync, rmSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { CliAIProvider } from "./base.ts";
 import { AIGenerationError, type AIProviderId } from "./provider.ts";
@@ -16,8 +17,14 @@ export class CodexProvider extends CliAIProvider {
   readonly displayName = "Codex (ChatGPT)";
   readonly defaultModel = "gpt-5.6-luna";
   readonly fallbackModels = CODEX_MODEL_CHAIN;
+  protected readonly cliCommand = "codex";
+  protected readonly diagnosticsVersionArgs = ["--version"] as const;
+  protected readonly diagnosticsHelpArgs = ["exec", "--help"] as const;
+  protected readonly diagnosticsCapabilities = [
+    { name: "JSON event output", pattern: /--json/ },
+  ] as const;
 
-  async isAvailable(): Promise<boolean> {
+  async isAvailable(options?: { timeoutMs: number }): Promise<boolean> {
     try {
       if (!commandExists("codex")) {
         return false;
@@ -26,19 +33,20 @@ export class CodexProvider extends CliAIProvider {
       if (existsSync(join(codexHome, "auth.json"))) {
         return true;
       }
-      const result = await run("codex", ["login", "status"], { reject: false, timeoutMs: 15_000 });
-      return `${result.stdout} ${result.stderr}`.toLowerCase().includes("logged in");
+      const result = await run("codex", ["login", "status"], { reject: false, timeoutMs: options?.timeoutMs ?? 15_000 });
+      return result.exitCode === 0 && /\blogged in\b/i.test(`${result.stdout} ${result.stderr}`) &&
+        !/\bnot logged in\b/i.test(`${result.stdout} ${result.stderr}`);
     } catch {
       return false;
     }
   }
 
   protected async invoke(prompt: string, model: string, timeoutMs: number): Promise<string> {
-    const tmpDir = mkdtempSync(join(tmpdir(), "good-gh-codex-"));
+    const tmpDir = privateTemporaryDirectory("good-gh-codex-");
     const outputPath = join(tmpDir, "output.txt");
 
     try {
-      await run(
+      const result = await run(
         "codex",
         [
           "exec",
@@ -50,6 +58,7 @@ export class CodexProvider extends CliAIProvider {
           "--ignore-user-config",
           "--color",
           "never",
+          "--json",
           "-s",
           "read-only",
           "--model",
@@ -60,7 +69,9 @@ export class CodexProvider extends CliAIProvider {
         ],
         { input: prompt, timeoutMs, cwd: tmpDir },
       );
+      this.setLastUsage(parseCodexUsage(result.stdout));
 
+      assertWindowsPrivateDirectory(tmpDir, false, true);
       if (!existsSync(outputPath)) {
         throw new AIGenerationError(this.id, model, "empty_response", "codex wrote no output file");
       }
@@ -73,4 +84,29 @@ export class CodexProvider extends CliAIProvider {
       }
     }
   }
+}
+
+/** Extracts only the per-turn scalars in Codex's documented JSONL events. */
+export function parseCodexUsage(output: string): unknown {
+  let usage: unknown;
+  for (const line of output.split(/\r?\n/)) {
+    try {
+      const event: unknown = JSON.parse(line);
+      if (!event || typeof event !== "object" || Array.isArray(event)) continue;
+      const eventRecord = new Map(Object.entries(event));
+      if (eventRecord.get("type") !== "turn.completed") continue;
+      const value = eventRecord.get("usage");
+      if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+      const fields = new Map(Object.entries(value));
+      usage = {
+        inputTokens: fields.get("input_tokens"),
+        outputTokens: fields.get("output_tokens"),
+        cachedInputTokens: fields.get("cached_input_tokens"),
+        cacheWriteInputTokens: fields.get("cache_write_input_tokens"),
+      };
+    } catch {
+      // Ignore non-JSON lines and retain plain CLI output compatibility.
+    }
+  }
+  return usage;
 }

@@ -1,0 +1,21 @@
+{
+  "ghVersion": "gh version 2.48.0 (2024-04-17)",
+  "checksumVerified": true,
+  "legacyJsonAuthUnsupported": true,
+  "identityVerified": true,
+  "dryRunStatus": "planned",
+  "dryRunTarget": "JonathanRReed/ggh-qa-compat-preflight-20261014",
+  "nativeAttachmentsSupported": false,
+  "unsupportedAttachment": {
+    "status": "failed",
+    "errorCode": "provider_unavailable",
+    "effects": {
+      "completed": [],
+      "pending": [],
+      "uncertain": []
+    }
+  },
+  "remoteWrites": 0,
+  "storedCredentials": "Existing gh configuration and Keychain read without copying or changing token",
+  "scope": "Actual macOS gh2.48 readonly identity, ggh publication preview and attachment preflight. Current gh2.100 live workflows separately qualified."
+}

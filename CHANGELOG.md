@@ -3,10 +3,50 @@
 All notable changes to this project are documented here.
 This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## 0.5.0-beta.1 - 2026-10-15
+
+### Workflow and release qualification
+
+- Add versioned `--agent` output and schema discovery, exact approval snapshots,
+  metadata-only publication recovery, and owner-aware operation locks.
+- Add recoverable multiline PR editing through the configured Git editor.
+- Fix stack PR head selection and branch upstream setup in single-branch clones.
+- Require Git 2.31 before managed workflow effects. Detect installed `gh`
+  capabilities and provide versioned platform installation and repair guidance.
+- Bound optional provider checks during status. Keep normal AI availability
+  checks independent, and preserve JSON and native escape output.
+- Disable repository dotenv and Bun preload configuration in native builds and
+  installed launchers so repository files cannot change user AI policy.
+- Remove terminal control commands from managed human output while retaining
+  styling, Unicode, and machine-readable values.
+- Add real terminal, cross-user Windows storage, process-tree, native installation,
+  offline demo, and validated packaged performance checks to release qualification.
+- Audit regression coverage, remove redundant assertions, and retain behavioral
+  protections for cancellation, partial publication, stale approval, and recovery.
+
+
+
+### Added
+
+- Add explicit `ggh git`, `ggh gh`, and `ggh --` escape commands. Unknown
+  commands no longer run as Git. Disable AI generation by default, with
+  user-owned `ai_enabled` and per-command `--ai` / `--no-ai` controls.
+- Infer private repository creation from the current Git root, name, `origin`,
+  and current branch. Add a one-confirmation repo flow and shared setup for
+  PR creation and `commit --pr` when no GitHub remote exists.
+- Add repeatable PR and issue media attachments with capability checks,
+  configured public-only fallback, and partial-result reporting.
+- Record local operation status, revisions, resources, reported AI usage, and
+  explicit evidence references. Add list, view, evidence, and prune commands.
+- Add resumable stack restack recovery with conflict continuation, abort,
+  saved branch tips, and force-with-lease checks during explicit submission.
+- Add opt-in `ggh stack list --remote` status for pull request review and CI,
+  with bounded lookups, plus local Git and GitHub CLI checks in `config doctor`.
 
 ### Fixed
 
+- Require `--yes` or an explicit message before a no-input squash rewrites
+  history with an inferred commit message.
 - Resolve selected Git paths from the repository root, including nested working
   directories, staged-object checks, split commits, conflict resolution and
   review patches. Treat selected filenames literally, not as Git pathspecs.

@@ -3,7 +3,7 @@
  * Performance budgets (see docs/PERF.md). Exits non-zero on breach.
  * Portable alternative to `timeout(1)`, which macOS lacks.
  */
-import { run } from "../src/utils/exec.ts";
+import { ExecError, run } from "../src/utils/exec.ts";
 import { join } from "node:path";
 
 const root = join(import.meta.dir, "..");
@@ -19,9 +19,10 @@ async function within(
     cwd: root,
     timeoutMs: ms,
     reject: false,
-  }).catch((err: unknown) => {
+  }).catch(async (err: unknown) => {
     const msg = String(err);
     if (/timed out|timeout/i.test(msg)) {
+      if (label === "status --json") await diagnoseStatusBudget();
       console.error(`BUDGET BREACH: ${label} exceeded ${ms}ms`);
       process.exit(1);
     }
@@ -32,6 +33,27 @@ async function within(
   if (result.exitCode !== 0) {
     console.error(`BUDGET BREACH: ${label} exited with ${result.exitCode}`);
     process.exit(1);
+  }
+}
+
+async function diagnoseStatusBudget(): Promise<void> {
+  try {
+    const result = await run("bun", ["run", join(root, "scripts", "status-probes.ts")], {
+      cwd: root,
+      timeoutMs: 22_000,
+      reject: false,
+      maxOutputBytes: 8_192,
+    });
+    reportStatusProbes(`${result.stdout}\n${result.stderr}`);
+  } catch (error) {
+    if (error instanceof ExecError) reportStatusProbes(`${error.stdout}\n${error.stderr}`);
+  }
+}
+
+function reportStatusProbes(output: string): void {
+  const allowed = /^probe (?:getStatus|getRepoRoot|worktreeList|getAheadBehind|getAheadOfDefault|getActivePullRequest|getGitHubAuthStatus|checkSubmodules|getStatusProviders|getConfig|expandAliasCold|createProgramCold|getConfigCold) elapsed=\d+ms success=(?:true|false)(?: errorKind=(?:exec|error|deadline))?$/;
+  for (const line of output.split(/\r?\n/)) {
+    if (allowed.test(line) || /^probe-start (?:getStatus|getRepoRoot|worktreeList|getAheadBehind|getAheadOfDefault|getActivePullRequest|getGitHubAuthStatus|checkSubmodules|getStatusProviders|getConfig|expandAliasCold|createProgramCold|getConfigCold)$/.test(line)) console.error(line);
   }
 }
 

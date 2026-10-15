@@ -2,17 +2,21 @@ import type { Command } from "commander";
 import { getFlags } from "../services/runtime.ts";
 import {
   commentOnPullRequest,
+  describeAttachmentPlan,
   editPullRequest,
   getActivePullRequest,
   getCurrentRepositoryNameWithOwner,
   getPullRequestUrl,
   mergePullRequest,
   parseRepoFlag,
+  readAttachmentBodyFile,
+  prepareAttachmentPlan,
   setPullRequestState,
   viewPullRequest,
   type MergeOptions,
 } from "../services/github.ts";
 import { dryRun } from "../utils/flags.ts";
+import { parsePositiveSafeInteger } from "../utils/numeric-target.ts";
 import {
   confirmOrAbort,  jsonOut,
   fail,
@@ -25,9 +29,9 @@ import {
 } from "../utils/ui.ts";
 
 async function resolvePrNumber(arg?: string): Promise<number | null> {
-  if (arg) {
-    const parsed = Number.parseInt(arg, 10);
-    if (Number.isNaN(parsed)) {
+  if (arg !== undefined) {
+    const parsed = parsePositiveSafeInteger(arg);
+    if (parsed === null) {
       fail(`Invalid PR number: ${arg}`);
       return null;
     }
@@ -62,10 +66,18 @@ export function registerPrLifecycleCommands(pr: Command): void {
   pr.command("view [prNumber]")
     .description("Show a Pull Request: state, review decision, size, and body")
     .action(async (prNumber?: string) => {
-      const num = prNumber ? Number.parseInt(prNumber, 10) : undefined;
+      let num: number | undefined;
+      if (prNumber !== undefined) {
+        const parsed = parsePositiveSafeInteger(prNumber);
+        if (parsed === null) {
+          fail(`Invalid PR number: ${prNumber}`);
+          return;
+        }
+        num = parsed;
+      }
       let detail;
       try {
-        detail = await viewPullRequest(Number.isNaN(num as number) ? undefined : num);
+        detail = await viewPullRequest(num ?? undefined);
       } catch (err) {
         failFromGitHub(err);
         return;
@@ -216,12 +228,24 @@ export function registerPrLifecycleCommands(pr: Command): void {
   pr.command("comment [prNumber]")
     .description("Add a comment to a Pull Request")
     .option("-b, --body <body>", "Comment body")
-    .action(async (prNumber?: string, options?: { body?: string }) => {
+    .option("--body-file <path>", "Read comment body from a file")
+    .option("--attach <path>", "Attach images up to 10 MiB or videos up to 100 MiB; GitHub may impose lower limits (repeatable)", (path: string, previous: string[]) => [...previous, path], [])
+    .action(async (prNumber?: string, options?: { body?: string; bodyFile?: string; attach?: string[] }) => {
       header("Comment on Pull Request");
       const num = await resolvePrNumber(prNumber);
       if (num === null) return;
 
+      if (options?.body !== undefined && options.bodyFile) {
+        fail("Pass either --body or --body-file, not both.");
+        return;
+      }
       let body = options?.body;
+      try {
+        if (options?.bodyFile) body = readAttachmentBodyFile(options.bodyFile);
+      } catch (err) {
+        fail(err instanceof Error ? err.message : String(err));
+        return;
+      }
       if (!body) {
         const typed = await promptInput({
           message: "Comment:",
@@ -234,10 +258,18 @@ export function registerPrLifecycleCommands(pr: Command): void {
         body = typed;
       }
 
-      if (dryRun(`comment on #${num}`)) return;
+      let attachmentPlan: Awaited<ReturnType<typeof prepareAttachmentPlan>>;
+      try {
+        attachmentPlan = await prepareAttachmentPlan({ attachments: options?.attach, operation: "pr-comment", recipient: `pr:${num}`, visibility: "unknown" });
+      } catch (err) {
+        fail(err instanceof Error ? err.message : String(err));
+        return;
+      }
+
+      if (dryRun(`comment on #${num}${describeAttachmentPlan(attachmentPlan)}`)) return;
 
       try {
-        const url = await commentOnPullRequest(num, body);
+        const url = await commentOnPullRequest(num, body, process.cwd(), { attachments: options?.attach });
         p.log.success(pc.green("Comment posted."));
         if (url) p.log.message(pc.dim(url));
         if (jsonOut({ number: num, action: "comment", url })) return;
@@ -251,24 +283,46 @@ export function registerPrLifecycleCommands(pr: Command): void {
     .description("Edit a Pull Request title, body, or base branch")
     .option("-t, --title <title>", "New title")
     .option("-b, --body <body>", "New body")
+    .option("--body-file <path>", "Read new body from a file")
+    .option("--attach <path>", "Attach images up to 10 MiB or videos up to 100 MiB; GitHub may impose lower limits (repeatable)", (path: string, previous: string[]) => [...previous, path], [])
     .option("--base <branch>", "Retarget onto a different base branch")
     .option("--add-label <label...>", "Add labels")
     .action(async (prNumber?: string, options?: {
-      title?: string; body?: string; base?: string; addLabel?: string[];
+      title?: string; body?: string; bodyFile?: string; base?: string; addLabel?: string[]; attach?: string[];
     }) => {
       header("Edit Pull Request");
       const num = await resolvePrNumber(prNumber);
       if (num === null) return;
 
-      if (!options?.title && !options?.body && !options?.base && !options?.addLabel?.length) {
+      if (options?.body !== undefined && options.bodyFile) {
+        fail("Pass either --body or --body-file, not both.");
+        return;
+      }
+      if (!options?.title && !options?.body && !options?.bodyFile && !options?.base && !options?.addLabel?.length && !options?.attach?.length) {
         fail("Nothing to change. Pass --title, --body, --base, or --add-label.");
         return;
       }
 
-      if (dryRun(`edit #${num}`)) return;
+      const fields = { ...options };
+      try {
+        if (options?.bodyFile) fields.body = readAttachmentBodyFile(options.bodyFile);
+      } catch (err) {
+        fail(err instanceof Error ? err.message : String(err));
+        return;
+      }
+
+      let attachmentPlan: Awaited<ReturnType<typeof prepareAttachmentPlan>>;
+      try {
+        attachmentPlan = await prepareAttachmentPlan({ attachments: options?.attach, operation: "pr-edit", recipient: `pr:${num}`, visibility: "unknown" });
+      } catch (err) {
+        fail(err instanceof Error ? err.message : String(err));
+        return;
+      }
+
+      if (dryRun(`edit #${num}${describeAttachmentPlan(attachmentPlan)}`)) return;
 
       try {
-        await editPullRequest(num, options);
+        await editPullRequest(num, { ...fields, attachments: options?.attach });
         p.log.success(pc.green(`Pull Request #${num} updated.`));
                   const repo = getFlags().json ? await repoForUrl() : null;
           if (jsonOut({ number: num, action: "edit", url: repo ? getPullRequestUrl(repo, num) : undefined })) return;

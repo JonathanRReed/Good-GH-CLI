@@ -1,9 +1,12 @@
+import { assertWindowsPrivateDirectory } from "../private-storage.ts";
 /**
  * Stacked-branch graph (git-config parent pointers) and restack. Depends on exec/branch only.
  */
 
 import { run } from "../../utils/exec.ts";
 import { existsSync, readFileSync } from "node:fs";
+import { lstat, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { execGitWithRetry } from "./exec.ts";
 import { getCurrentBranch, listBranches, resolveBranchRef } from "./branch.ts";
@@ -21,6 +24,233 @@ export interface StackNode {
   /** Commits the parent has that this branch is missing (needs a restack). */
   behind: number;
   isCurrent: boolean;
+}
+
+export interface StackRecoveryEntry {
+  branch: string;
+  parent: string;
+  originalTip: string;
+  expectedTip: string;
+  state: "pending" | "completed" | "failed" | "unknown";
+  pushState?: "pending" | "completed" | "failed" | "unknown";
+  remote?: string;
+  pullRequestUrl?: string;
+}
+
+export interface StackRecoveryCheckpoint {
+  schemaVersion: 1;
+  operationId: string;
+  mode: "restack" | "submit";
+  selected: string;
+  originalBranch: string;
+  entries: StackRecoveryEntry[];
+  activeIndex: number;
+  resources: string[];
+}
+
+function validOperationId(id: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+}
+
+async function recoveryDirectory(cwd: string): Promise<string> {
+  const result = await run("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd });
+  const directory = join(result.stdout.trim(), "ggh-stack-recovery");
+  assertWindowsPrivateDirectory(directory);
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const info = await lstat(directory);
+  if (!info.isDirectory() || info.isSymbolicLink() || (process.platform !== "win32" && (info.mode & 0o077) !== 0) || (typeof process.getuid === "function" && info.uid !== process.getuid())) {
+    throw new Error("Stack recovery storage has unsafe ownership or type.");
+  }
+  return directory;
+}
+
+function checkpointPath(directory: string): string {
+  return join(directory, "active.json");
+}
+
+const MAX_STACK_RECOVERY_BYTES = 64 * 1024;
+
+function parseCheckpoint(value: unknown): StackRecoveryCheckpoint {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Stack recovery checkpoint is corrupt.");
+  const raw = value as Record<string, unknown>;
+  if (raw.schemaVersion !== 1 || typeof raw.operationId !== "string" || !validOperationId(raw.operationId) ||
+      (raw.mode !== "restack" && raw.mode !== "submit") || typeof raw.selected !== "string" ||
+      typeof raw.originalBranch !== "string" || !Array.isArray(raw.entries) || raw.entries.length > 100 ||
+      !Number.isInteger(raw.activeIndex) || (raw.activeIndex as number) < 0 || (raw.activeIndex as number) > raw.entries.length ||
+      !Array.isArray(raw.resources) || !raw.resources.every((url) => typeof url === "string" && URL.canParse(url))) {
+    throw new Error("Stack recovery checkpoint is invalid.");
+  }
+  const entries = raw.entries.map((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error("Stack recovery entry is invalid.");
+    const entry = item as Record<string, unknown>;
+    if (typeof entry.branch !== "string" || !entry.branch || typeof entry.parent !== "string" || !entry.parent ||
+        typeof entry.originalTip !== "string" || !/^[0-9a-f]{40,64}$/i.test(entry.originalTip) ||
+        typeof entry.expectedTip !== "string" || !/^[0-9a-f]{40,64}$/i.test(entry.expectedTip) ||
+        !["pending", "completed", "failed", "unknown"].includes(String(entry.state)) ||
+        (entry.pushState !== undefined && !["pending", "completed", "failed", "unknown"].includes(String(entry.pushState))) ||
+        (entry.remote !== undefined && (typeof entry.remote !== "string" || !entry.remote.trim() || /[\0\r\n]/.test(entry.remote))) ||
+        (entry.pullRequestUrl !== undefined && (typeof entry.pullRequestUrl !== "string" || !URL.canParse(entry.pullRequestUrl)))) {
+      throw new Error("Stack recovery entry is invalid.");
+    }
+    return {
+      branch: entry.branch,
+      parent: entry.parent,
+      originalTip: entry.originalTip,
+      expectedTip: entry.expectedTip,
+      state: entry.state as StackRecoveryEntry["state"],
+      ...(typeof entry.pushState === "string" ? { pushState: entry.pushState as NonNullable<StackRecoveryEntry["pushState"]> } : {}),
+      ...(typeof entry.remote === "string" ? { remote: entry.remote } : {}),
+      ...(typeof entry.pullRequestUrl === "string" ? { pullRequestUrl: entry.pullRequestUrl } : {}),
+    };
+  });
+  return {
+    schemaVersion: 1,
+    operationId: raw.operationId,
+    mode: raw.mode,
+    selected: raw.selected,
+    originalBranch: raw.originalBranch,
+    entries,
+    activeIndex: raw.activeIndex as number,
+    resources: [...raw.resources] as string[],
+  };
+}
+
+export async function readStackRecovery(cwd = process.cwd()): Promise<StackRecoveryCheckpoint | null> {
+  const directory = await recoveryDirectory(cwd);
+  const path = checkpointPath(directory);
+  const info = await lstat(path).catch((error: NodeJS.ErrnoException) => error.code === "ENOENT" ? null : Promise.reject(error));
+  if (!info) return null;
+  if (!info.isFile() || info.isSymbolicLink() || info.size > MAX_STACK_RECOVERY_BYTES || (process.platform !== "win32" && (info.mode & 0o077) !== 0) || (typeof process.getuid === "function" && info.uid !== process.getuid())) {
+    throw new Error("Stack recovery checkpoint has unsafe ownership or type.");
+  }
+  let value: unknown;
+  try { value = JSON.parse(await readFile(path, "utf8")); }
+  catch { throw new Error("Stack recovery checkpoint is corrupt."); }
+  return parseCheckpoint(value);
+}
+
+export async function createStackRecovery(checkpoint: StackRecoveryCheckpoint, cwd = process.cwd()): Promise<void> {
+  const directory = await recoveryDirectory(cwd);
+  const validated = parseCheckpoint(checkpoint);
+  const json = `${JSON.stringify(validated, null, 2)}\n`;
+  if (Buffer.byteLength(json) > MAX_STACK_RECOVERY_BYTES) throw new Error("Stack recovery checkpoint exceeds 64 KiB. Reduce the stack size before starting this operation.");
+  const path = checkpointPath(directory);
+  let handle;
+  try { handle = await open(path, "wx", 0o600); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new Error("A stack recovery checkpoint already exists. Resume or abort it before starting another stack operation.", { cause: error });
+    }
+    throw error;
+  }
+  let writeError: unknown;
+  try { await handle.writeFile(json, "utf8"); await handle.sync(); }
+  catch (error) { writeError = error; }
+  finally { await handle.close(); }
+  if (writeError !== undefined) { await unlink(path).catch(() => undefined); throw writeError; }
+}
+
+interface StackLockRecord {
+  schemaVersion: 1;
+  pid: number;
+  token: string;
+  command: string;
+  startedAt: string;
+}
+
+function processIsAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return (error as NodeJS.ErrnoException).code === "EPERM"; }
+}
+
+export async function acquireStackOperationLock(
+  cwd = process.cwd(),
+  command = "stack operation",
+): Promise<() => Promise<void>> {
+  const directory = await recoveryDirectory(cwd);
+  const path = join(directory, "operation.lock");
+  const token = randomUUID();
+  let handle;
+  try { handle = await open(path, "wx", 0o600); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    const info = await lstat(path).catch(() => null);
+    if (info && info.size > 4 * 1024) {
+      throw new Error(`Stack operation lock exceeds 4 KiB. Inspect ${path}; do not remove it while a stack command may be running.`, { cause: error });
+    }
+    if (!info || !info.isFile() || info.isSymbolicLink() || (process.platform !== "win32" && (info.mode & 0o077) !== 0) || (typeof process.getuid === "function" && info.uid !== process.getuid())) {
+      throw new Error(`Stack operation lock has unsafe ownership or type. Inspect ${path}; do not remove it while a stack command may be running.`, { cause: error });
+    }
+    let record: unknown;
+    try { record = JSON.parse(await readFile(path, "utf8")); }
+    catch (readError) { throw new Error(`Stack operation lock is unreadable. Verify no ggh stack command is running, then remove ${path} to recover.`, { cause: readError }); }
+    if (!record || typeof record !== "object" || Array.isArray(record) || typeof (record as Record<string, unknown>).pid !== "number") {
+      throw new Error(`Stack operation lock is invalid. Verify no ggh stack command is running, then remove ${path} to recover.`, { cause: error });
+    }
+    const pid = (record as Record<string, unknown>).pid as number;
+    const active = Number.isInteger(pid) && pid > 0 && processIsAlive(pid);
+    throw new Error(active
+      ? `Another stack command is active with PID ${pid}. Wait for it to finish. If it is stuck, inspect ${path} before removing it.`
+      : `A stale stack lock for PID ${pid} remains. Verify that process is gone, then remove ${path} to recover.`, { cause: error });
+  }
+
+  const record: StackLockRecord = { schemaVersion: 1, pid: process.pid, token, command, startedAt: new Date().toISOString() };
+  let writeError: unknown;
+  try { await handle.writeFile(`${JSON.stringify(record)}\n`, "utf8"); await handle.sync(); }
+  catch (error) { writeError = error; }
+  finally { await handle.close(); }
+  if (writeError !== undefined) { await unlink(path).catch(() => undefined); throw writeError; }
+
+  return async () => {
+    let raw: unknown;
+    try { raw = JSON.parse(await readFile(path, "utf8")); }
+    catch { return; }
+    if (raw && typeof raw === "object" && !Array.isArray(raw) && (raw as Record<string, unknown>).token === token) {
+      await unlink(path).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; });
+    }
+  };
+}
+
+export async function writeStackRecovery(checkpoint: StackRecoveryCheckpoint, cwd = process.cwd()): Promise<void> {
+  const directory = await recoveryDirectory(cwd);
+  const validated = parseCheckpoint(checkpoint);
+  const json = `${JSON.stringify(validated, null, 2)}\n`;
+  if (Buffer.byteLength(json) > MAX_STACK_RECOVERY_BYTES) throw new Error("Stack recovery checkpoint exceeds 64 KiB. Inspect the saved operation before changing it.");
+  const path = checkpointPath(directory);
+  const temp = join(directory, `.active-${randomUUID()}.tmp`);
+  const handle = await open(temp, "wx", 0o600);
+  try { await handle.writeFile(json, "utf8"); await handle.sync(); }
+  finally { await handle.close(); }
+  try { await rename(temp, path); }
+  catch (error) { await unlink(temp).catch(() => undefined); throw error; }
+}
+
+export async function clearStackRecovery(cwd = process.cwd()): Promise<void> {
+  const directory = await recoveryDirectory(cwd);
+  await unlink(checkpointPath(directory)).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; });
+}
+
+export async function getBranchTip(branch: string, cwd = process.cwd()): Promise<string> {
+  const result = await run("git", ["rev-parse", "--verify", "--quiet", "--end-of-options", `refs/heads/${branch}^{commit}`], { cwd });
+  return result.stdout.trim();
+}
+
+export async function setBranchTipIfUnchanged(branch: string, next: string, expected: string, cwd = process.cwd()): Promise<void> {
+  await execGitWithRetry(["update-ref", `refs/heads/${branch}`, next, expected], { cwd });
+}
+
+export async function protectStackTip(operationId: string, index: number, tip: string, cwd = process.cwd()): Promise<void> {
+  if (!validOperationId(operationId) || !Number.isInteger(index) || index < 0 || index > 99 || !/^[0-9a-f]{40,64}$/i.test(tip)) {
+    throw new Error("Invalid stack recovery tip.");
+  }
+  await execGitWithRetry(["update-ref", `refs/ggh/stack-recovery/${operationId}/${index}`, tip], { cwd });
+}
+
+export async function clearProtectedStackTips(operationId: string, count: number, cwd = process.cwd()): Promise<void> {
+  if (!validOperationId(operationId)) throw new Error("Invalid stack recovery operation id.");
+  for (let index = 0; index < count; index += 1) {
+    await execGitWithRetry(["update-ref", "-d", `refs/ggh/stack-recovery/${operationId}/${index}`], { cwd, maxRetries: 1 }).catch(() => undefined);
+  }
 }
 
 /** Reads every recorded parent pointer in one git call. */

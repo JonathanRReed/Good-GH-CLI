@@ -129,9 +129,9 @@ Examples:
       p.log.message(`  Descendants: ${snapshot.descendants.length > 0 ? snapshot.descendants.join(", ") : pc.dim("(none)")}`);
 
       if (dryRun(`publish stack to a secret gist`)) return;
-
-      if (!(await confirmOrAbort(`Publish stack as a secret gist?`, { assumeYes: options?.yes }))) return;
     }
+
+    if (!(await confirmOrAbort(`Publish stack as a secret gist?`, { assumeYes: options?.yes }))) return;
 
     const content = JSON.stringify(snapshot, null, 2);
     const args = [

@@ -33,7 +33,7 @@ const draftLabel = (msg: string) => msg.replace(DRAFT_PREFIX, "").trim();
 export function registerDraftCommand(program: Command): void {
   const draft = program
     .command("draft [action]")
-    .description("Stash uncommitted work with an AI-generated description, then restore it later")
+    .description("Stash uncommitted work with a short description, then restore it later")
     .option("--provider <provider>", "Override AI provider (codex, grok, claude, or ollama)")
     .option("-y, --yes", "Skip confirmation prompts")
     .addHelpText("after", `
@@ -75,7 +75,7 @@ Examples:
 
   draft
     .command("create")
-    .description("Save current changes as a draft with an AI-generated description")
+    .description("Save current changes as a draft")
     .option("--provider <provider>", "Override AI provider (codex, grok, claude, or ollama)")
     .option("-y, --yes", "Skip confirmation prompts")
     .action(async (options?: { provider?: string; yes?: boolean }) => {
@@ -119,39 +119,41 @@ Examples:
     const status = await getStatus();
     const hasChanges = status.staged.length > 0 || status.unstaged.length > 0 || status.untracked.length > 0;
     if (!hasChanges) {
+      if (jsonOut({ status: "no_op", reason: "no_uncommitted_changes" })) return;
       p.log.info(pc.dim("No uncommitted changes to draft."));
       return;
     }
 
-    if (dryRun("stash changes with an AI-generated description")) return;
+    if (dryRun("stash changes as a named draft")) return;
 
-    // Generate a description with AI from the current diff
-    const { getStagedDiff } = await import("../services/git.ts");
-    const rawDiff = await getStagedDiff();
-    const { diff: sanitizedDiff, redactedCount } = sanitizeDiffForAI(rawDiff);
-    if (redactedCount > 0) {
-      p.log.warn(pc.yellow(`Redacted ${redactedCount} potential secret(s) from diff sent to AI.`));
-    }
+    let description = `${DRAFT_PREFIX} draft on ${status.branch}`;
+    if (!getFlags().aiDisabled) {
+      const { getStagedDiff } = await import("../services/git.ts");
+      const rawDiff = await getStagedDiff();
+      const { diff: sanitizedDiff, redactedCount } = sanitizeDiffForAI(rawDiff);
+      if (redactedCount > 0) {
+        p.log.warn(pc.yellow(`Redacted ${redactedCount} potential secret(s) from diff sent to AI.`));
+      }
 
-    let description = `draft on ${status.branch}`;
-    const s = p.spinner();
-    s.start("Generating draft description with AI...");
-    try {
-      const { result: aiResult } = await generateCommitWithFallback(
-        {
-          branch: status.branch,
-          stagedFiles: status.staged,
-          stagedDiff: sanitizedDiff,
-          style: "concise",
-        },
-        options?.provider as ConfigAIProvider | undefined,
-        (failure: AIAttemptFailure, next?: AIAttempt) => s.message(formatAIFallback(failure, next)),
-      );
-      s.stop("Draft description generated.");
-      description = `${DRAFT_PREFIX} ${aiResult.subject}`;
-    } catch (err) {
-      s.stop(pc.yellow("AI description failed; using branch name instead."));
-      reportAIFailure(err, "Could not generate a description:");
+      const s = p.spinner();
+      s.start("Generating draft description with AI...");
+      try {
+        const { result: aiResult } = await generateCommitWithFallback(
+          {
+            branch: status.branch,
+            stagedFiles: status.staged,
+            stagedDiff: sanitizedDiff,
+            style: "concise",
+          },
+          options?.provider as ConfigAIProvider | undefined,
+          (failure: AIAttemptFailure, next?: AIAttempt) => s.message(formatAIFallback(failure, next)),
+        );
+        s.stop("Draft description generated.");
+        description = `${DRAFT_PREFIX} ${aiResult.subject}`;
+      } catch (err) {
+        s.stop(pc.yellow("AI description failed; using branch name instead."));
+        reportAIFailure(err, "Could not generate a description:");
+      }
     }
 
     p.log.step(`Draft: ${pc.cyan(description)}`);

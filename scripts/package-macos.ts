@@ -59,8 +59,8 @@ mkdirSync(outputDir, { recursive: true });
 const arm = join(buildRoot, "ggh-arm64");
 const intel = join(buildRoot, "ggh-x64");
 const binary = join(payload, "bin", "ggh");
-run("bun", ["build", "bin/ggh.ts", "--compile", "--minify", "--target=bun-darwin-arm64", `--outfile=${arm}`]);
-run("bun", ["build", "bin/ggh.ts", "--compile", "--minify", "--target=bun-darwin-x64", `--outfile=${intel}`]);
+run("bun", ["build", "bin/ggh.ts", "--compile", "--no-compile-autoload-dotenv", "--no-compile-autoload-bunfig", "--minify", "--target=bun-darwin-arm64", `--outfile=${arm}`]);
+run("bun", ["build", "bin/ggh.ts", "--compile", "--no-compile-autoload-dotenv", "--no-compile-autoload-bunfig", "--minify", "--target=bun-darwin-x64", `--outfile=${intel}`]);
 run("lipo", ["-create", arm, intel, "-output", binary]);
 chmodSync(binary, 0o755);
 
@@ -155,7 +155,7 @@ try {
 
 if (notaryProfile) {
   run("xcrun", ["notarytool", "history", "--keychain-profile", notaryProfile]);
-  run("xcrun", ["notarytool", "submit", dmg, "--keychain-profile", notaryProfile, "--wait"]);
+  run("xcrun", ["notarytool", "submit", dmg, "--keychain-profile", notaryProfile, "--wait", "--output-format", "json", "--no-progress"]);
   run("xcrun", ["stapler", "staple", dmg]);
   run("xcrun", ["stapler", "validate", dmg]);
   run("spctl", ["--assess", "--type", "open", "--context", "context:primary-signature", "--verbose=2", dmg]);

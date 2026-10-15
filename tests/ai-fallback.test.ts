@@ -28,6 +28,10 @@ class FakeProvider extends CliAIProvider {
   readonly defaultModel: string;
   readonly fallbackModels: readonly string[];
   readonly calls: string[] = [];
+  protected readonly cliCommand = "unused-test-command";
+  protected readonly diagnosticsVersionArgs = ["--version"] as const;
+  protected readonly diagnosticsHelpArgs = ["--help"] as const;
+  protected readonly diagnosticsCapabilities: readonly { name: string; pattern: RegExp }[] = [];
 
   constructor(
     id: AIProviderId,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { PassThrough, Writable } from "node:stream";
-import { eraseFrame, readHiddenLine, terminalColumns, visibleWindow } from "../src/utils/prompts.ts";
+import { readHiddenLine, terminalColumns, visibleWindow } from "../src/utils/prompts.ts";
 
 /**
  * The three interactive pickers (searchablePicker, selectMenu,
@@ -36,7 +36,6 @@ describe("visibleWindow", () => {
     const { start, index } = visibleWindow(0, 0, 7);
     expect(start).toBe(0);
     expect(index).toBe(0);
-    expect(Number.isNaN(start + index)).toBe(false);
   });
 
   it("keeps the window inside the list for every cursor position", () => {
@@ -58,12 +57,6 @@ describe("terminalColumns", () => {
     const cols = terminalColumns();
     expect(Number.isInteger(cols)).toBe(true);
     expect(cols).toBeGreaterThanOrEqual(40);
-  });
-});
-
-describe("eraseFrame", () => {
-  it("is a no-op for zero lines (nothing to erase)", () => {
-    expect(() => eraseFrame(0)).not.toThrow();
   });
 });
 

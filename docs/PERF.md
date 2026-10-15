@@ -1,10 +1,7 @@
 # Performance notes
 
-`ggh` will never win a benchmark against ripgrep — it shells out to `git`,
-`gh`, and AI CLIs, and no architecture changes that. What it can do is never
-waste *your* time: start instantly, parallelize probes, memoize spawns, and
-stay off the network unless you asked. This file records the budgets and the
-receipts.
+These measurements separate process startup, local Git work, and remote waiting.
+Commands that include GitHub state may call GitHub. Local commands stay offline.
 
 ## Budgets (enforced in CI)
 
@@ -16,7 +13,7 @@ receipts.
 Both run against the shipped `dist/` bundle, not `bun run` (which pays ~0.4 s
 of TypeScript transform on every invocation — a dev-mode cost users never see).
 
-## Receipts (dist bundle, Apple M1, medians)
+## Historical receipts (dist bundle, Apple M1, medians)
 
 | Command | Time | Dominant cost |
 | --- | --- | --- |
@@ -53,3 +50,50 @@ Outliers (~1 s on `status`) are `gh`/network variance, not ours.
    and must degrade cleanly when offline.
 4. `--dry-run` never bills AI and never prompts (enforced by
    `tests/safety-net.test.ts`).
+
+## Candidate bundle budget
+
+The next beta allows a minified bundle up to 600,000 bytes. This guards
+unexpected growth while accommodating the agent schema, recovery, and Windows
+privacy code. The 991f466 hosted build measured 502,021 bytes, just above the
+previous 500,000-byte gate. Bundle size is a packaging check. Startup and workflow
+latency need their own measurements before the final release.
+
+
+## Packaged candidate qualification
+
+The native runner starts a fresh process for every sample, verifies its output,
+and alternates baseline and candidate order. It records the first invocation
+separately from five later runs per side. It does not flush OS caches or claim
+cold-disk startup. Fixtures contain 20, 5,000 and 10,000 synthetic data files.
+Profiles are isolated, repositories have no remotes, and known GitHub/provider
+clients are blocked during POSIX runs. Windows uses a restricted executable PATH.
+Remote latency is outside this local-workload measurement.
+
+The 2026-10-14 run validated all 11 workloads on both exact native artifacts with
+zero errors. Load reached 74.9 on 14 cores, and timing ranges overlap. The
+comparison is inconclusive. The artifacts may embed different native runtimes,
+so these results cannot isolate the cost of a source change. Raw samples,
+artifact hashes, runner hash, environment and validation counts are in
+[the packaged performance receipt](verification/2026-10-14-packaged-performance.json).
+
+Representative candidate samples from that busy host:
+
+| Workload | Median of 5 | Range |
+| --- | ---: | ---: |
+| Version |37.8ms |28.8–54.4ms |
+| Small-repo status |316.4ms |264.6–581.6ms |
+|5000-file status |302.4ms |252.7–368.2ms |
+|10000-file monorepo status |424.9ms |264.7–601.3ms |
+
+These are observations, not a speedup or a universal latency promise. Platform
+release jobs run the same validated workloads against their current and previous
+artifacts. The final release must retain those exact-artifact results.
+
+Run locally with a trusted native artifact:
+
+```bash
+python3 scripts/measure-performance.py --binary /absolute/path/to/ggh \
+  --expected-version 0.5.0-beta.1 --baseline /absolute/path/to/previous-ggh \
+  --results performance.json
+```

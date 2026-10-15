@@ -1,4 +1,8 @@
-import { Command } from "commander";
+import { CapabilityError } from "./services/dependency-compatibility.ts";
+import { registerAgentCommand } from "./commands/agent.ts";
+import { finalizeJsonOutput } from "./utils/output.ts";
+import { beginCommandOutput, setCommandPath, recordCommandIssue, rememberCommandResult } from "./services/runtime.ts";
+import { Command, CommanderError } from "commander";
 import packageJson from "../package.json";
 import { registerAliasCommand } from "./commands/alias.ts";
 import { registerCloneCommand } from "./commands/clone.ts";
@@ -42,10 +46,13 @@ import { registerTriageCommand } from "./commands/triage.ts";
 import { registerUndoCommand } from "./commands/undo.ts";
 import { gitPassthrough } from "./services/git.ts";
 import { run } from "./utils/exec.ts";
-import { applyGlobalFlags } from "./utils/flags.ts";
-import { GIT_COMMANDS, decideGitForward } from "./utils/passthrough.ts";
-import { closestMatch, editDistance } from "./utils/suggest.ts";
+import { AGENT_CAPABLE, applyGlobalFlags } from "./utils/flags.ts";
+import { GIT_COMMANDS, resolvePassthrough } from "./utils/passthrough.ts";
+import { closestMatch } from "./utils/suggest.ts";
 import { fail } from "./utils/ui.ts";
+import { resetFlags, setFlags } from "./services/runtime.ts";
+import { registerOperationCommand } from "./commands/operation.ts";
+import { registerCommandOperations } from "./services/command-operations.ts";
 
 /**
  * Top-level command groups for `ggh --help` and the generated man page.
@@ -93,6 +100,9 @@ export const HELP_GROUPS: Record<string, string> = {
   team: "Extensions",
   config: "Setup",
   completion: "Setup",
+  git: "Native tools",
+  gh: "Native tools",
+  operation: "Local workflow",
   };
 
 export async function createProgram(): Promise<Command> {
@@ -102,6 +112,16 @@ export async function createProgram(): Promise<Command> {
     .name("ggh")
     .description("Git and GitHub in one CLI: pull requests, issues, CI, stacked branches, and AI")
     .version(packageJson.version);
+
+  for (const command of ["git", "gh"] as const) {
+    program.command(`${command} [args...]`)
+      .description(`Run ${command} with its native arguments, output, and exit status`)
+      .allowUnknownOption()
+      .action(async (args: string[]) => {
+        process.exitCode = command === "git" ? await gitPassthrough(args)
+          : (await run("gh", args, { stdio: "inherit", reject: false })).exitCode;
+      });
+  }
 
   // Registration order is the order `ggh --help` prints them, so it runs from
   // "where am I" through the daily loop, then GitHub, then configuration.
@@ -148,6 +168,7 @@ export async function createProgram(): Promise<Command> {
   registerTeamCommand(program);
 
   registerConfigCommand(program);
+  registerOperationCommand(program);
   registerCompletionCommand(program);
 
   for (const command of program.commands) {
@@ -155,7 +176,10 @@ export async function createProgram(): Promise<Command> {
     if (group) command.helpGroup(group);
   }
 
+  registerAgentCommand(program);
+  program.option("--agent", "Emit the versioned agent envelope");
   applyGlobalFlags(program);
+  registerCommandOperations(program);
 
   // Load community plugins (best-effort, never crashes ggh)
   try {
@@ -167,25 +191,18 @@ export async function createProgram(): Promise<Command> {
   return program;
 }
 
-const GIT_GLOBAL_FLAGS = new Set([
-  "-C",
-  "-c",
-  "--git-dir",
-  "--work-tree",
-  "--namespace",
-  "-p",
-  "--paginate",
-  "--no-pager",
-]);
-
 export async function runCli(argv: string[]): Promise<void> {
+  resetFlags();
+  const { clearAIUsageReports } = await import("./services/ai/index.ts");
+  clearAIUsageReports();
   const rawArgs = argv.slice(2);
-  const firstArg = rawArgs[0];
 
-  // If first argument is a global git flag (e.g. -C /path/to/repo log), pass through to git!
-  if (firstArg && GIT_GLOBAL_FLAGS.has(firstArg)) {
-    const exitCode = await gitPassthrough(rawArgs);
-    process.exit(exitCode);
+  const rawEscape = resolvePassthrough(rawArgs);
+  if (rawEscape) {
+    process.exitCode = rawEscape.command === "git"
+      ? await gitPassthrough(rawEscape.args)
+      : (await run("gh", rawEscape.args, { stdio: "inherit", reject: false })).exitCode;
+    return;
   }
 
   // Expand user aliases before anything else: `ggh alias ci "commit --pr"`
@@ -205,48 +222,65 @@ export async function runCli(argv: string[]): Promise<void> {
     }
   }
 
-  const program = await createProgram();
+  const aliasEscape = resolvePassthrough(args);
+  if (aliasEscape) {
+    process.exitCode = aliasEscape.command === "git"
+      ? await gitPassthrough(aliasEscape.args)
+      : (await run("gh", aliasEscape.args, { stdio: "inherit", reject: false })).exitCode;
+    return;
+  }
 
-  // Anything ggh does not define — or a shadowed command (`ggh log --oneline`,
-  // `ggh checkout -- file`, `ggh config user.name`) used with git's flags — is
-  // git's. `ggh git ...` and `ggh -- ...` force it.
-  const decision = decideGitForward(program, args);
-  if (decision.forward) {
-    const head = args[0];
-    // A typo of a ggh command used to fall through to git, whose suggestions
-    // ("prune" for `ggh prr`) are useless. Suggest ours — unless the typo is
-    // git's word or one of the user's git aliases, which always win.
-    if (decision.reason === "unknown command" && head && !head.startsWith("-") && !head.includes("/")) {
-      const names = new Set<string>();
-      for (const command of program.commands) {
-        names.add(command.name());
-        for (const alias of command.aliases()) names.add(alias);
-      }
-      const gghHit = closestMatch(head, names);
-      if (gghHit) {
-        const gitHit = closestMatch(head, GIT_COMMANDS);
-        const looksLikeGit = gitHit !== null && editDistance(head, gitHit) <= 1;
-        let userAlias = false;
-        if (!looksLikeGit) {
-          try {
-            const probed = await run("git", ["config", "--get", `alias.${head}`], { reject: false });
-            userAlias = probed.exitCode === 0 && probed.stdout.trim().length > 0;
-          } catch {
-            userAlias = false;
-          }
-        }
-        if (!looksLikeGit && !userAlias) {
-          fail(`Unknown command "${head}". Did you mean "ggh ${gghHit}"?`);
-          return;
-        }
-      }
+  const agentRequested = args.slice(0, args.indexOf("--") < 0 ? args.length : args.indexOf("--")).includes("--agent");
+  if (agentRequested) {
+    beginCommandOutput();
+    setFlags({ agent: true, json: true, noInput: true });
+  }
+  let program: Command;
+  try { program = await createProgram(); }
+  catch (error) {
+    if (!agentRequested) throw error;
+    fail(error instanceof Error ? error.message : String(error), { code: "operation_failed" });
+    finalizeJsonOutput();
+    return;
+  }
+  const parsingCommands = [program];
+  for (const command of parsingCommands) {
+    command.exitOverride();
+    parsingCommands.push(...command.commands);
+  }
+
+  const agentInformation: string[] = [];
+  if (agentRequested) {
+    for (const command of parsingCommands) command.configureOutput({ writeOut: value => { agentInformation.push(value); } });
+    beginCommandOutput();
+    setFlags({ agent: true, json: true, noInput: true });
+    const path: string[] = [];
+    let current = program;
+    for (const arg of args) {
+      if (arg.startsWith("-")) continue;
+      const next = current.commands.find(command => command.name() === arg || command.aliases().includes(arg));
+      if (!next) break;
+      path.push(next.name());
+      current = next;
     }
-    const forwarded = head === "git" || head === "--" ? args.slice(1) : args;
-    if (process.env.GGH_DEBUG && decision.reason) {
-      process.stderr.write(`ggh: forwarding to git (${decision.reason})\n`);
-    }
-    const exitCode = await gitPassthrough(forwarded);
-    process.exit(exitCode);
+    setCommandPath(path);
+  }
+  const head = args.find(arg => !arg.startsWith("-"));
+  const domain = program.commands.find(command => command.name() === head || command.aliases().includes(head ?? ""));
+  if (agentRequested && domain && !AGENT_CAPABLE.has(domain.name())) {
+    fail(`The ${domain.name()} command does not support --agent.`, { code: "invalid_arguments" });
+    finalizeJsonOutput();
+    return;
+  }
+  if (head && !head.startsWith("-") && head !== "help" &&
+      !program.commands.some(command => command.name() === head || command.aliases().includes(head))) {
+    const names = program.commands.flatMap(command => [command.name(), ...command.aliases()]);
+    const suggestion = closestMatch(head, names);
+    fail(GIT_COMMANDS.has(head)
+      ? `Use the explicit Git command: ggh git ${args.join(" ")}`
+      : `Unknown command "${head}".${suggestion ? ` Did you mean "ggh ${suggestion}"?` : ""} Use ggh git or ggh gh for native commands.`);
+    if (agentRequested) { recordCommandIssue({ status: "failed", code: "invalid_arguments", message: "Unknown command." }); finalizeJsonOutput(); }
+    return;
   }
 
   if (args.length === 0) {
@@ -255,5 +289,30 @@ export async function runCli(argv: string[]): Promise<void> {
   }
 
   // argv entries always exist in practice; fallbacks keep the type honest.
-  await program.parseAsync([argv[0] ?? "ggh", argv[1] ?? "", ...args]);
+  try {
+    await program.parseAsync([argv[0] ?? "ggh", argv[1] ?? "", ...args]);
+  } catch (err) {
+    if (err instanceof CommanderError && err.exitCode === 0) {
+      if (agentRequested) {
+        rememberCommandResult({ output: agentInformation.join("") });
+        finalizeJsonOutput();
+      }
+      return;
+    }
+    const jsonRequested = parsingCommands.some(command => command.opts().json === true);
+    if (jsonRequested) setFlags({ json: true });
+    if (err instanceof CommanderError && head && GIT_COMMANDS.has(head)) {
+      err.message += ` Use ggh git ${args.join(" ")} for Git's native syntax.`;
+    }
+    if (agentRequested) {
+      recordCommandIssue({ status: "failed", code: err instanceof CapabilityError ? "provider_unavailable" : err instanceof CommanderError ? "invalid_arguments" : "operation_failed", message: err instanceof Error ? err.message : String(err) });
+      process.exitCode = 1;
+      const { finishCommandOperation } = await import("./services/command-operations.ts");
+      await finishCommandOperation();
+      finalizeJsonOutput();
+      return;
+    }
+    if (err instanceof CapabilityError) { fail(err.message, { code: "provider_unavailable" }); finalizeJsonOutput(); return; }
+    throw err;
+  }
 }

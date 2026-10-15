@@ -1,0 +1,43 @@
+{
+  "scope": "Isolated local probes; native executable for completion and JSON, source service for stale lock. No real GitHub or model calls.",
+  "cli": [
+    {
+      "completion_exit": 0,
+      "stdout_bytes": 7957,
+      "stderr": ""
+    },
+    {
+      "probe": "bash completion ggh pr create --ba",
+      "exit": 0,
+      "candidates": [],
+      "stderr": ""
+    },
+    {
+      "args": [
+        "operation",
+        "list",
+        "--json"
+      ],
+      "exit": 0,
+      "stdout": "[]\n",
+      "stderr": ""
+    },
+    {
+      "args": [
+        "config",
+        "set",
+        "unknown_key",
+        "x",
+        "--json"
+      ],
+      "exit": 1,
+      "stdout": "{\n  \"status\": \"failed\",\n  \"error\": {\n    \"message\": \"Invalid configuration key. Valid keys are: repo_create_confirm, attachment_upload_command, ai_enabled, ai_provider, ai_fallback, codex_model, grok_model, claude_model, ollama_model, default_clone_dir, default_clone_mode, commit_style, ai_timeout_ms, hosted_ai_consent\"\n  }\n}\n",
+      "stderr": "\u2716  Invalid configuration key. Valid keys are: repo_create_confirm, attachment_upload_command, ai_enabled, ai_provider, ai_fallback, codex_model, grok_model, claude_model, ollama_model, default_clone_dir, default_clone_mode, commit_style, ai_timeout_ms, hosted_ai_consent\n"
+    }
+  ],
+  "operation_lock": {
+    "exit": 0,
+    "stdout": "{\"error\":\"Could not acquire operation update lock.\",\"staleLockRemains\":true}\n",
+    "stderr": ""
+  }
+}

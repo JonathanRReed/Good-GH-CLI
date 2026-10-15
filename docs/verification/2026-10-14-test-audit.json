@@ -1,0 +1,911 @@
+{
+  "checked_at": "2026-10-15T00:48:01.185823+00:00",
+  "base_commit": "4b1657e3d922e4feb73a73800615a315a84e8c42",
+  "branch": "main",
+  "working_tree": "uncommitted implementation and test pruning",
+  "platform": "macOS arm64",
+  "scope": {
+    "source_test_files": 50,
+    "native_cases_before": 72,
+    "package_smoke_scripts": [
+      "scripts/smoke-artifact.cjs",
+      "scripts/smoke-package.cjs"
+    ],
+    "production_source_changes_in_this_audit": false
+  },
+  "counts": {
+    "source_before": 604,
+    "source_after": 500,
+    "source_net_removed": 104,
+    "native_before": 72,
+    "native_after": 71,
+    "native_net_removed": 1,
+    "source_files_removed": 0,
+    "edited_source_test_files": 12
+  },
+  "checks": {
+    "full_source": {
+      "command": "bun test --timeout 30000",
+      "passed": 500,
+      "failed": 0,
+      "files": 50,
+      "assertions": 4760,
+      "log_sha256": "39da466ca9fb2a2c99850ee80e3c3f46bbbb48962f50ab874042bdce82169055"
+    },
+    "focused": {
+      "passed": 135,
+      "failed": 0,
+      "files": 11
+    },
+    "final_merge_checks": {
+      "command": "bun test tests/audit-edgecases.test.ts tests/git.test.ts --test-name-pattern 'detects detached HEAD|creates, lists, and removes' --timeout 30000",
+      "passed": 2,
+      "failed": 0
+    },
+    "typecheck": "passed",
+    "lint": "passed",
+    "diff_check": "passed",
+    "native": {
+      "command": "python3 scripts/audit-regressions.py --binary \"$PWD/ggh\" --results <report>",
+      "passed": 71,
+      "failed": 0,
+      "errors": 0,
+      "log_sha256": "a55b9befedce62b2c45c9bd80a8aad5a89b509713e15388ac3de2df8d62d388c",
+      "results": [
+        {
+          "test": "test_01_help_smoke (__main__.Audit.test_01_help_smoke)",
+          "status": "pass"
+        },
+        {
+          "test": "test_02_git_passthrough (__main__.Audit.test_02_git_passthrough)",
+          "status": "pass"
+        },
+        {
+          "test": "test_03_cache_clear_does_not_delete_unrelated_json (__main__.Audit.test_03_cache_clear_does_not_delete_unrelated_json)",
+          "status": "pass"
+        },
+        {
+          "test": "test_04_cache_is_scoped_to_repository (__main__.Audit.test_04_cache_is_scoped_to_repository)",
+          "status": "pass"
+        },
+        {
+          "test": "test_05_default_pre_commit_hook_allows_normal_commit (__main__.Audit.test_05_default_pre_commit_hook_allows_normal_commit)",
+          "status": "pass"
+        },
+        {
+          "test": "test_06_hook_honors_core_hooks_path (__main__.Audit.test_06_hook_honors_core_hooks_path)",
+          "status": "pass"
+        },
+        {
+          "test": "test_07_hook_supports_linked_worktrees (__main__.Audit.test_07_hook_supports_linked_worktrees)",
+          "status": "pass"
+        },
+        {
+          "test": "test_08_ignore_local_supports_linked_worktrees (__main__.Audit.test_08_ignore_local_supports_linked_worktrees)",
+          "status": "pass"
+        },
+        {
+          "test": "test_09_no_verify_reaches_git (__main__.Audit.test_09_no_verify_reaches_git)",
+          "status": "pass"
+        },
+        {
+          "test": "test_10_local_commit_does_not_require_gh (__main__.Audit.test_10_local_commit_does_not_require_gh)",
+          "status": "pass"
+        },
+        {
+          "test": "test_11_split_preserves_unstaged_edits (__main__.Audit.test_11_split_preserves_unstaged_edits)",
+          "status": "pass"
+        },
+        {
+          "test": "test_12_split_rejects_files_outside_staged_set (__main__.Audit.test_12_split_rejects_files_outside_staged_set)",
+          "status": "pass"
+        },
+        {
+          "test": "test_13_no_ai_is_honored_with_split (__main__.Audit.test_13_no_ai_is_honored_with_split)",
+          "status": "pass"
+        },
+        {
+          "test": "test_14_large_file_guard_reads_staged_blob (__main__.Audit.test_14_large_file_guard_reads_staged_blob)",
+          "status": "pass"
+        },
+        {
+          "test": "test_15_restack_abort_dry_run_changes_nothing (__main__.Audit.test_15_restack_abort_dry_run_changes_nothing)",
+          "status": "pass"
+        },
+        {
+          "test": "test_16_stack_submit_excludes_root_not_immediate_parent (__main__.Audit.test_16_stack_submit_excludes_root_not_immediate_parent)",
+          "status": "pass"
+        },
+        {
+          "test": "test_17_restack_replays_amended_parent_correctly (__main__.Audit.test_17_restack_replays_amended_parent_correctly)",
+          "status": "pass"
+        },
+        {
+          "test": "test_18_notifications_includes_gh_api_subcommand (__main__.Audit.test_18_notifications_includes_gh_api_subcommand)",
+          "status": "pass"
+        },
+        {
+          "test": "test_19_repo_flag_works_outside_a_checkout (__main__.Audit.test_19_repo_flag_works_outside_a_checkout)",
+          "status": "pass"
+        },
+        {
+          "test": "test_20_config_get_json_is_valid_json (__main__.Audit.test_20_config_get_json_is_valid_json)",
+          "status": "pass"
+        },
+        {
+          "test": "test_21_mcp_rejects_invalid_envelope_without_crashing (__main__.Audit.test_21_mcp_rejects_invalid_envelope_without_crashing)",
+          "status": "pass"
+        },
+        {
+          "test": "test_22_mcp_advertised_legacy_protocol_supports_ping (__main__.Audit.test_22_mcp_advertised_legacy_protocol_supports_ping)",
+          "status": "pass"
+        },
+        {
+          "test": "test_23_config_rejects_numeric_garbage (__main__.Audit.test_23_config_rejects_numeric_garbage)",
+          "status": "pass"
+        },
+        {
+          "test": "test_24_discard_all_preserves_untracked_by_default (__main__.Audit.test_24_discard_all_preserves_untracked_by_default)",
+          "status": "pass"
+        },
+        {
+          "test": "test_25_split_rejects_duplicate_paths_before_committing (__main__.Audit.test_25_split_rejects_duplicate_paths_before_committing)",
+          "status": "pass"
+        },
+        {
+          "test": "test_26_split_rejects_missing_staged_paths (__main__.Audit.test_26_split_rejects_missing_staged_paths)",
+          "status": "pass"
+        },
+        {
+          "test": "test_27_split_preserves_deletions_and_literal_paths (__main__.Audit.test_27_split_preserves_deletions_and_literal_paths)",
+          "status": "pass"
+        },
+        {
+          "test": "test_28_split_hook_failure_preserves_remaining_index (__main__.Audit.test_28_split_hook_failure_preserves_remaining_index)",
+          "status": "pass"
+        },
+        {
+          "test": "test_29_split_no_verify_bypasses_hooks (__main__.Audit.test_29_split_no_verify_bypasses_hooks)",
+          "status": "pass"
+        },
+        {
+          "test": "test_30_mcp_recovers_after_oversized_frame (__main__.Audit.test_30_mcp_recovers_after_oversized_frame)",
+          "status": "pass"
+        },
+        {
+          "test": "test_31_cache_is_scoped_to_account (__main__.Audit.test_31_cache_is_scoped_to_account)",
+          "status": "pass"
+        },
+        {
+          "test": "test_32_cache_is_scoped_to_host (__main__.Audit.test_32_cache_is_scoped_to_host)",
+          "status": "pass"
+        },
+        {
+          "test": "test_33_cache_is_scoped_to_explicit_target (__main__.Audit.test_33_cache_is_scoped_to_explicit_target)",
+          "status": "pass"
+        },
+        {
+          "test": "test_34_environment_tokens_do_not_share_cache (__main__.Audit.test_34_environment_tokens_do_not_share_cache)",
+          "status": "pass"
+        },
+        {
+          "test": "test_35_api_preserves_argument_boundaries (__main__.Audit.test_35_api_preserves_argument_boundaries)",
+          "status": "pass"
+        },
+        {
+          "test": "test_36_api_dry_run_never_calls_graphql (__main__.Audit.test_36_api_dry_run_never_calls_graphql)",
+          "status": "pass"
+        },
+        {
+          "test": "test_37_invalid_ai_group_cannot_be_silently_dropped (__main__.Audit.test_37_invalid_ai_group_cannot_be_silently_dropped)",
+          "status": "pass"
+        },
+        {
+          "test": "test_38_ollama_remote_host_receives_no_prompt (__main__.Audit.test_38_ollama_remote_host_receives_no_prompt)",
+          "status": "pass"
+        },
+        {
+          "test": "test_39_ollama_cloud_alias_receives_no_prompt (__main__.Audit.test_39_ollama_cloud_alias_receives_no_prompt)",
+          "status": "pass"
+        },
+        {
+          "test": "test_40_stack_on_rejects_missing_parent (__main__.Audit.test_40_stack_on_rejects_missing_parent)",
+          "status": "pass"
+        },
+        {
+          "test": "test_41_stack_on_rejects_cycles (__main__.Audit.test_41_stack_on_rejects_cycles)",
+          "status": "pass"
+        },
+        {
+          "test": "test_42_claude_is_prompt_only_in_isolated_directory (__main__.Audit.test_42_claude_is_prompt_only_in_isolated_directory)",
+          "status": "pass"
+        },
+        {
+          "test": "test_43_plugin_recovery_mode_does_not_load_plugins (__main__.Audit.test_43_plugin_recovery_mode_does_not_load_plugins)",
+          "status": "pass"
+        },
+        {
+          "test": "test_44_detached_split_creates_only_the_planned_commits (__main__.Audit.test_44_detached_split_creates_only_the_planned_commits)",
+          "status": "pass"
+        },
+        {
+          "test": "test_45_split_optional_body_is_normalized (__main__.Audit.test_45_split_optional_body_is_normalized)",
+          "status": "pass"
+        },
+        {
+          "test": "test_46_malformed_plugin_manifest_is_recoverable (__main__.Audit.test_46_malformed_plugin_manifest_is_recoverable)",
+          "status": "pass"
+        },
+        {
+          "test": "test_47_gh_repo_host_controls_auth_and_api_routing (__main__.Audit.test_47_gh_repo_host_controls_auth_and_api_routing)",
+          "status": "pass"
+        },
+        {
+          "test": "test_48_explicit_repo_overrides_gh_repo_host (__main__.Audit.test_48_explicit_repo_overrides_gh_repo_host)",
+          "status": "pass"
+        },
+        {
+          "test": "test_49_hook_command_does_not_execute_shell_substitution (__main__.Audit.test_49_hook_command_does_not_execute_shell_substitution)",
+          "status": "pass"
+        },
+        {
+          "test": "test_50_custom_hook_basename_round_trip (__main__.Audit.test_50_custom_hook_basename_round_trip)",
+          "status": "pass"
+        },
+        {
+          "test": "test_52_pr_checkout_requires_a_local_worktree (__main__.Audit.test_52_pr_checkout_requires_a_local_worktree)",
+          "status": "pass"
+        },
+        {
+          "test": "test_53_nested_discard_uses_repository_paths (__main__.Audit.test_53_nested_discard_uses_repository_paths)",
+          "status": "pass"
+        },
+        {
+          "test": "test_54_discard_treats_pathspec_magic_literally (__main__.Audit.test_54_discard_treats_pathspec_magic_literally)",
+          "status": "pass"
+        },
+        {
+          "test": "test_55_discard_restores_staged_rename_source (__main__.Audit.test_55_discard_restores_staged_rename_source)",
+          "status": "pass"
+        },
+        {
+          "test": "test_56_discard_partially_staged_addition_once (__main__.Audit.test_56_discard_partially_staged_addition_once)",
+          "status": "pass"
+        },
+        {
+          "test": "test_57_corrupt_index_does_not_appear_clean (__main__.Audit.test_57_corrupt_index_does_not_appear_clean)",
+          "status": "pass"
+        },
+        {
+          "test": "test_58_split_from_subdirectory_preserves_entire_staged_tree (__main__.Audit.test_58_split_from_subdirectory_preserves_entire_staged_tree)",
+          "status": "pass"
+        },
+        {
+          "test": "test_59_commit_push_does_not_publish_other_matching_branches (__main__.Audit.test_59_commit_push_does_not_publish_other_matching_branches)",
+          "status": "pass"
+        },
+        {
+          "test": "test_60_squash_cancellation_does_not_rewrite_history (__main__.Audit.test_60_squash_cancellation_does_not_rewrite_history)",
+          "status": "pass"
+        },
+        {
+          "test": "test_61_squash_full_history_preserves_tree_and_recovery (__main__.Audit.test_61_squash_full_history_preserves_tree_and_recovery)",
+          "status": "pass"
+        },
+        {
+          "test": "test_62_invalid_squash_input_never_rewrites_history (__main__.Audit.test_62_invalid_squash_input_never_rewrites_history)",
+          "status": "pass"
+        },
+        {
+          "test": "test_63_discard_protects_untracked_rename_source (__main__.Audit.test_63_discard_protects_untracked_rename_source)",
+          "status": "pass"
+        },
+        {
+          "test": "test_64_squash_hook_failure_keeps_recovery_reference (__main__.Audit.test_64_squash_hook_failure_keeps_recovery_reference)",
+          "status": "pass"
+        },
+        {
+          "test": "test_65_repo_creation_requires_explicit_confirmation (__main__.Audit.test_65_repo_creation_requires_explicit_confirmation)",
+          "status": "pass"
+        },
+        {
+          "test": "test_66_pr_bootstrap_publishes_existing_base_and_head_without_ai (__main__.Audit.test_66_pr_bootstrap_publishes_existing_base_and_head_without_ai)",
+          "status": "pass"
+        },
+        {
+          "test": "test_67_invalid_pr_base_never_creates_a_repository_or_commit (__main__.Audit.test_67_invalid_pr_base_never_creates_a_repository_or_commit)",
+          "status": "pass"
+        },
+        {
+          "test": "test_68_enterprise_media_refusal_precedes_publication_mutations (__main__.Audit.test_68_enterprise_media_refusal_precedes_publication_mutations)",
+          "status": "pass"
+        },
+        {
+          "test": "test_69_terminal_word_delete_preserves_the_intended_name (__main__.Audit.test_69_terminal_word_delete_preserves_the_intended_name)",
+          "status": "pass"
+        },
+        {
+          "test": "test_70_terminal_cancel_returns_shell_interrupt_status (__main__.Audit.test_70_terminal_cancel_returns_shell_interrupt_status)",
+          "status": "pass"
+        },
+        {
+          "test": "test_71_nested_pr_attachments_keep_the_invocation_context (__main__.Audit.test_71_nested_pr_attachments_keep_the_invocation_context)",
+          "status": "pass"
+        },
+        {
+          "test": "test_72_protected_push_refuses_missing_approval_before_staging (__main__.Audit.test_72_protected_push_refuses_missing_approval_before_staging)",
+          "status": "pass"
+        }
+      ]
+    }
+  },
+  "source_digest": {
+    "sha256": "b664f449108d6de96a11bebd56d85c70c650a866dfbc0805fec656f2420f74be",
+    "files": 166,
+    "recipe": "Sort paths under src, bin, tests, scripts, .github plus package.json, bun.lock, tsconfig.json, eslint.config.js. Hash each relative UTF-8 path, NUL, file bytes, NUL."
+  },
+  "artifacts": {
+    "native_sha256": "9d26bee5f334d9d1c871a6ac4957c18d1c93ffac7f2375c407967151f5debdda",
+    "bundle_sha256": "3614d9afa5f1611efa21144ac6f61f201eb4902f6931e050a65d97cefe3ff890",
+    "match_pre_pruning_receipt": true,
+    "package_smoke_rerun_in_this_audit": false
+  },
+  "inventory": [
+    {
+      "file": "tests/ai-fallback.test.ts",
+      "before_cases": 23,
+      "after_cases": 23,
+      "verdict": "keep",
+      "before_sha256": "363c53b5d26cb8a9c3f0c298de87c9ea45450d5f116df964eaa29c175b4b5f87",
+      "after_sha256": "363c53b5d26cb8a9c3f0c298de87c9ea45450d5f116df964eaa29c175b4b5f87"
+    },
+    {
+      "file": "tests/ai-opt-in.test.ts",
+      "before_cases": 6,
+      "after_cases": 6,
+      "verdict": "keep",
+      "before_sha256": "184ce654bf5c8350a073d1d15ba76b1ec96a3666d132a47df97e240a78ab48ae",
+      "after_sha256": "184ce654bf5c8350a073d1d15ba76b1ec96a3666d132a47df97e240a78ab48ae"
+    },
+    {
+      "file": "tests/ai-provider.test.ts",
+      "before_cases": 29,
+      "after_cases": 29,
+      "verdict": "keep",
+      "before_sha256": "b945426605fa8dfc5235bfcc22017fe65c800b673182870f186c15dc5a82473d",
+      "after_sha256": "b945426605fa8dfc5235bfcc22017fe65c800b673182870f186c15dc5a82473d"
+    },
+    {
+      "file": "tests/ai-strict.test.ts",
+      "before_cases": 6,
+      "after_cases": 6,
+      "verdict": "keep",
+      "before_sha256": "c2c857a1aca46e98d83070697f22424fbd89a3c2dccfd89a1585c5c6df89580a",
+      "after_sha256": "c2c857a1aca46e98d83070697f22424fbd89a3c2dccfd89a1585c5c6df89580a"
+    },
+    {
+      "file": "tests/ai-usage.test.ts",
+      "before_cases": 6,
+      "after_cases": 6,
+      "verdict": "keep",
+      "before_sha256": "108790dda9d236e437df5cba5e4d13570bcd6351e82e985b282afab6bc985683",
+      "after_sha256": "108790dda9d236e437df5cba5e4d13570bcd6351e82e985b282afab6bc985683"
+    },
+    {
+      "file": "tests/attachment-cli.test.ts",
+      "before_cases": 1,
+      "after_cases": 1,
+      "verdict": "keep",
+      "before_sha256": "3d75b0d0f09682517b4f6f3be32ce7a5437dd3e1f99b890dcec2e1e5c8824afe",
+      "after_sha256": "3d75b0d0f09682517b4f6f3be32ce7a5437dd3e1f99b890dcec2e1e5c8824afe"
+    },
+    {
+      "file": "tests/attachments.test.ts",
+      "before_cases": 22,
+      "after_cases": 22,
+      "verdict": "keep",
+      "before_sha256": "6409fc0e408a709acc91bf5e5fba97fde7e62e0c0bef8ccf1dc5d8f53eeba0f3",
+      "after_sha256": "6409fc0e408a709acc91bf5e5fba97fde7e62e0c0bef8ccf1dc5d8f53eeba0f3"
+    },
+    {
+      "file": "tests/audit-edgecases.test.ts",
+      "before_cases": 6,
+      "after_cases": 6,
+      "verdict": "keep with edits",
+      "before_sha256": "cfb1eca2be72f5ab15a0866f3cef275141ed9243db36facb733e2027cbda0328",
+      "after_sha256": "f0d405e47ac784292120666fd54dff42fffc3343a80603d4cc7562ad1ca4d232"
+    },
+    {
+      "file": "tests/audit-fixes.test.ts",
+      "before_cases": 7,
+      "after_cases": 4,
+      "verdict": "keep with edits",
+      "before_sha256": "9a8816a2689e1b6ea9e6e28f652d7d088c6bf038e45ce9f635e6840be0e0da78",
+      "after_sha256": "7dbff84a3da69b52a415dc0f033c37b2a07f926e94f9862396f6807da386f8a8"
+    },
+    {
+      "file": "tests/branch-diff.test.ts",
+      "before_cases": 6,
+      "after_cases": 6,
+      "verdict": "keep",
+      "before_sha256": "81cc716141ab113b8e6052a6ab6a1dda0bc4814b10cbb52eb50154748fa04297",
+      "after_sha256": "81cc716141ab113b8e6052a6ab6a1dda0bc4814b10cbb52eb50154748fa04297"
+    },
+    {
+      "file": "tests/branch-name.test.ts",
+      "before_cases": 8,
+      "after_cases": 8,
+      "verdict": "keep",
+      "before_sha256": "8b9d6adcecc0b85ead4b983f39c50637f8b3666f6a250ba95c0de5e7017c7125",
+      "after_sha256": "8b9d6adcecc0b85ead4b983f39c50637f8b3666f6a250ba95c0de5e7017c7125"
+    },
+    {
+      "file": "tests/command-args.test.ts",
+      "before_cases": 8,
+      "after_cases": 8,
+      "verdict": "keep",
+      "before_sha256": "1c901362848b07b6169894fa6f45fe1d1f7d31527adf5fa88d05e58f78436dbd",
+      "after_sha256": "1c901362848b07b6169894fa6f45fe1d1f7d31527adf5fa88d05e58f78436dbd"
+    },
+    {
+      "file": "tests/commit-publication.test.ts",
+      "before_cases": 10,
+      "after_cases": 10,
+      "verdict": "keep",
+      "before_sha256": "e1c741bd2e5de4fc47395aed50fbbbd588d5b78056e467d19b05639882b47134",
+      "after_sha256": "e1c741bd2e5de4fc47395aed50fbbbd588d5b78056e467d19b05639882b47134"
+    },
+    {
+      "file": "tests/config.test.ts",
+      "before_cases": 15,
+      "after_cases": 15,
+      "verdict": "keep",
+      "before_sha256": "cd71a78cc3fe20af79794a7c94eb4a6d1d596aae7d1943e1219cf14fae36dd34",
+      "after_sha256": "cd71a78cc3fe20af79794a7c94eb4a6d1d596aae7d1943e1219cf14fae36dd34"
+    },
+    {
+      "file": "tests/conventions.test.ts",
+      "before_cases": 5,
+      "after_cases": 5,
+      "verdict": "keep",
+      "before_sha256": "12757594160323946bb253cd993b04f13366df812e208f0518f85051e0292067",
+      "after_sha256": "12757594160323946bb253cd993b04f13366df812e208f0518f85051e0292067"
+    },
+    {
+      "file": "tests/diff.test.ts",
+      "before_cases": 6,
+      "after_cases": 6,
+      "verdict": "keep",
+      "before_sha256": "5f90b7a485795b9cb409e8204c3ac6dd0afc0a6cdeb92f30be69b976076724b7",
+      "after_sha256": "5f90b7a485795b9cb409e8204c3ac6dd0afc0a6cdeb92f30be69b976076724b7"
+    },
+    {
+      "file": "tests/doctor.test.ts",
+      "before_cases": 4,
+      "after_cases": 4,
+      "verdict": "keep",
+      "before_sha256": "9f2c19ef89c6d4d245c0d1b65f90d8badf1a7f6dc5a3b6504897b4cf3653f813",
+      "after_sha256": "9f2c19ef89c6d4d245c0d1b65f90d8badf1a7f6dc5a3b6504897b4cf3653f813"
+    },
+    {
+      "file": "tests/exec.test.ts",
+      "before_cases": 4,
+      "after_cases": 4,
+      "verdict": "keep",
+      "before_sha256": "05171a7628be64df439dcfbe0ecc48a6696fd2b74341bed585f9c71ab91da4a3",
+      "after_sha256": "05171a7628be64df439dcfbe0ecc48a6696fd2b74341bed585f9c71ab91da4a3"
+    },
+    {
+      "file": "tests/flag-contract.test.ts",
+      "before_cases": 77,
+      "after_cases": 2,
+      "verdict": "keep with edits",
+      "before_sha256": "f8ceeee162958ad35523ebed41b3ca95192e85e14a4cffd368fb5d867f98cd9a",
+      "after_sha256": "d96489d63b2ad448a11487b4d6dc41e54405037b0637b54b7eef021c4eaa4ec8"
+    },
+    {
+      "file": "tests/git-path-safety.test.ts",
+      "before_cases": 17,
+      "after_cases": 17,
+      "verdict": "keep",
+      "before_sha256": "f1f20ed72f74f280ef08e4947330cec76cc62f3e69d957e56eaf6643b1e0cc21",
+      "after_sha256": "f1f20ed72f74f280ef08e4947330cec76cc62f3e69d957e56eaf6643b1e0cc21"
+    },
+    {
+      "file": "tests/git-safety.test.ts",
+      "before_cases": 8,
+      "after_cases": 6,
+      "verdict": "keep with edits",
+      "before_sha256": "e7843446b953e47230e67608748f37e499517382d241553aa168e1feb877b36b",
+      "after_sha256": "2fb0b78a749a9ac4fe8cf90d39a70eaec6f7b6a50b8e886e2c7635c0e760462a"
+    },
+    {
+      "file": "tests/git.test.ts",
+      "before_cases": 27,
+      "after_cases": 21,
+      "verdict": "keep with edits",
+      "before_sha256": "39549e1bf928ac857feffe6552d4ff11543807dad1a4f60e9f78b408e692bf4a",
+      "after_sha256": "a2f306828e4b229baae9cfcf2dcdcfd7c86ba653b23f75fd2c91895eb338037c"
+    },
+    {
+      "file": "tests/github-surface.test.ts",
+      "before_cases": 18,
+      "after_cases": 9,
+      "verdict": "keep with edits",
+      "before_sha256": "5105b65e674ec7bec9fa7a18142d05dba3988bdebb4a3134a0dd9a112b06b6a0",
+      "after_sha256": "ff3fa8a9f9058acb02b022398bb9d8a34e213bf17fb4aff585049d523931827b"
+    },
+    {
+      "file": "tests/github.test.ts",
+      "before_cases": 8,
+      "after_cases": 6,
+      "verdict": "keep with edits",
+      "before_sha256": "cb4da49418e85a0c642f706b11551df69fe49454d7c2947f15479abec16106dc",
+      "after_sha256": "1da0c6e79de5f0fdee443b6ee1c4c620c31d9ebcc69bbae8efdb50e740d0c2de"
+    },
+    {
+      "file": "tests/json-contract.test.ts",
+      "before_cases": 5,
+      "after_cases": 5,
+      "verdict": "keep",
+      "before_sha256": "42b38f4ff3c82cfcb667aad27814b6587965f1532a03eda3602b21172367c3c4",
+      "after_sha256": "42b38f4ff3c82cfcb667aad27814b6587965f1532a03eda3602b21172367c3c4"
+    },
+    {
+      "file": "tests/json-empty-success.test.ts",
+      "before_cases": 9,
+      "after_cases": 9,
+      "verdict": "keep",
+      "before_sha256": "ae0b06e734942925ff897f3103fcd44c7e487cb98e34b0c9095076de35d8790b",
+      "after_sha256": "ae0b06e734942925ff897f3103fcd44c7e487cb98e34b0c9095076de35d8790b"
+    },
+    {
+      "file": "tests/json-mutations.test.ts",
+      "before_cases": 5,
+      "after_cases": 5,
+      "verdict": "keep",
+      "before_sha256": "9a3dccef19b12cccc1e62ed4c124832e4c989e6591b0839ff61cbc51d4607e20",
+      "after_sha256": "9a3dccef19b12cccc1e62ed4c124832e4c989e6591b0839ff61cbc51d4607e20"
+    },
+    {
+      "file": "tests/launcher.test.ts",
+      "before_cases": 1,
+      "after_cases": 1,
+      "verdict": "keep",
+      "before_sha256": "dd431ca394e801c50972551fdc1e66f5db249d636446a22f4e2de0a288cbfa24",
+      "after_sha256": "dd431ca394e801c50972551fdc1e66f5db249d636446a22f4e2de0a288cbfa24"
+    },
+    {
+      "file": "tests/makefile.test.ts",
+      "before_cases": 2,
+      "after_cases": 2,
+      "verdict": "keep",
+      "before_sha256": "c0fc6eb967531513a6a48d28f4bf28dce0ca6ce1937ee5235235b2c71fc3ad87",
+      "after_sha256": "c0fc6eb967531513a6a48d28f4bf28dce0ca6ce1937ee5235235b2c71fc3ad87"
+    },
+    {
+      "file": "tests/numeric-targets.test.ts",
+      "before_cases": 3,
+      "after_cases": 3,
+      "verdict": "keep",
+      "before_sha256": "699daedef323d6c377ed12f9d6022b2747d6d491c03d20e889efdcd73e094b48",
+      "after_sha256": "699daedef323d6c377ed12f9d6022b2747d6d491c03d20e889efdcd73e094b48"
+    },
+    {
+      "file": "tests/operations.test.ts",
+      "before_cases": 15,
+      "after_cases": 15,
+      "verdict": "keep",
+      "before_sha256": "fe8ec3acc1b952f4724cea5196a3fdadd5eeb71fe6facf1f3a60d09cd0a18e49",
+      "after_sha256": "fe8ec3acc1b952f4724cea5196a3fdadd5eeb71fe6facf1f3a60d09cd0a18e49"
+    },
+    {
+      "file": "tests/passthrough.test.ts",
+      "before_cases": 5,
+      "after_cases": 5,
+      "verdict": "keep",
+      "before_sha256": "f8b76e5d2085f6ca4c76a6962617dbe073a918c68f70c16fd4f1e0b0af098bb3",
+      "after_sha256": "f8b76e5d2085f6ca4c76a6962617dbe073a918c68f70c16fd4f1e0b0af098bb3"
+    },
+    {
+      "file": "tests/platform.test.ts",
+      "before_cases": 25,
+      "after_cases": 23,
+      "verdict": "keep with edits",
+      "before_sha256": "e0982e3171dc8d4b93834a693d6af7e682d3ed80df1dd219f545e3ca5fcf921b",
+      "after_sha256": "13248b70e0b5f5920ff1a00a3cde416a2f83a9982a701915e8654ab9525d41d8"
+    },
+    {
+      "file": "tests/prompt-input.test.ts",
+      "before_cases": 5,
+      "after_cases": 5,
+      "verdict": "keep",
+      "before_sha256": "969729b237b7ef039b5328b16a1f44ebfb9fc7753e3639a99adfd998af029e3b",
+      "after_sha256": "969729b237b7ef039b5328b16a1f44ebfb9fc7753e3639a99adfd998af029e3b"
+    },
+    {
+      "file": "tests/prompt.test.ts",
+      "before_cases": 8,
+      "after_cases": 8,
+      "verdict": "keep",
+      "before_sha256": "b1cf1cdf24e120ca21c8aef8976ffbfc806cd14e3f07e6e70a6c632d5eee7342",
+      "after_sha256": "b1cf1cdf24e120ca21c8aef8976ffbfc806cd14e3f07e6e70a6c632d5eee7342"
+    },
+    {
+      "file": "tests/prompts.test.ts",
+      "before_cases": 10,
+      "after_cases": 9,
+      "verdict": "keep with edits",
+      "before_sha256": "2d16c89f12f33d872030131f75e5397b6628a74deb84a7cf2bf91ae4a2a50030",
+      "after_sha256": "69e38d8cb9aa94723ab37f22b6de0318b23c18e6df4716fbfd0c84b0f8ebeda8"
+    },
+    {
+      "file": "tests/publication-cli.test.ts",
+      "before_cases": 9,
+      "after_cases": 9,
+      "verdict": "keep",
+      "before_sha256": "f78c536f12a289d38e1a909a6c557f0ce87947c91cb2fbfd948b9cc7b2629062",
+      "after_sha256": "f78c536f12a289d38e1a909a6c557f0ce87947c91cb2fbfd948b9cc7b2629062"
+    },
+    {
+      "file": "tests/publication.test.ts",
+      "before_cases": 19,
+      "after_cases": 19,
+      "verdict": "keep",
+      "before_sha256": "c6108f1ec6ba60e155429136e3155094d8f637b75d875959ab87100da03a15d7",
+      "after_sha256": "c6108f1ec6ba60e155429136e3155094d8f637b75d875959ab87100da03a15d7"
+    },
+    {
+      "file": "tests/push-target.test.ts",
+      "before_cases": 6,
+      "after_cases": 6,
+      "verdict": "keep",
+      "before_sha256": "80af8e3633e654d98c676f796355a048b7193920908d1126a6bcd1f9275f08d6",
+      "after_sha256": "80af8e3633e654d98c676f796355a048b7193920908d1126a6bcd1f9275f08d6"
+    },
+    {
+      "file": "tests/release-notes.test.ts",
+      "before_cases": 4,
+      "after_cases": 4,
+      "verdict": "keep",
+      "before_sha256": "c91687fd579544fa686dc34ef8299ebd5916ab582c97a503947dd90b7fe0f54a",
+      "after_sha256": "c91687fd579544fa686dc34ef8299ebd5916ab582c97a503947dd90b7fe0f54a"
+    },
+    {
+      "file": "tests/release-safety.test.ts",
+      "before_cases": 22,
+      "after_cases": 21,
+      "verdict": "keep with edits",
+      "before_sha256": "596a651aab330a77ab69a96940887a39336ed73475d7b56a3e1009a8f1f74c7c",
+      "after_sha256": "2e57288da5ffe863ddd1b34a6e79374bcc1d537d87dd6fd6dca7dfbb266a5e6e"
+    },
+    {
+      "file": "tests/safety-net.test.ts",
+      "before_cases": 15,
+      "after_cases": 15,
+      "verdict": "keep",
+      "before_sha256": "d1e567fe5de69223691b30bf2e19673599ed4532bae390c9402103d8c88ea321",
+      "after_sha256": "d1e567fe5de69223691b30bf2e19673599ed4532bae390c9402103d8c88ea321"
+    },
+    {
+      "file": "tests/sanitize.test.ts",
+      "before_cases": 32,
+      "after_cases": 32,
+      "verdict": "keep",
+      "before_sha256": "88adc476a9f157fb84962156b6bed38cb13ef30f4e1d628e536f8e89f6358d51",
+      "after_sha256": "88adc476a9f157fb84962156b6bed38cb13ef30f4e1d628e536f8e89f6358d51"
+    },
+    {
+      "file": "tests/secret.test.ts",
+      "before_cases": 1,
+      "after_cases": 1,
+      "verdict": "keep",
+      "before_sha256": "8a177c0026eb3d79677d7c3a21c87d2c33c5eb80cc65398435fe316867ab0d83",
+      "after_sha256": "8a177c0026eb3d79677d7c3a21c87d2c33c5eb80cc65398435fe316867ab0d83"
+    },
+    {
+      "file": "tests/smoke.test.ts",
+      "before_cases": 24,
+      "after_cases": 21,
+      "verdict": "keep with edits",
+      "before_sha256": "283031d4dca7ef105e5caea65414edb6bd7c2f3250efc7c0faf04424ec49ba83",
+      "after_sha256": "43cfe5cd76c08203a4fc09034bb66d22fbdac4b59c1b8a1f230de72ddd09eb54"
+    },
+    {
+      "file": "tests/split-safety.test.ts",
+      "before_cases": 11,
+      "after_cases": 11,
+      "verdict": "keep",
+      "before_sha256": "b409f02239afd01328d2f4d9df4cc175abf4af56e8892ac9f773f779df731edb",
+      "after_sha256": "b409f02239afd01328d2f4d9df4cc175abf4af56e8892ac9f773f779df731edb"
+    },
+    {
+      "file": "tests/squash-safety.test.ts",
+      "before_cases": 14,
+      "after_cases": 14,
+      "verdict": "keep",
+      "before_sha256": "e0a9eb0ac74b71d5118390ff2447ca5bc239bbcbba2ff8f6cb55a79f1c56669e",
+      "after_sha256": "e0a9eb0ac74b71d5118390ff2447ca5bc239bbcbba2ff8f6cb55a79f1c56669e"
+    },
+    {
+      "file": "tests/stack-recovery.test.ts",
+      "before_cases": 11,
+      "after_cases": 11,
+      "verdict": "keep",
+      "before_sha256": "f9d4ffada829f44dedfb86f3c207e011908a1b883b05b38044d52269442e5344",
+      "after_sha256": "f9d4ffada829f44dedfb86f3c207e011908a1b883b05b38044d52269442e5344"
+    },
+    {
+      "file": "tests/suggest.test.ts",
+      "before_cases": 10,
+      "after_cases": 10,
+      "verdict": "keep with edits",
+      "before_sha256": "2b86da9de319b4a49957367e6cca204efd7be5c1c9f0785e5abac5809fa42ac4",
+      "after_sha256": "356f578c0c7149d64a3724577a6390eea708b0e24fd9aaa6961b73c447851b6d"
+    },
+    {
+      "file": "tests/ui.test.ts",
+      "before_cases": 6,
+      "after_cases": 6,
+      "verdict": "keep",
+      "before_sha256": "f56a3eff4e047d7f7695968bddcfb143a2069e2cd97146338a84d6c1170e74c6",
+      "after_sha256": "f56a3eff4e047d7f7695968bddcfb143a2069e2cd97146338a84d6c1170e74c6"
+    }
+  ],
+  "standalone_source_cases_removed_or_consolidated": [
+    {
+      "file": "tests/git.test.ts",
+      "test": "execGitWithRetry succeeds on standard commands",
+      "disposition": "weak assertion",
+      "reason": "Only checked that stdout was defined. Git mutations still exercise this helper."
+    },
+    {
+      "file": "tests/git.test.ts",
+      "test": "calculates ahead/behind drift",
+      "disposition": "weak assertion",
+      "reason": "Only checked number types in a repository without an upstream. It did not establish drift accuracy."
+    },
+    {
+      "file": "tests/git.test.ts",
+      "test": "checks submodule status cleanly",
+      "disposition": "weak assertion",
+      "reason": "Only checked array type in a repository without submodules. It did not establish submodule status accuracy."
+    },
+    {
+      "file": "tests/git.test.ts",
+      "test": "calculates aheadOfDefault count against main",
+      "disposition": "weak assertion",
+      "reason": "Only checked a number type. It did not establish the expected commit count."
+    },
+    {
+      "file": "tests/git.test.ts",
+      "test": "sets and gets branch merge base (T3 Code pattern)",
+      "disposition": "duplicate",
+      "reason": "git.test.ts renames branch and preserves merge base already sets and reads the same metadata."
+    },
+    {
+      "file": "tests/git.test.ts",
+      "test": "defines NON_INTERACTIVE_ENV with fail-fast terminal flags",
+      "disposition": "constant restatement",
+      "reason": "Repeated two exported constant values without exercising their effect on a subprocess."
+    },
+    {
+      "file": "tests/git-safety.test.ts",
+      "test": "validateBranchName rejects disallowed names",
+      "disposition": "duplicate",
+      "reason": "branch-name.test.ts rejects names git would misread or refuse checks the same inputs and diagnostics."
+    },
+    {
+      "file": "tests/git-safety.test.ts",
+      "test": "worktree add does not overwrite an existing branch's parent pointer",
+      "disposition": "consolidated",
+      "reason": "Merged into git.test.ts existing-branch worktree lifecycle. Its recorded tracked-parent now differs from the requested main base, so an overwrite fails the test."
+    },
+    {
+      "file": "tests/audit-fixes.test.ts",
+      "test": "detectDefaultBranch prefers recorded merge base, then main, then master",
+      "disposition": "subsumed",
+      "reason": "Only checked main. release-safety.test.ts checks repository main against a feature parent and separately checks remote HEAD trunk."
+    },
+    {
+      "file": "tests/audit-fixes.test.ts",
+      "test": "getStatus reports detached HEAD state",
+      "disposition": "consolidated",
+      "reason": "audit-edgecases.test.ts already tests attached and detached status plus push refusal. Moved the remaining isRepo assertion there."
+    },
+    {
+      "file": "tests/prompts.test.ts",
+      "test": "is a no-op for zero lines (nothing to erase)",
+      "disposition": "weak assertion",
+      "reason": "not.toThrow did not establish that eraseFrame wrote nothing."
+    },
+    {
+      "file": "tests/github.test.ts",
+      "test": "keeps long-form text out of the subprocess argument list",
+      "disposition": "duplicate",
+      "reason": "attachments.test.ts sends long body content through stdin with --body-file - checks the exact helper result and literal payload."
+    },
+    {
+      "file": "tests/github.test.ts",
+      "test": "extracts commits since tag cleanly",
+      "disposition": "weak assertion",
+      "reason": "Used ambient checkout tags and checked only Array.isArray. It did not establish selected commits."
+    },
+    {
+      "file": "tests/release-safety.test.ts",
+      "test": "does not prefix the GitHub default branch with the remote name",
+      "disposition": "duplicate",
+      "reason": "release-safety.test.ts uses a non-main remote HEAD as the repository default has the same trunk fixture and result."
+    },
+    {
+      "file": "tests/platform.test.ts",
+      "test": "finds a project config in a parent directory",
+      "disposition": "subsumed",
+      "reason": "config.test.ts is found from a nested directory checks the complete project-config read through the same parent lookup."
+    },
+    {
+      "file": "tests/smoke.test.ts",
+      "test": "starts, prints help, and exits cleanly",
+      "disposition": "consolidated",
+      "reason": "Merged exit code, Usage, and ggh assertions into the existing documented-command help invocation in smoke.test.ts."
+    },
+    {
+      "file": "tests/smoke.test.ts",
+      "test": "writes errors to stderr, so redirecting stdout never hides them",
+      "disposition": "consolidated",
+      "reason": "Merged stdout exclusion into the existing invalid-log-count invocation in smoke.test.ts."
+    },
+    {
+      "file": "tests/smoke.test.ts",
+      "test": "writes the script to stdout so `eval $(ggh completion zsh)` works",
+      "disposition": "consolidated",
+      "reason": "Merged stderr and #compdef assertions into the existing completion checks for zsh, bash, and fish."
+    },
+    {
+      "file": "tests/audit-fixes.test.ts",
+      "test": "worktreeAdd reports which env files were copied",
+      "disposition": "consolidated",
+      "reason": "Merged copiedEnvFiles assertion into git.test.ts syncs .env files into new worktrees, retaining content and cleanup checks."
+    },
+    {
+      "file": "tests/github-surface.test.ts",
+      "test": "parses owner/repo from common remote URL shapes",
+      "disposition": "consolidated",
+      "reason": "github.test.ts already checks the same parser and URL forms. Moved the remaining HTTPS URL without .git there; GHES checks remain separate."
+    }
+  ],
+  "generated_groups_removed": [
+    {
+      "file": "tests/flag-contract.test.ts",
+      "cases": 75,
+      "reason": "37 JSON source scans, 37 dry-run source scans, and one mutating-helper scan only inspected source spellings. They could pass with unreachable flag code. Kept real option forwarding and capability-set registration."
+    },
+    {
+      "file": "tests/github-surface.test.ts",
+      "cases": 8,
+      "reason": "Checked that a command found by name mentioned that name in generated help. Capability registration and actual CLI help remain covered."
+    }
+  ],
+  "runtime_flag_merge": {
+    "before_cases": 2,
+    "after_cases": 1,
+    "reason": "The previous JSON and no-input checks always ran with headless stdin. The replacement sets isTTY true, asserts the interactive baseline, checks both flags, and restores the descriptor."
+  },
+  "native_merge": {
+    "removed": "test_51_restack_keeps_short_parent_pointer",
+    "retained": "test_17_restack_replays_amended_parent_correctly",
+    "reason": "test_51 called test_17 in full. Moved its parent-pointer and stack-list assertions into test_17."
+  },
+  "assertion_cleanup": [
+    "Removed an implied NaN check after exact zero assertions.",
+    "Removed a repeated edit-distance assertion and required the exact null suggestion result.",
+    "Removed the GHES toString function self-comparison; kept host, repository, and string output."
+  ],
+  "retained_layers": "Unit, CLI, compiled executable, and installed-package checks can protect the same workflow at different boundaries. Similar names alone were not grounds for removal.",
+  "limitations": [
+    "macOS execution only; no new Linux or Windows execution receipt.",
+    "GitHub and model calls used local mocks; Git pushes used temporary bare repositories.",
+    "Shape-only tests removed here had no substantive result assertions. Their removal does not establish functional coverage for drift or submodule behavior.",
+    "Package and runtime behavior receipts remain the earlier pre-pruning results; artifact hashes match."
+  ]
+}

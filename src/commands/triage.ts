@@ -54,6 +54,10 @@ Examples:
       provider?: string;
     }) => {
       header("AI Triage");
+      if (getFlags().aiDisabled && !getFlags().dryRun) {
+        fail("Triage uses AI. Remove --no-ai, or use issue and notifications for unassisted browsing.");
+        return;
+      }
       if (!(await requireAuth())) return;
 
       const max = clampLimit(Number.parseInt(options?.limit ?? "30", 10));

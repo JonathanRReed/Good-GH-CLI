@@ -1,6 +1,7 @@
+import { privateTemporaryDirectory } from "../private-storage.ts";
 import { commandExists, run } from "../../utils/exec.ts";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { CliAIProvider } from "./base.ts";
 import type { AIProviderId } from "./provider.ts";
@@ -15,8 +16,14 @@ export class GrokProvider extends CliAIProvider {
   readonly displayName = "xAI Grok";
   readonly defaultModel = "grok-4.5";
   readonly fallbackModels: readonly string[] = [];
+  protected readonly cliCommand = "grok";
+  protected readonly diagnosticsVersionArgs = ["--version"] as const;
+  protected readonly diagnosticsHelpArgs = ["--help"] as const;
+  protected readonly diagnosticsCapabilities = [
+    { name: "JSON output", pattern: /--output-format/ },
+  ] as const;
 
-  async isAvailable(): Promise<boolean> {
+  async isAvailable(options?: { timeoutMs: number }): Promise<boolean> {
     try {
       if (!commandExists("grok")) {
         return false;
@@ -24,18 +31,18 @@ export class GrokProvider extends CliAIProvider {
       if (existsSync(join(homedir(), ".grok", "auth.json"))) {
         return true;
       }
-      const { stdout, stderr } = await run("grok", ["models"], {
+      const { stdout, stderr, exitCode } = await run("grok", ["models"], {
         reject: false,
-        timeoutMs: 15_000,
+        timeoutMs: options?.timeoutMs ?? 15_000,
       });
-      return !/not authenticated|please (?:run )?grok login/i.test(`${stdout} ${stderr}`);
+      return exitCode === 0 && !/not authenticated|please (?:run )?grok login/i.test(`${stdout} ${stderr}`);
     } catch {
       return false;
     }
   }
 
   protected async invoke(prompt: string, model: string, timeoutMs: number): Promise<string> {
-    const tmpDir = mkdtempSync(join(tmpdir(), "good-gh-grok-"));
+    const tmpDir = privateTemporaryDirectory("good-gh-grok-");
     const promptPath = join(tmpDir, "prompt.txt");
 
     try {

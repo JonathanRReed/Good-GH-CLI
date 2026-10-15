@@ -1,7 +1,7 @@
+import { publicationSnapshot, assertPublicationApproval, PublicationApprovalError } from "../services/publication-approval.ts";
 import { Command } from "commander";
 import {
   clampLimit,
-  createRepository,
   forkRepository,
   getRepositoryReadme,
   gh,
@@ -10,9 +10,12 @@ import {
   setDefaultRepository,
   viewRepository,
 } from "../services/github.ts";
+import { preparePublication, executePublication } from "../services/publication.ts";
+import { getConfig } from "../services/config.ts";
+import { isNonInteractive, recordCommandIssue } from "../services/runtime.ts";
 import { invalidateCache } from "../services/cache.ts";
 import { dryRun } from "../utils/flags.ts";
-import { fail, failFromGitHub, header, p, pc, promptInput, selectMenu, jsonOut, confirmOrAbort } from "../utils/ui.ts";
+import { fail, failFromGitHub, header, p, pc, promptInput, jsonOut, confirmOrAbort } from "../utils/ui.ts";
 
 export function registerRepoCommand(program: Command): void {
   const repo = program
@@ -73,6 +76,7 @@ export function registerRepoCommand(program: Command): void {
       try {
         const out = await forkRepository(nameWithOwner, { clone: options?.clone, remote: options?.remote });
         s.stop(pc.green("Forked."));
+        if (jsonOut({ action: "fork", nameWithOwner, output: out || null })) return;
         if (out) p.log.message(pc.dim(out));
         p.outro("Done.");
       } catch (err) {
@@ -91,6 +95,7 @@ export function registerRepoCommand(program: Command): void {
 
       try {
         await setDefaultRepository(nameWithOwner);
+        if (jsonOut({ action: "set-default", nameWithOwner })) return;
         p.log.success(pc.green(`Default repository set to ${pc.bold(nameWithOwner)}.`));
         p.outro("Ambiguous-remote errors in other commands should stop now.");
       } catch (err) {
@@ -106,71 +111,56 @@ export function registerRepoCommand(program: Command): void {
     .option("-d, --description <text>", "Repository description")
     .option("--source <path>", "Push an existing local repository from this path")
     .option("--push", "Push the current commits after creating")
+    .option("--no-push", "Create without pushing commits")
+    .option("--remote <name>", "Remote to add or reuse, default origin")
+    .option("--approve-plan <sha256>", "Approve the exact dry-run snapshot")
+    .option("--confirm", "Ask before creating and pushing")
+    .option("--no-confirm", "Use inferred defaults without confirmation")
     .option("-y, --yes", "Skip the confirmation prompt")
     .action(async (name?: string, options?: {
       public?: boolean; private?: boolean; internal?: boolean;
-      description?: string; source?: string; push?: boolean; yes?: boolean;
+      approvePlan?: string; description?: string; source?: string; push?: boolean; remote?: string; yes?: boolean; confirm?: boolean;
     }) => {
       header("Create Repository");
-      if (!(await requireAuth())) return;
-
-      let repoName = name;
-      if (!repoName) {
-        const typed = await promptInput({
-          message: "Repository name:",
-          validate: (v) => (!v || !v.trim() ? "Name required" : undefined),
-        });
-        if (!typed) {
-          p.cancel("Cancelled.");
-          return;
-        }
-        repoName = typed;
+      if ([options?.public, options?.private, options?.internal].filter(Boolean).length > 1) {
+        fail("Choose one visibility: --private, --public, or --internal.");
+        return;
       }
-
-      let visibility: "public" | "private" | "internal" | null = options?.public
-        ? "public"
-        : options?.private
-          ? "private"
-          : options?.internal
-            ? "internal"
-            : null;
-
-      if (!visibility) {
-        visibility = await selectMenu<"public" | "private" | "internal">({
-          message: "Visibility:",
-          options: [
-            { value: "private", label: "Private", hint: "only you and collaborators" },
-            { value: "public", label: "Public", hint: "visible to everyone" },
-            { value: "internal", label: "Internal", hint: "organisation members only" },
-          ],
-          initialValue: "private",
-        });
-        if (!visibility) {
-          p.cancel("Cancelled.");
-          return;
-        }
-      }
-
-      if (dryRun(`create ${visibility} repository ${repoName}`)) return;
-
-      if (!(await confirmOrAbort(`Create ${pc.bold(visibility)} repository ${pc.bold(pc.cyan(repoName))}?`, { assumeYes: options?.yes }))) return;
-
-      const s = p.spinner();
-      s.start("Creating repository...");
       try {
-        const out = await createRepository({
-          name: repoName,
-          visibility,
+        const request = {
+          kind: "repo" as const, name, source: options?.source, remote: options?.remote,
+          visibility: options?.public ? "public" as const : options?.internal ? "internal" as const : "private" as const,
           description: options?.description,
-          source: options?.source,
-          push: options?.push,
-        });
-        s.stop(pc.green("Repository created."));
-        if (out) p.log.message(pc.bold(pc.cyan(out)));
-        p.outro("Done.");
-      } catch (err) {
-        s.stop(pc.red("Creation failed."));
-        failFromGitHub(err);
+          ...(options?.push === undefined ? {} : { push: options.push }),
+        };
+        let prepared = await preparePublication(request);
+        if (prepared.status === "needs_input" && prepared.required === "name" && !isNonInteractive()) {
+          const typed = await promptInput({ message: "Repository name:", validate: value => value.trim() ? undefined : "Name required" });
+          if (!typed) { p.cancel("Cancelled."); return; }
+          prepared = await preparePublication({ ...request, name: typed });
+        }
+        if (prepared.status === "needs_input") {
+          recordCommandIssue({ status: "needs_input", code: "missing_input", requiredInputs: [{ name: prepared.required, description: prepared.message }], message: prepared.message });
+          jsonOut(prepared);
+          fail(prepared.message);
+          return;
+        }
+        const plan = prepared.plan;
+        const snapshotId = await publicationSnapshot(plan);
+        assertPublicationApproval(options?.approvePlan, snapshotId);
+        p.note(`${plan.host}/${plan.target} (${plan.visibility})\n${plan.remote}: ${plan.remoteUrl}\n${plan.steps.join(" → ")}\n${plan.root ?? "Remote repository only"}${plan.headTip ? `\n${plan.head} ${plan.headTip.slice(0, 12)}` : ""}`, "Publication plan");
+        if (dryRun(`publish ${plan.target}: ${plan.steps.join(", ")}`)) { jsonOut({ status: "planned", snapshotId, plan }); return; }
+        const confirmSetting = options?.confirm ?? getConfig().repo_create_confirm;
+        if (!(await confirmOrAbort(`Create or publish ${plan.target}${plan.steps.includes("create_repository") ? ` as ${plan.visibility}` : " using its existing visibility"}?`, { assumeYes: Boolean(options?.approvePlan) || options?.yes || !confirmSetting }))) return;
+        const result = await executePublication(plan, undefined, { approvedSnapshot: snapshotId });
+        if (result.status !== "succeeded") fail(result.error ?? "Repository publication did not complete.");
+        if (jsonOut({ ...result, name: plan.target.split("/").at(-1), ...(plan.steps.includes("create_repository") ? { visibility: plan.visibility } : {}) })) return;
+        if (result.url) p.log.message(result.url);
+        if (result.status === "succeeded") p.outro("Repository ready.");
+        else p.log.info(`Completed: ${result.completed.join(", ") || "none"}. Remaining: ${result.remaining.join(", ") || "none"}. Inspect the target before retrying.`);
+      } catch (error) {
+        if (error instanceof PublicationApprovalError) recordCommandIssue(error.issue);
+        failFromGitHub(error);
       }
     });
 

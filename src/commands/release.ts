@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { getFlags } from "../services/runtime.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -231,6 +232,7 @@ export function registerReleaseCommand(program: Command): void {
     try {
       await downloadRelease(tag, { pattern: options?.pattern, dir: options?.dir });
       s.stop(pc.green("Release downloaded."));
+      if (jsonOut({ action: "download", tag, ...(options?.dir ? { dir: options.dir } : {}), ...(options?.pattern ? { pattern: options.pattern } : {}) })) return;
     } catch (err) {
       s.stop(pc.red("Download failed."));
       failFromGitHub(err);
@@ -249,6 +251,7 @@ export function registerReleaseCommand(program: Command): void {
     try {
       await uploadRelease(tag, fileList);
       s.stop(pc.green("Assets uploaded."));
+      if (jsonOut({ action: "upload", tag, files: fileList })) return;
     } catch (err) {
       s.stop(pc.red("Upload failed."));
       failFromGitHub(err);
@@ -263,6 +266,7 @@ export function registerReleaseCommand(program: Command): void {
     try {
       await deleteRelease(tag);
       s.stop(pc.green("Release deleted."));
+      if (jsonOut({ action: "delete", tag })) return;
     } catch (err) {
       s.stop(pc.red("Delete failed."));
       failFromGitHub(err);
@@ -314,6 +318,8 @@ export function registerReleaseCommand(program: Command): void {
 
       if (commits.length === 0) {
         notes = `Release ${tag}`;
+      } else if (getFlags().aiDisabled) {
+        notes = commits.map((c) => `- ${c}`).join("\n");
       } else {
         if (dryRun(`create release ${tag}`)) return;
         const aiSpinner = p.spinner();

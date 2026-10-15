@@ -6,8 +6,8 @@
  * bundle is imported in-process, so `bun add -g` pays no extra spawn.
  */
 "use strict";
-const { existsSync } = require("node:fs");
-const { join } = require("node:path");
+const { accessSync, constants, existsSync, statSync } = require("node:fs");
+const { delimiter, join, resolve } = require("node:path");
 
 const dist = join(__dirname, "..", "dist", "ggh.js");
 const source = join(__dirname, "ggh.ts");
@@ -20,8 +20,22 @@ if (typeof Bun !== "undefined") {
   });
 } else {
   const { spawnSync } = require("node:child_process");
-  const probe = spawnSync("bun", ["--version"], { stdio: "ignore", shell: false });
-  if (probe.error || probe.status !== 0) {
+  const pathKey = Object.keys(process.env).find((key) =>
+    process.platform === "win32" ? key.toLowerCase() === "path" : key === "PATH",
+  );
+  const bunName = process.platform === "win32" ? "bun.exe" : "bun";
+  const bun = (process.env[pathKey] || "").split(delimiter).filter(Boolean)
+    .map((directory) => resolve(directory, bunName))
+    .find((candidate) => {
+      try {
+        accessSync(candidate, constants.X_OK);
+        return statSync(candidate).isFile();
+      } catch {
+        return false;
+      }
+    });
+  const probe = bun && spawnSync(bun, ["--version"], { stdio: "ignore", shell: false });
+  if (!probe || probe.error || probe.status !== 0) {
     console.error(
       [
         "ggh runs on Bun, which was not found on your PATH.",
@@ -29,13 +43,13 @@ if (typeof Bun !== "undefined") {
         "  Install it:",
         "    macOS/Linux:  curl -fsSL https://bun.sh/install | bash",
         "    Windows:      powershell -c \"irm bun.sh/install.ps1 | iex\"",
-        "  or download a standalone binary that needs nothing:",
-        "  https://github.com/JonathanRReed/Good-GH-CLI/releases/latest",
+        "  or download a standalone binary that needs neither Bun nor Node:",
+        "  https://github.com/JonathanRReed/Good-GH-CLI/releases",
       ].join("\n"),
     );
     process.exit(127);
   }
-  const child = spawnSync("bun", [entry, ...process.argv.slice(2)], {
+  const child = spawnSync(bun, ["--no-env-file", `--config=${join(__dirname, "bunfig.toml")}`, entry, ...process.argv.slice(2)], {
     stdio: "inherit",
     shell: false,
   });

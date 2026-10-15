@@ -5,3 +5,8 @@ release/
 .worktrees/
 *.log
 .DS_Store
+
+/ggh
+/ggh.sha256
+__pycache__/
+*.pyc

@@ -148,6 +148,7 @@ export function registerLabelCommand(program: Command): void {
     try {
       await gh(args);
       s.stop(pc.green("Label created."));
+      if (jsonOut({ action: "create", name })) return;
       p.outro("Done.");
     } catch (err) {
       s.stop(pc.red("Failed to create label."));
@@ -170,6 +171,7 @@ export function registerLabelCommand(program: Command): void {
     try {
       await gh(args);
       s.stop(pc.green("Label updated."));
+      if (jsonOut({ action: "edit", name, ...(options?.newName ? { newName: options.newName } : {}) })) return;
       p.outro("Done.");
     } catch (err) {
       s.stop(pc.red("Failed to edit label."));
@@ -185,6 +187,7 @@ export function registerLabelCommand(program: Command): void {
     try {
       await gh(["label", "delete", name, "--yes"]);
       s.stop(pc.green("Label deleted."));
+      if (jsonOut({ action: "delete", name })) return;
       p.outro("Done.");
     } catch (err) {
       s.stop(pc.red("Failed to delete label."));

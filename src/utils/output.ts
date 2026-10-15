@@ -1,5 +1,7 @@
+import { agentEnvelope } from "../services/agent-contract.ts";
+import { getCommandPath, getEmittedJson, getFinishedOperation } from "../services/runtime.ts";
 import pc from "picocolors";
-import { getFlags } from "../services/runtime.ts";
+import { getFlags, getCommandIssue, getPreview, hasJsonOutput, recordCommandIssue, stageJson, takePendingJson } from "../services/runtime.ts";
 
 /**
  * All human-facing chrome goes to stderr so that stdout carries only data:
@@ -8,17 +10,39 @@ import { getFlags } from "../services/runtime.ts";
  * never silences them.
  */
 function writeErr(line: string): void {
-  process.stderr.write(`${line}\n`);
+  process.stderr.write(`${terminalText(line)}\n`);
 }
 
 /** The one channel that writes to stdout. Everything else is chrome. */
 export function data(line: string): void {
-  process.stdout.write(`${line}\n`);
+  if (getFlags().agent) { emitJson(line); return; }
+  process.stdout.write(`${process.stdout.isTTY ? terminalText(line) : line}\n`);
 }
 
 /** Emits a value as JSON on stdout and nothing else. */
 export function emitJson(value: unknown): void {
+  if (stageJson(value)) return;
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
+}
+
+export function finalizeJsonOutput(): void {
+  if (!getFlags().json) return;
+  const issue = getCommandIssue();
+  if (getFlags().agent) {
+    const result = getEmittedJson()?.value;
+    takePendingJson();
+    process.stdout.write(`${JSON.stringify(agentEnvelope({ command: getCommandPath(), result, issue: issue ? { ...issue, message: stripAnsi(issue.message) } : undefined, operation: getFinishedOperation(), failed: Boolean(process.exitCode), dryRun: getFlags().dryRun, preview: getPreview() }), null, 2)}\n`);
+    return;
+  }
+  if (!hasJsonOutput() && issue) {
+    emitJson({ status: issue.status, error: { message: stripAnsi(issue.message) } });
+  } else if (!hasJsonOutput() && process.exitCode && process.exitCode !== 0) {
+    emitJson({ status: "failed", error: { message: "Command did not complete." } });
+  } else if (!hasJsonOutput() && getFlags().dryRun) {
+    emitJson({ status: "planned", steps: getPreview() });
+  }
+  const pending = takePendingJson();
+  if (pending) process.stdout.write(`${JSON.stringify(pending.value, null, 2)}\n`);
 }
 
 function chromeSuppressed(): boolean {
@@ -72,6 +96,7 @@ export function outro(text = ""): void {
 }
 
 export function cancel(text = ""): void {
+  if (!getCommandIssue()) recordCommandIssue({ status: "cancelled", message: text || "Cancelled." });
   if (chromeSuppressed()) return;
   writeErr(`${pc.red("✖")}  ${text}`);
   writeErr("");
@@ -80,6 +105,8 @@ export function cancel(text = ""): void {
 /** A boxed aside, used for proposed commit messages and PR bodies. */
 export function note(body: string, title = ""): void {
   if (chromeSuppressed()) return;
+  body = terminalText(body);
+  title = terminalText(title);
   const lines = body.split("\n");
   const width = Math.max(
     title.length + 2,
@@ -92,6 +119,17 @@ export function note(body: string, title = ""): void {
     writeErr(`${BAR()}  ${line}${pad}  ${BAR()}`);
   }
   writeErr(`${pc.dim("├" + "─".repeat(width + 4))}╯`);
+}
+
+/** Keep styling, but discard terminal commands from managed human output. */
+export function terminalText(text: string): string {
+  // String controls may be unterminated. Discard the remaining payload in that case.
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/(?:\x1b\]|\x9d)[\s\S]*?(?:\x07|\x1b\\|\x9c|$)|(?:\x1b[P^_X]|[\x90\x98\x9e\x9f])[\s\S]*?(?:\x1b\\|\x9c|$)/g, "")
+    // eslint-disable-next-line no-control-regex
+    .replace(/(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]|(?:\x1b\[|\x9b)[0-?]*[ -/]*$/g, (sequence) => /^\x1b\[[0-9;]*m$/.test(sequence) ? sequence : "")
+    // eslint-disable-next-line no-control-regex
+    .replace(/\x1b(?!\[[0-9;]*m)[ -/]*[0-~]?|[\x00-\x08\x0b-\x1a\x1c-\x1f\x7f-\x9f]/g, "");
 }
 
 export function stripAnsi(str: string): string {
@@ -145,7 +183,7 @@ export function spinner(): Spinner {
 
   return {
     start(message = ""): void {
-      current = message;
+      current = terminalText(message);
       active = true;
       if (chromeSuppressed()) return;
       if (!animate) {
@@ -157,7 +195,7 @@ export function spinner(): Spinner {
       timer = setInterval(render, 90);
     },
     message(message: string): void {
-      current = message;
+      current = terminalText(message);
       if (!active || chromeSuppressed()) return;
       if (!animate) writeErr(`${pc.cyan("◒")}  ${current}`);
     },

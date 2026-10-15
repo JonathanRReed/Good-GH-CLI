@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { getFlags } from "../services/runtime.ts";
+import { getFlags, isNonInteractive, recordCommandIssue } from "../services/runtime.ts";
 import {
   commit,
   getCommitCount,
@@ -35,12 +35,17 @@ export function registerSquashCommand(program: Command): void {
     .command("squash [count]")
     .description("Squash the last N commits into one")
     .option("-m, --message <message>", "Consolidated commit message")
-    .action(async (countArg?: string, options?: { message?: string }) => {
+    .option("-y, --yes", "Authorize squash with a generated or existing commit message")
+    .action(async (countArg?: string, options?: { message?: string; yes?: boolean }) => {
       header("Commit Squash Assistant");
 
       if (!(await requireGitRepo())) return;
 
       if (!(await hasCommits())) {
+        if (getFlags().json) {
+          emitJson({ status: "no_op", reason: "no_commits" });
+          return;
+        }
         p.log.warn("Repository has no commits to squash.");
         return;
       }
@@ -55,6 +60,10 @@ export function registerSquashCommand(program: Command): void {
 
       const totalCommits = await getCommitCount();
       if (totalCommits < 2) {
+        if (getFlags().json) {
+          emitJson({ status: "no_op", reason: "fewer_than_two_commits", commitCount: totalCommits });
+          return;
+        }
         p.log.warn(`Repository only has ${totalCommits} commit(s). At least 2 commits are required to squash.`);
         return;
       }
@@ -91,6 +100,13 @@ export function registerSquashCommand(program: Command): void {
 
       if (dryRun(`squash the last ${count} commits into one`)) return;
 
+      if (!options?.message && isNonInteractive() && !options?.yes) {
+        const message = "Squashing rewrites local history. Pass -m <message> or --yes to authorize it without input.";
+        recordCommandIssue({ status: "needs_input", message });
+        fail(message);
+        return;
+      }
+
       let preview: SquashPreview;
       try {
         preview = await getSquashPreview(count);
@@ -112,15 +128,24 @@ export function registerSquashCommand(program: Command): void {
       }
       let commitBody = "";
 
+      if (!commitSubject && isNonInteractive() && getFlags().aiDisabled) {
+        commitSubject = previousMessages.at(-1) || "squashed commit";
+      }
+
       if (!commitSubject) {
-        const aiChoice = await selectMenu({
-          message: "How would you like to formulate the new consolidated commit message?",
-          options: [
-            { value: "ai", label: "Generate with AI", hint: "synthesizes squashed changes into a clean message" },
-            { value: "manual", label: "Enter manually", hint: "write custom commit message" },
-            { value: "first", label: "Use oldest commit message", hint: previousMessages[previousMessages.length - 1] || "first message" },
-          ],
-        });
+        const choices = [
+          ...(!getFlags().aiDisabled
+            ? [{ value: "ai", label: "Generate with AI", hint: "synthesizes squashed changes into a clean message" }]
+            : []),
+          { value: "manual", label: "Enter manually", hint: "write custom commit message" },
+          { value: "first", label: "Use oldest commit message", hint: previousMessages[previousMessages.length - 1] || "first message" },
+        ];
+        const aiChoice = isNonInteractive()
+          ? (getFlags().aiDisabled ? "first" : "ai")
+          : await selectMenu({
+              message: "How would you like to formulate the new consolidated commit message?",
+              options: choices,
+            });
 
         if (aiChoice === null) {
           p.cancel("Squash cancelled. History and staged content were not changed.");

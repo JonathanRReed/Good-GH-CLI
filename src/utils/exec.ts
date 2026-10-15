@@ -1,3 +1,6 @@
+import { getFlags } from "../services/runtime.ts";
+import { isAbsolute, join } from "node:path";
+
 export interface RunOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
@@ -33,31 +36,84 @@ export class ExecError extends Error {
 }
 
 const liveChildren = new Set<{ pid: number; kill: (signal?: number | NodeJS.Signals) => void }>();
+const terminationPromises = new WeakMap<object, Promise<void>>();
+const WINDOWS_TREE_KILL_TIMEOUT_MS = 2_000;
 
 /**
  * Kills a child and, where the platform allows it, everything it spawned. AI
  * CLIs fork helpers; killing only the direct child leaves those running and
  * holding the terminal.
  */
-function terminate(child: { pid: number; kill: (signal?: number | NodeJS.Signals) => void }): void {
-  if (process.platform !== "win32") {
-    try {
-      process.kill(-child.pid, "SIGKILL");
-      return;
-    } catch {
-      // Not a group leader (or already gone); fall through to the direct kill.
-    }
+function terminate(child: { pid: number; kill: (signal?: number | NodeJS.Signals) => void }): Promise<void> {
+  const existing = terminationPromises.get(child);
+  if (existing) return existing;
+
+  let termination: Promise<void>;
+  if (process.platform === "win32") {
+    termination = terminateWindowsTree(child);
+  } else {
+    terminateUnixTree(child);
+    termination = Promise.resolve();
+  }
+  terminationPromises.set(child, termination);
+  return termination;
+}
+
+function terminateUnixTree(child: { pid: number; kill: (signal?: number | NodeJS.Signals) => void }): void {
+  try {
+    process.kill(-child.pid, "SIGKILL");
+    return;
+  } catch {
+    // Not a group leader (or already gone); fall through to the direct kill.
   }
   try {
-    child.kill(process.platform === "win32" ? "SIGTERM" : "SIGKILL");
+    child.kill("SIGKILL");
   } catch {
     // Already exited
   }
 }
 
+async function terminateWindowsTree(child: { pid: number; kill: (signal?: number | NodeJS.Signals) => void }): Promise<void> {
+  const systemRoot = process.env.SystemRoot ?? process.env.SYSTEMROOT;
+  if (Number.isSafeInteger(child.pid) && child.pid > 0 && systemRoot && isAbsolute(systemRoot)) {
+    const killerPath = join(systemRoot, "System32", "taskkill.exe");
+    let killer: Bun.Subprocess | undefined;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    try {
+      killer = Bun.spawn([killerPath, "/PID", String(child.pid), "/T", "/F"], {
+        stdin: "ignore",
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      const timedOut = new Promise<undefined>((resolve) => {
+        timeoutId = setTimeout(() => {
+          try {
+            killer?.kill("SIGKILL");
+          } catch {
+            // The tree-kill utility already exited.
+          }
+          resolve(undefined);
+        }, WINDOWS_TREE_KILL_TIMEOUT_MS);
+      });
+      const exitCode = await Promise.race([killer.exited, timedOut]);
+      if (exitCode === 0) return;
+    } catch {
+      // taskkill is unavailable or failed; try to stop the tracked child itself.
+    } finally {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+    }
+  }
+
+  try {
+    child.kill("SIGTERM");
+  } catch {
+    // The child already exited, or the tree-kill utility stopped it.
+  }
+}
+
 /** Terminates every subprocess this process started. Used by the signal handler. */
-export function killAllChildren(): void {
-  for (const child of liveChildren) terminate(child);
+export async function killAllChildren(): Promise<void> {
+  await Promise.all([...liveChildren].map(terminate));
   liveChildren.clear();
 }
 
@@ -83,7 +139,7 @@ export function commandExists(command: string): boolean {
  * and execa-style `reject: false` semantics.
  */
 export async function run(command: string, args: string[], options: RunOptions = {}): Promise<RunResult> {
-  const inherit = options.stdio === "inherit";
+  const inherit = options.stdio === "inherit" && !getFlags().json;
   const proc = Bun.spawn([command, ...args], {
     cwd: options.cwd,
     env: options.env ? { ...process.env, ...options.env } : process.env,
@@ -107,7 +163,7 @@ export async function run(command: string, args: string[], options: RunOptions =
   if (timeoutMs) {
     timeoutId = setTimeout(() => {
       timedOut = true;
-      terminate(proc);
+      void terminate(proc);
     }, timeoutMs);
   }
 
@@ -138,7 +194,7 @@ export async function run(command: string, args: string[], options: RunOptions =
         outputBytes += value.byteLength;
         if (outputBytes > maxOutputBytes) {
           outputExceeded = true;
-          terminate(proc);
+          void terminate(proc);
         } else if (!outputExceeded) chunks.push(value);
       }
       return Buffer.concat(chunks).toString("utf8");

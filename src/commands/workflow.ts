@@ -171,6 +171,7 @@ export function registerWorkflowCommand(program: Command): void {
       await gh(["workflow", "run", id]);
       invalidateCache("run-list:");
       s.stop(pc.green("Workflow run requested."));
+      if (jsonOut({ action: "run", workflowId: id })) return;
       p.outro("Done.");
     } catch (err) {
       s.stop(pc.red("Failed to run workflow."));
@@ -190,6 +191,7 @@ export function registerWorkflowCommand(program: Command): void {
     try {
       await gh(["workflow", action, id]);
       s.stop(pc.green(`Workflow ${id} ${action}d.`));
+      if (jsonOut({ action, workflowId: id })) return;
       p.outro("Done.");
     } catch (err) {
       s.stop(pc.red("Failed."));

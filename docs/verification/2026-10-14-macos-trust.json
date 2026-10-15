@@ -1,0 +1,21 @@
+{
+  "sourceRevision": "dfa8283a523b962c435946a30c48e4ae70d58734",
+  "artifact": "Good-GH-CLI-0.4.0-beta.3-universal.dmg",
+  "sha256": "f704af8f4e7ffbcad94dea11daba0a69bed3ff44dd39e1cab6a46ebc55367be6",
+  "architectures": [
+    "arm64",
+    "x86_64"
+  ],
+  "signature": "Developer ID Application: Jonathan Reed (AJ9VWBRNZN)",
+  "notarization": {
+    "createdDate": "2026-10-15T04:04:20.142Z",
+    "name": "Good-GH-CLI-0.4.0-beta.3-universal.dmg",
+    "id": "a0a0f881-3181-421d-97e2-15d97c60dce3",
+    "status": "Accepted"
+  },
+  "staplerValidated": true,
+  "gatekeeper": "accepted; Notarized Developer ID",
+  "mountedBinarySignatureAndVersion": "passed",
+  "mountedInstallerAndInstalledVersion": "passed",
+  "publication": "Unpublished checkpoint artifact. Rebuild and repeat against the final release revision; downloaded release verification remains a final gate."
+}

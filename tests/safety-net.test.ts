@@ -15,7 +15,7 @@ async function runCli(
     stdout: "pipe",
     stderr: "pipe",
     stdin: "ignore",
-    env: { ...process.env, NO_COLOR: "1", ...extraEnv },
+    env: { ...process.env, GGH_NO_RECORDS: "1", NO_COLOR: "1", ...extraEnv },
   });
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(proc.stdout).text(),

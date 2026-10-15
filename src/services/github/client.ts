@@ -147,6 +147,7 @@ export async function requireGitHubRepo(): Promise<boolean> {
 
 function mergeEnv(options?: RunOptions): NodeJS.ProcessEnv | undefined {
   const base = options?.env ? { ...options.env } : undefined;
+  if (base?.GH_HOST) return base;
   const host = getActiveHost();
   if (host === "github.com" && !base) return undefined;
   if (host === "github.com") return base;
@@ -272,7 +273,7 @@ async function fetchAuthStatus(host: string): Promise<GitHubAccount> {
   const args = ["auth", "status", "--json", "hosts"];
   args.push("--hostname", host || "github.com");
   try {
-    const { stdout } = await ghGlobal(args);
+    const { stdout, stderr, exitCode } = await ghGlobal(args, { reject: false });
     if (stdout && stdout.trim()) {
       const parsed = JSON.parse(stdout);
       const hostsObj = parsed?.hosts;
@@ -286,7 +287,7 @@ async function fetchAuthStatus(host: string): Promise<GitHubAccount> {
           const activeAccount =
             accountList.find((acc) => acc.active === true) ?? accountList[0];
           if (!activeAccount) return { authenticated: false };
-          const isAuthenticated = activeAccount.state === "success" || activeAccount.active === true;
+          const isAuthenticated = activeAccount.state === "success";
           const finalHost = String(activeAccount.host || hostKey || host || "github.com");
           cachedHost = finalHost;
           return {
@@ -298,24 +299,19 @@ async function fetchAuthStatus(host: string): Promise<GitHubAccount> {
         }
       }
     }
+    if (exitCode !== 0 && /unknown flag: --json|unknown shorthand flag.*json|flag provided but not defined.*json/i.test(stderr)) {
+      const { stdout: login } = await ghGlobal(["api", "user", "--hostname", host, "--jq", ".login"]);
+      if (/^[A-Za-z0-9][A-Za-z0-9-]*$/.test(login.trim())) {
+        let protocol: "https" | "ssh" = "https";
+        const config = await ghGlobal(["config", "get", "git_protocol", "--host", host], { reject: false });
+        if (config.exitCode === 0 && config.stdout.trim() === "ssh") protocol = "ssh";
+        cachedHost = host;
+        return { authenticated: true, login: login.trim(), host, protocol };
+      }
+    }
   } catch (err) {
     if (isMissingBinary(err)) {
       return { authenticated: false, notInstalled: true };
-    }
-    try {
-      const tokenArgs = ["auth", "token"];
-      if (host && host !== "github.com") tokenArgs.push("--hostname", host);
-      const { stdout: token } = await ghGlobal(tokenArgs);
-      if (token.trim().length > 0) {
-        cachedHost = host || "github.com";
-        return {
-          authenticated: true,
-          host: cachedHost,
-          protocol: "https",
-        };
-      }
-    } catch {
-      // Not authenticated
     }
   }
   return { authenticated: false, host };
@@ -336,6 +332,7 @@ export async function requireAuth(): Promise<boolean> {
     auth.notInstalled
       ? "GitHub CLI (`gh`) is not installed. Install it from https://cli.github.com."
       : "GitHub CLI is not authenticated. Run `gh auth login`.",
+    { code: auth.notInstalled ? "provider_unavailable" : "authentication_required" },
   );
   return false;
 }
@@ -402,6 +399,13 @@ export function parseGitHubRepositoryNameWithOwnerFromRemoteUrl(
 ): string | ParsedRepoName | null {
   const trimmed = url?.trim() ?? "";
   if (trimmed.length === 0) return null;
+  if (trimmed.includes("://")) {
+    try {
+      const parsed = new URL(trimmed);
+      const sshUser = parsed.protocol === "ssh:" && parsed.username === "git" && !parsed.password;
+      if ((parsed.username || parsed.password) && !sshUser || parsed.search || parsed.hash) return null;
+    } catch { return null; }
+  }
 
   const match = new RegExp(
     "^(?:git@([^:\\s]+):|ssh://git@([^/\\s:]+)(?::\\d+)?/|https?://([^/\\s:]+)/|git://([^/\\s:]+)/)([^/\\s]+/[^/\\s]+?)(?:\\.git)?/?$",
@@ -414,6 +418,8 @@ export function parseGitHubRepositoryNameWithOwnerFromRemoteUrl(
   if (!rawName) return null;
   const nameWithOwner = rawName.trim().replace(/\.git$/, "").replace(/\/+$/, "");
   if (nameWithOwner.length === 0) return null;
+  try { parseRepoFlag(`${host}/${nameWithOwner}`); }
+  catch { return null; }
 
   if (host === "github.com") return nameWithOwner;
   return { host, nameWithOwner, toString: () => `${host}/${nameWithOwner}` };

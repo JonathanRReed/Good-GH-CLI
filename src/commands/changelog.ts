@@ -46,21 +46,22 @@ export function registerChangelogCommand(program: Command): void {
       p.log.step(`${commits.length} commit(s) since ${previousTag ? pc.cyan(previousTag) : "the first commit"}.`);
 
       const tag = version || "Unreleased";
-      const s = p.spinner();
-      s.start("Summarising...");
-      let body: string;
-      try {
-        const { result, providerName, model } = await generateReleaseNotesWithFallback({
-          tag,
-          previousTag,
-          commits,
-        });
-        s.stop(`Written by ${pc.bold(providerName)} [${pc.cyan(model)}].`);
-        body = result;
-      } catch (err) {
-        s.stop(pc.yellow("Falling back to the raw commit list."));
-        reportAIFailure(err, "AI changelog generation failed:");
-        body = commits.map((c) => `- ${c}`).join("\n");
+      let body = commits.map((c) => `- ${c}`).join("\n");
+      if (!getFlags().aiDisabled) {
+        const s = p.spinner();
+        s.start("Summarising...");
+        try {
+          const { result, providerName, model } = await generateReleaseNotesWithFallback({
+            tag,
+            previousTag,
+            commits,
+          });
+          s.stop(`Written by ${pc.bold(providerName)} [${pc.cyan(model)}].`);
+          body = result;
+        } catch (err) {
+          s.stop(pc.yellow("Falling back to the raw commit list."));
+          reportAIFailure(err, "AI changelog generation failed:");
+        }
       }
 
       const date = new Date().toISOString().slice(0, 10);
