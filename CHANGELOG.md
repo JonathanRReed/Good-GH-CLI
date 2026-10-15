@@ -3,9 +3,13 @@
 All notable changes to this project are documented here.
 This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## 0.5.0-beta.1 - 2026-10-15
+## 0.5.0-beta.2 - 2026-10-15
 
 ### Workflow and release qualification
+
+- Parse repository targets in linear time, including long malformed arguments.
+- Preserve existing fetch mappings for branch names containing literal dollar
+  replacement tokens.
 
 - Add versioned `--agent` output and schema discovery, exact approval snapshots,
   metadata-only publication recovery, and owner-aware operation locks.

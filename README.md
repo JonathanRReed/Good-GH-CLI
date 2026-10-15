@@ -25,7 +25,7 @@ bun add -g ./good-gh-cli-<version>.tgz
 
 Use `bun add -g good-gh-cli@<version>` only when that release's notes confirm npm publication. Prereleases use the `beta` tag, not necessarily the default npm tag.
 
-The source version is `0.5.0-beta.1`. A source commit is not a published release. Signed and notarized macOS DMGs are separate uploads; bare macOS binaries have ad-hoc signatures, not Developer ID notarization. See [packaging](docs/PACKAGING.md).
+The source version is `0.5.0-beta.2`. A source commit is not a published release. Signed and notarized macOS DMGs are separate uploads; bare macOS binaries have ad-hoc signatures, not Developer ID notarization. See [packaging](docs/PACKAGING.md).
 
 To build from source:
 

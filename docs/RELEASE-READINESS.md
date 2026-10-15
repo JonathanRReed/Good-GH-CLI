@@ -1,6 +1,6 @@
 # Release readiness
 
-The source candidate is 0.5.0-beta.1 on `feat/quality-release`. The [execution plan](quality/quality-release-plan.md) and [continuation record](quality/quality-release-continuation.md) track exact checkpoints. Source, native installation, live GitHub, platform security, signing, and publication are separate gates.
+The source candidate is 0.5.0-beta.2 on `feat/quality-release`. The [execution plan](quality/quality-release-plan.md) and [continuation record](quality/quality-release-continuation.md) track exact checkpoints. Source, native installation, live GitHub, platform security, signing, and publication are separate gates.
 
 ## October 15 candidate qualification
 

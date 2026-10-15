@@ -120,7 +120,7 @@ export function parseRepoFlag(repo = getFlags().repo ?? process.env.GH_REPO): Re
     if (url.username || url.password || url.search || url.hash) throw new Error("Invalid --repo URL.");
     value = `${url.host}${url.pathname}`;
   }
-  const parts = value.replace(/\/+$/, "").replace(/\.git$/, "").split("/");
+  const parts = trimRepositorySuffix(value).split("/");
   const explicitHost = parts.length === 3;
   const host = explicitHost ? parts.shift()! : getActiveHost();
   const [owner, name] = parts;

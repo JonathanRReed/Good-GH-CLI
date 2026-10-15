@@ -187,6 +187,21 @@ describe("publication service", () => {
     ).toBe(git(["rev-parse", "HEAD"], repo));
   });
 
+  test("preserves wildcard fetch mappings for literal replacement tokens in branch names", async () => {
+    for (const branch of ["topic/x$&", "topic/x$`", "topic/x$'"]) {
+      const { repo, bare } = makeRepository(tempRoot());
+      git(["branch", "-m", branch], repo);
+      const before = git(["config", "--get-all", "remote.origin.fetch"], repo);
+      const result = await runFixture([], {
+        root: repo, cwd: repo, responses: [privateRepositoryView],
+        invoke: `${setupRewrite(bare)} ${serviceInvoke("const prepared=await preparePublication({kind:'repo'});const result=prepared.status==='ready'?await executePublication(prepared.plan):prepared;process.stdout.write(JSON.stringify(result));")}`,
+      });
+      expect(JSON.parse(result.stdout)).toMatchObject({ status: "succeeded" });
+      expect(git(["config", "--get-all", "remote.origin.fetch"], repo)).toBe(before);
+      expect(git(["rev-parse", "--abbrev-ref", "@{u}"], repo)).toBe(`origin/${branch}`);
+    }
+  });
+
   test("refuses credentialed remote URLs without copying secrets into output", async () => {
     for (const remote of ["https://sensitive-token@github.com/fixture/project.git", "https://github.com/fixture/project.git?token=sensitive-token"]) {
       const { repo } = makeRepository(tempRoot(), remote);

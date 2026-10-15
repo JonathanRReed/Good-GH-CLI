@@ -903,7 +903,7 @@ async function establishBranchUpstream(
     const [from, to] = spec.replace(/^\+/, "").split(":");
     if (!from || !to) return false;
     const capture = matchRefPattern(from, source);
-    return capture !== null && to.replace("*", capture) === trackingRef;
+    return capture !== null && to.replace("*", () => capture) === trackingRef;
   });
   if (!mapped) await execGitWithRetry(["remote", "set-branches", "--add", remote, branch], { cwd });
   await execGitWithRetry(["update-ref", trackingRef, expectedTip], { cwd });

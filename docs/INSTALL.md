@@ -2,7 +2,7 @@
 
 Standalone binaries need Git 2.31 or newer and do not need Bun or Node. GitHub operations also need GitHub CLI. AI is optional and disabled by default. An explicit commit message needs no provider CLI.
 
-Choose a published version on [Releases](https://github.com/JonathanRReed/Good-GH-CLI/releases). These examples use 0.5.0-beta.1, the current source version. Source availability does not prove that its assets have been published. If a download returns 404, inspect the versioned release before continuing. Never execute a file whose checksum check failed. Run each command only after the previous command succeeds.
+Choose a published version on [Releases](https://github.com/JonathanRReed/Good-GH-CLI/releases). These examples use 0.5.0-beta.2, the current source version. Source availability does not prove that its assets have been published. If a download returns 404, inspect the versioned release before continuing. Never execute a file whose checksum check failed. Run each command only after the previous command succeeds.
 
 ## macOS
 
@@ -11,13 +11,13 @@ Prefer the signed, notarized universal DMG for Apple Silicon and Intel. Bare mac
 Run in a new download directory. The install prefix belongs to your user.
 
 ```bash
-curl -fLO "https://github.com/JonathanRReed/Good-GH-CLI/releases/download/v0.5.0-beta.1/Good-GH-CLI-0.5.0-beta.1-universal.dmg"
-curl -fLO "https://github.com/JonathanRReed/Good-GH-CLI/releases/download/v0.5.0-beta.1/Good-GH-CLI-0.5.0-beta.1-universal.dmg.sha256"
-shasum -a 256 -c "Good-GH-CLI-0.5.0-beta.1-universal.dmg.sha256"
-xcrun stapler validate "Good-GH-CLI-0.5.0-beta.1-universal.dmg"
-spctl --assess --type open --context context:primary-signature "Good-GH-CLI-0.5.0-beta.1-universal.dmg"
+curl -fLO "https://github.com/JonathanRReed/Good-GH-CLI/releases/download/v0.5.0-beta.2/Good-GH-CLI-0.5.0-beta.2-universal.dmg"
+curl -fLO "https://github.com/JonathanRReed/Good-GH-CLI/releases/download/v0.5.0-beta.2/Good-GH-CLI-0.5.0-beta.2-universal.dmg.sha256"
+shasum -a 256 -c "Good-GH-CLI-0.5.0-beta.2-universal.dmg.sha256"
+xcrun stapler validate "Good-GH-CLI-0.5.0-beta.2-universal.dmg"
+spctl --assess --type open --context context:primary-signature "Good-GH-CLI-0.5.0-beta.2-universal.dmg"
 mkdir -p "$PWD/ggh-mounted"
-hdiutil attach -readonly -nobrowse -mountpoint "$PWD/ggh-mounted" "Good-GH-CLI-0.5.0-beta.1-universal.dmg"
+hdiutil attach -readonly -nobrowse -mountpoint "$PWD/ggh-mounted" "Good-GH-CLI-0.5.0-beta.2-universal.dmg"
 GGH_INSTALL_PREFIX="$HOME/.local" bash "$PWD/ggh-mounted/Install ggh.command"
 hdiutil detach "$PWD/ggh-mounted"
 export PATH="$HOME/.local/bin:$PATH"
@@ -40,8 +40,8 @@ This example uses x64. For ARM64, use `ggh-linux-arm64` in the download, checksu
 Run in a new download directory. The install prefix belongs to your user.
 
 ```bash
-curl -fLO "https://github.com/JonathanRReed/Good-GH-CLI/releases/download/v0.5.0-beta.1/ggh-linux-x64"
-curl -fLO "https://github.com/JonathanRReed/Good-GH-CLI/releases/download/v0.5.0-beta.1/ggh-linux-x64.sha256"
+curl -fLO "https://github.com/JonathanRReed/Good-GH-CLI/releases/download/v0.5.0-beta.2/ggh-linux-x64"
+curl -fLO "https://github.com/JonathanRReed/Good-GH-CLI/releases/download/v0.5.0-beta.2/ggh-linux-x64.sha256"
 sha256sum -c "ggh-linux-x64.sha256"
 mkdir -p "$HOME/.local/bin"
 install -m 755 "ggh-linux-x64" "$HOME/.local/bin/ggh"
@@ -65,8 +65,8 @@ The native Windows artifact is x64. There is no Windows ARM64 artifact.
 Run in a new download directory. The install prefix belongs to your user.
 
 ```powershell
-Invoke-WebRequest 'https://github.com/JonathanRReed/Good-GH-CLI/releases/download/v0.5.0-beta.1/ggh-windows-x64.exe' -OutFile 'ggh-windows-x64.exe'
-Invoke-WebRequest 'https://github.com/JonathanRReed/Good-GH-CLI/releases/download/v0.5.0-beta.1/ggh-windows-x64.exe.sha256' -OutFile 'ggh-windows-x64.exe.sha256'
+Invoke-WebRequest 'https://github.com/JonathanRReed/Good-GH-CLI/releases/download/v0.5.0-beta.2/ggh-windows-x64.exe' -OutFile 'ggh-windows-x64.exe'
+Invoke-WebRequest 'https://github.com/JonathanRReed/Good-GH-CLI/releases/download/v0.5.0-beta.2/ggh-windows-x64.exe.sha256' -OutFile 'ggh-windows-x64.exe.sha256'
 $expected = (Get-Content 'ggh-windows-x64.exe.sha256' -Raw).Trim().Split()[0]
 if ($expected -notmatch '^[a-fA-F0-9]{64}$' -or (Get-FileHash 'ggh-windows-x64.exe' -Algorithm SHA256).Hash -ne $expected) { throw 'SHA-256 mismatch' }
 $bin = Join-Path $env:USERPROFILE ".local/bin"
