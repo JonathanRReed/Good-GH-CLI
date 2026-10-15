@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Qualify a compiled ggh.exe in Windows ConPTY. Test host: pywinpty==2.0.15."""
 import argparse
+import base64
 import hashlib
 import importlib.metadata
 import json
@@ -29,6 +30,40 @@ def run(args, cwd, env):
                           encoding="utf-8", errors="replace", timeout=TIMEOUT, check=True).stdout
 
 
+def secure_fixture_root(root):
+    """Protect only our new empty fixture, before creating any children."""
+    executable = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+    environment = {k: v for k, v in os.environ.items() if k.upper() in
+                   {"SYSTEMROOT", "WINDIR", "PATH", "PATHEXT", "TEMP", "TMP"}}
+    environment["PSModulePath"] = str(executable.parent / "Modules")
+    script = r"""
+$ErrorActionPreference = 'Stop'
+[Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+$root = [Console]::In.ReadToEnd()
+$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User
+$acl = [Security.AccessControl.DirectorySecurity]::new()
+$acl.SetOwner($sid)
+$acl.SetAccessRuleProtection($true, $false)
+$inherit = [Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [Security.AccessControl.InheritanceFlags]::ObjectInherit
+$rule = [Security.AccessControl.FileSystemAccessRule]::new($sid, [Security.AccessControl.FileSystemRights]::FullControl, $inherit, [Security.AccessControl.PropagationFlags]::None, [Security.AccessControl.AccessControlType]::Allow)
+[void]$acl.AddAccessRule($rule)
+[IO.Directory]::SetAccessControl($root, $acl)
+$actual = [IO.Directory]::GetAccessControl($root)
+$rules = @($actual.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]))
+if (-not $actual.AreAccessRulesProtected -or $actual.GetOwner([Security.Principal.SecurityIdentifier]).Value -ne $sid.Value -or $rules.Count -ne 1 -or $rules[0].IdentityReference.Value -ne $sid.Value) { throw 'Fixture ACL verification failed' }
+[Console]::Out.Write((@{ ownerSID=$sid.Value; protectedDACL=$actual.AreAccessRulesProtected; allowSIDs=@($rules | ForEach-Object { $_.IdentityReference.Value }) } | ConvertTo-Json -Compress))
+"""
+    started = time.monotonic()
+    result = subprocess.run([str(executable), "-NoLogo", "-NoProfile", "-NonInteractive",
+                             "-EncodedCommand", base64.b64encode(script.encode("utf-16le")).decode("ascii")],
+                            input=str(root), encoding="utf-8", capture_output=True, env=environment,
+                            timeout=TIMEOUT, check=True)
+    metadata = json.loads(result.stdout)
+    metadata["elapsedSeconds"] = round(time.monotonic() - started, 3)
+    return metadata
+
+
 class Console:
     def __init__(self, fixture, binary, width=100, direct=False):
         from winpty import PtyProcess
@@ -37,20 +72,22 @@ class Console:
                                      dimensions=(30, width), backend="0")
         self.chunks = queue.Queue()
         self.output = ""
+        self.stages = []
         self.offset = 0
         threading.Thread(target=self.read, daemon=True).start()
         try:
             if not direct:
                 self.send("@echo off\r")
                 self.send("echo GGH_READY\r")
-                self.expect("GGH_READY")
+                self.expect("\r\nGGH_READY\r\n")
                 probe = "import os,sys;print('GGH_TTY',*[os.isatty(i) for i in range(3)]);print('GGH_PYTHON',sys.version);print('GGH_PROBE_DONE')"
                 self.send(subprocess.list2cmdline([sys.executable, "-c", probe]) + "\r")
-                self.expect("GGH_PROBE_DONE")
+                self.expect("\r\nGGH_PROBE_DONE\r\n")
                 self.send(subprocess.list2cmdline([str(binary), *COMMIT_ARGS]) + "\r")
             self.expect("Select commit type:")
         except Exception as error:
             self.drain()
+            error.console_stages = self.stages
             error.console_output = self.output[-24000:]
             error.console_alive = self.proc.isalive()
             error.console_exit_code = None if error.console_alive else self.proc.exitstatus
@@ -77,25 +114,30 @@ class Console:
         self.proc.write(text)
 
     def expect(self, text):
-        deadline = time.monotonic() + TIMEOUT
+        started = time.monotonic()
+        stage = {"waitingFor": text, "timeoutSeconds": TIMEOUT}
+        self.stages.append(stage)
+        deadline = started + TIMEOUT
         while time.monotonic() < deadline:
             clean = ANSI.sub("", self.output)
             index = clean.find(text, self.offset)
             if index >= 0:
                 self.offset = index + len(text)
+                stage.update(elapsedSeconds=round(time.monotonic() - started, 3), status="matched")
                 return
             try:
                 self.output = (self.output + self.chunks.get(timeout=0.1))[-48000:]
             except queue.Empty:
                 pass
+        stage.update(elapsedSeconds=round(time.monotonic() - started, 3), status="timed_out")
         raise AssertionError("Timed out waiting for " + repr(text))
 
     def shell_usable(self, exit_code=0):
         # /Q suppresses command echo, so this marker must come from cmd execution.
         self.send("echo GGH_EXIT_%errorlevel%\r")
-        self.expect("GGH_EXIT_" + str(exit_code))
+        self.expect("\r\nGGH_EXIT_" + str(exit_code) + "\r\n")
         self.send("echo GGH_SHELL_USABLE\r")
-        self.expect("GGH_SHELL_USABLE")
+        self.expect("\r\nGGH_SHELL_USABLE\r\n")
 
     def close(self):
         if self.proc.isalive():
@@ -109,6 +151,7 @@ class Console:
 
 class Fixture:
     def __init__(self, root):
+        self.acl = secure_fixture_root(root)
         self.repo = root / "repo"
         self.repo.mkdir()
         home = root / "home"
@@ -145,7 +188,7 @@ class Fixture:
 
 def qualify(binary, name, fixture):
     console = None
-    receipt = {"name": name, "status": "failed"}
+    receipt = {"name": name, "status": "failed", "fixtureACL": fixture.acl}
     started = time.monotonic()
     try:
         if name == "closed_output_pipe":
@@ -224,12 +267,14 @@ def qualify(binary, name, fixture):
     except Exception as error:
         receipt["error"] = str(error)
         if hasattr(error, "console_output"):
+            receipt["stages"] = error.console_stages
             receipt["output"] = error.console_output
             receipt["consoleAlive"] = error.console_alive
             receipt["consoleExitCode"] = error.console_exit_code
     finally:
         receipt["elapsedSeconds"] = round(time.monotonic() - started, 3)
         if console is not None:
+            receipt["stages"] = console.stages
             receipt["output"] = console.output[-24000:]
             console.close()
     return receipt

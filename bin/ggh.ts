@@ -36,20 +36,20 @@ process.on("exit", restoreTerminal);
  * punish `set -o pipefail` scripts for succeeding.
  */
 let pipeClosed = false;
-process.on("SIGPIPE", () => {
+async function onClosedPipe(): Promise<void> {
   if (pipeClosed) return;
   pipeClosed = true;
-  void (async () => {
-    restoreTerminal();
-    await killAllChildren();
-    process.exitCode = 0;
-    setFlags({ json: false });
-    await finishCommandOperation();
-    process.exit(0);
-  })();
-});
+  restoreTerminal();
+  await killAllChildren();
+  process.exitCode = 0;
+  setFlags({ json: false });
+  await finishCommandOperation();
+  process.exit(0);
+}
 
-runCli(process.argv).catch(async (err) => {
+async function onFailure(err: unknown): Promise<void> {
+  if (err instanceof Error && "code" in err && err.code === "EPIPE") return onClosedPipe();
+  if (pipeClosed) return;
   restoreTerminal();
   await killAllChildren();
   console.error(err instanceof Error ? err.message : String(err));
@@ -58,4 +58,9 @@ runCli(process.argv).catch(async (err) => {
   await finishCommandOperation();
   finalizeJsonOutput();
   process.exit(1);
-});
+}
+
+process.on("SIGPIPE", () => { void onClosedPipe(); });
+process.stdout.on("error", (error) => { void onFailure(error); });
+
+runCli(process.argv).catch(onFailure);

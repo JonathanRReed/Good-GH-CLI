@@ -6,6 +6,9 @@ import { join } from "node:path";
 import { registerConfigCommand, type ConfigDoctorProbeDependencies } from "../src/commands/config.ts";
 import { resetFlags, setFlags } from "../src/services/runtime.ts";
 
+import { getInstallationGuidance } from "../src/services/install-guidance.ts";
+import packageJson from "../package.json";
+
 const roots: string[] = [];
 const providerIds = ["codex", "grok", "claude", "ollama"] as const;
 
@@ -98,6 +101,20 @@ describe("configuration doctor local tool checks", () => {
       gh: { installed: boolean; version?: string; attachments: Record<string, boolean | null> };
     };
     expect(result.exitCode).toBe(0);
+    expect(result.output.problems).toEqual([]);
+    expect(result.output.installation).toMatchObject({ version: packageJson.version, supported: true });
+    for (const [platform, arch, asset] of [
+      ["linux", "x64", "ggh-linux-x64"], ["linux", "arm64", "ggh-linux-arm64"],
+      ["darwin", "x64", "ggh-darwin-x64"], ["darwin", "arm64", "ggh-darwin-arm64"],
+      ["win32", "x64", "ggh-windows-x64.exe"],
+    ] as const) {
+      const guidance = getInstallationGuidance(platform, arch, packageJson.version);
+      expect(guidance.nativeAsset).toBe(asset);
+      expect(guidance.downloadUrl).toContain(`/download/v${packageJson.version}/`);
+      expect(guidance.downloadCommands.join("\n")).toMatch(/sha256|SHA256/);
+      expect(guidance.installCommands.join("\n")).toContain(".local");
+    }
+    expect(getInstallationGuidance("win32", "arm64", packageJson.version)).toMatchObject({ supported: false, asset: null, downloadCommands: [], installCommands: [] });
     expect(tools.git).toEqual({ installed: true, version: "git version 2.50.0" });
     expect(tools.gh).toMatchObject({ installed: true, version: "gh version 2.88.0 (fixture)" });
     expect(fixture.calls).toHaveLength(8);
@@ -118,6 +135,10 @@ describe("configuration doctor local tool checks", () => {
     const fixture = await setup({ gh: false });
     const result = await doctor(fixture);
     expect(result.exitCode).toBe(1);
+    const installation = result.output.installation as ReturnType<typeof getInstallationGuidance>;
+    expect(installation.dependencies.gh.url).toContain("github.com/cli/cli");
+    expect(installation.dependencies.git.url).toContain("git-scm.com");
+    expect(installation.nextChecks).toContain("ggh config doctor");
     expect(result.output.problems).toEqual([
       "GitHub CLI (gh) was not found on PATH. Install it to use GitHub features such as pull requests and issues.",
     ]);

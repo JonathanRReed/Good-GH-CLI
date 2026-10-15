@@ -1,0 +1,823 @@
+{
+  "schema_version": 1,
+  "method": {
+    "description": "Every command starts a fresh native CLI process. Setup stays outside timed regions. The first invocation is recorded separately from five later filesystem-warm process runs per side.",
+    "cold_cache_claim": false,
+    "samples_per_side": 5,
+    "timeout_seconds_per_command": 20,
+    "commands": [
+      "--version",
+      "--help",
+      "log --json -n1",
+      "stack list --json",
+      "status --json"
+    ],
+    "fixtures": [
+      {
+        "name": "small",
+        "files": 20
+      },
+      {
+        "name": "large",
+        "files": 5000
+      },
+      {
+        "name": "monorepo",
+        "files": 10000
+      }
+    ],
+    "order": "Baseline and candidate order alternates on every paired iteration.",
+    "limitation": "Native artifacts may embed different runtimes or build settings; results describe these exact binaries on this host."
+  },
+  "runner": {
+    "path": "/Users/jonathanreed/Downloads/Good-GH-CLI/scripts/measure-performance.py",
+    "sha256": "8fe2fc5d63fa7bf3278e294f9bb74d4d66a09f370f71f9cdc03316ddf2bb0b38",
+    "python_version": "3.14.7"
+  },
+  "artifacts": {
+    "candidate": {
+      "path": "/private/tmp/ggh-15-candidate/ggh",
+      "sha256": "b4a1f62f8dbe92f89de9c4863fb6270ef0511aaa960b448f9fde67b9473cf4b9"
+    },
+    "baseline": {
+      "path": "/private/var/folders/ph/7cfrg6mn3bj120hdsfs79d140000gn/T/ggh-quality-release-baseline-9xig7fmi/ggh-before",
+      "sha256": "9d26bee5f334d9d1c871a6ac4957c18d1c93ffac7f2375c407967151f5debdda"
+    }
+  },
+  "system": {
+    "platform": "macOS-27.2-arm64-arm-64bit-Mach-O",
+    "os": "Darwin",
+    "architecture": "arm64",
+    "cpu_count": 14,
+    "load_average": [
+      74.8818359375,
+      48.5478515625,
+      47.27587890625
+    ],
+    "git_version": "git version 2.54.0 (Apple Git-157)"
+  },
+  "results": {
+    "small/log --json -n1": {
+      "candidate": {
+        "fresh_ms": 246.182,
+        "fresh_validation": {
+          "records": 1,
+          "head": "f6d214f63fed727fb4d6bfce18754cc919346094"
+        },
+        "warm": {
+          "count": 5,
+          "p50_ms": 187.766,
+          "min_ms": 124.997,
+          "max_ms": 258.608,
+          "raw_ms": [
+            222.676,
+            258.608,
+            187.766,
+            182.886,
+            124.997
+          ]
+        },
+        "validated_warm_runs": 5,
+        "errors": [],
+        "error_count": 0
+      },
+      "baseline": {
+        "fresh_ms": 341.344,
+        "fresh_validation": {
+          "records": 1,
+          "head": "f6d214f63fed727fb4d6bfce18754cc919346094"
+        },
+        "warm": {
+          "count": 5,
+          "p50_ms": 207.549,
+          "min_ms": 123.331,
+          "max_ms": 260.926,
+          "raw_ms": [
+            207.549,
+            260.926,
+            220.523,
+            197.494,
+            123.331
+          ]
+        },
+        "validated_warm_runs": 5,
+        "errors": [],
+        "error_count": 0
+      }
+    },
+    "small/stack list --json": {
+      "candidate": {
+        "fresh_ms": 226.406,
+        "fresh_validation": {
+          "branches": 2,
+          "feature_parent": "main"
+        },
+        "warm": {
+          "count": 5,
+          "p50_ms": 269.761,
+          "min_ms": 193.299,
+          "max_ms": 610.982,
+          "raw_ms": [
+            260.587,
+            269.761,
+            193.299,
+            565.573,
+            610.982
+          ]
+        },
+        "validated_warm_runs": 5,
+        "errors": [],
+        "error_count": 0
+      },
+      "baseline": {
+        "fresh_ms": 235.561,
+        "fresh_validation": {
+          "branches": 2,
+          "feature_parent": "main"
+        },
+        "warm": {
+          "count": 5,
+          "p50_ms": 354.172,
+          "min_ms": 169.15,
+          "max_ms": 470.1,
+          "raw_ms": [
+            354.172,
+            200.91,
+            169.15,
+            469.334,
+            470.1
+          ]
+        },
+        "validated_warm_runs": 5,
+        "errors": [],
+        "error_count": 0
+      }
+    },
+    "small/status --json": {
+      "candidate": {
+        "fresh_ms": 420.725,
+        "fresh_validation": {
+          "branch": "feature/benchmark",
+          "counts": {
+            "staged": 1,
+            "unstaged": 1,
+            "untracked": 1
+          }
+        },
+        "warm": {
+          "count": 5,
+          "p50_ms": 316.359,
+          "min_ms": 264.554,
+          "max_ms": 581.577,
+          "raw_ms": [
+            558.301,
+            264.554,
+            269.639,
+            581.577,
+            316.359
+          ]
+        },
+        "validated_warm_runs": 5,
+        "errors": [],
+        "error_count": 0
+      },
+      "baseline": {
+        "fresh_ms": 367.995,
+        "fresh_validation": {
+          "branch": "feature/benchmark",
+          "counts": {
+            "staged": 1,
+            "unstaged": 1,
+            "untracked": 1
+          }
+        },
+        "warm": {
+          "count": 5,
+          "p50_ms": 368.312,
+          "min_ms": 254.15,
+          "max_ms": 470.216,
+          "raw_ms": [
+            443.721,
+            254.15,
+            300.645,
+            368.312,
+            470.216
+          ]
+        },
+        "validated_warm_runs": 5,
+        "errors": [],
+        "error_count": 0
+      }
+    },
+    "large/log --json -n1": {
+      "candidate": {
+        "fresh_ms": 225.011,
+        "fresh_validation": {
+          "records": 1,
+          "head": "fe1a67890e061e5df3a2c98e4df1e85b5ac66220"
+        },
+        "warm": {
+          "count": 5,
+          "p50_ms": 184.195,
+          "min_ms": 158.35,
+          "max_ms": 256.743,
+          "raw_ms": [
+            158.35,
+            184.195,
+            256.743,
+            242.316,
+            176.644
+          ]
+        },
+        "validated_warm_runs": 5,
+        "errors": [],
+        "error_count": 0
+      },
+      "baseline": {
+        "fresh_ms": 175.085,
+        "fresh_validation": {
+          "records": 1,
+          "head": "fe1a67890e061e5df3a2c98e4df1e85b5ac66220"
+        },
+        "warm": {
+          "count": 5,
+          "p50_ms": 161.604,
+          "min_ms": 148.186,
+          "max_ms": 403.7,
+          "raw_ms": [
+            148.186,
+            148.232,
+            403.7,
+            161.604,
+            167.686
+          ]
+        },
+        "validated_warm_runs": 5,
+        "errors": [],
+        "error_count": 0
+      }
+    },
+    "large/stack list --json": {
+      "candidate": {
+        "fresh_ms": 597.385,
+        "fresh_validation": {
+          "branches": 2,
+          "feature_parent": "main"
+        },
+        "warm": {
+          "count": 5,
+          "p50_ms": 218.133,
+          "min_ms": 194.982,
+          "max_ms": 397.004,
+          "raw_ms": [
+            194.982,
+            218.133,
+            397.004,
+            358.856,
+            217.519
+          ]
+        },
+        "validated_warm_runs": 5,
+        "errors": [],
+        "error_count": 0
+      },
+      "baseline": {
+        "fresh_ms": 381.147,
+        "fresh_validation": {
+          "branches": 2,
+          "feature_parent": "main"
+        },
+        "warm": {
+          "count": 5,
+          "p50_ms": 211.155,
+          "min_ms": 181.525,
+          "max_ms": 432.837,
+          "raw_ms": [
+            211.155,
+            181.525,
+            432.837,
+            351.112,
+            197.666
+          ]
+        },
+        "validated_warm_runs": 5,
+        "errors": [],
+        "error_count": 0
+      }
+    },
+    "large/status --json": {
+      "candidate": {
+        "fresh_ms": 468.199,
+        "fresh_validation": {
+          "branch": "feature/benchmark",
+          "counts": {
+            "staged": 1,
+            "unstaged": 1,
+            "untracked": 1
+          }
+        },
+        "warm": {
+          "count": 5,
+          "p50_ms": 302.376,
+          "min_ms": 252.659,
+          "max_ms": 368.195,
+          "raw_ms": [
+            353.367,
+            252.659,
+            302.376,
+            368.195,
+            285.827
+          ]
+        },
+        "validated_warm_runs": 5,
+        "errors": [],
+        "error_count": 0
+      },
+      "baseline": {
+        "fresh_ms": 517.816,
+        "fresh_validation": {
+          "branch": "feature/benchmark",
+          "counts": {
+            "staged": 1,
+            "unstaged": 1,
+            "untracked": 1
+          }
+        },
+        "warm": {
+          "count": 5,
+          "p50_ms": 364.951,
+          "min_ms": 250.316,
+          "max_ms": 741.75,
+          "raw_ms": [
+            364.951,
+            250.316,
+            364.108,
+            741.75,
+            367.764
+          ]
+        },
+        "validated_warm_runs": 5,
+        "errors": [],
+        "error_count": 0
+      }
+    },
+    "monorepo/log --json -n1": {
+      "candidate": {
+        "fresh_ms": 183.467,
+        "fresh_validation": {
+          "records": 1,
+          "head": "c5829122190698bac4977f185a75ddd8df4a9b94"
+        },
+        "warm": {
+          "count": 5,
+          "p50_ms": 157.468,
+          "min_ms": 128.285,
+          "max_ms": 380.094,
+          "raw_ms": [
+            149.523,
+            164.024,
+            128.285,
+            380.094,
+            157.468
+          ]
+        },
+        "validated_warm_runs": 5,
+        "errors": [],
+        "error_count": 0
+      },
+      "baseline": {
+        "fresh_ms": 184.946,
+        "fresh_validation": {
+          "records": 1,
+          "head": "c5829122190698bac4977f185a75ddd8df4a9b94"
+        },
+        "warm": {
+          "count": 5,
+          "p50_ms": 160.84,
+          "min_ms": 146.925,
+          "max_ms": 162.07,
+          "raw_ms": [
+            159.982,
+            160.84,
+            160.906,
+            162.07,
+            146.925
+          ]
+        },
+        "validated_warm_runs": 5,
+        "errors": [],
+        "error_count": 0
+      }
+    },
+    "monorepo/stack list --json": {
+      "candidate": {
+        "fresh_ms": 183.838,
+        "fresh_validation": {
+          "branches": 2,
+          "feature_parent": "main"
+        },
+        "warm": {
+          "count": 5,
+          "p50_ms": 226.05,
+          "min_ms": 190.659,
+          "max_ms": 234.455,
+          "raw_ms": [
+            234.455,
+            190.659,
+            229.448,
+            226.05,
+            197.651
+          ]
+        },
+        "validated_warm_runs": 5,
+        "errors": [],
+        "error_count": 0
+      },
+      "baseline": {
+        "fresh_ms": 195.206,
+        "fresh_validation": {
+          "branches": 2,
+          "feature_parent": "main"
+        },
+        "warm": {
+          "count": 5,
+          "p50_ms": 206.662,
+          "min_ms": 176.939,
+          "max_ms": 221.528,
+          "raw_ms": [
+            206.662,
+            219.793,
+            186.149,
+            221.528,
+            176.939
+          ]
+        },
+        "validated_warm_runs": 5,
+        "errors": [],
+        "error_count": 0
+      }
+    },
+    "monorepo/status --json": {
+      "candidate": {
+        "fresh_ms": 290.424,
+        "fresh_validation": {
+          "branch": "feature/benchmark",
+          "counts": {
+            "staged": 1,
+            "unstaged": 1,
+            "untracked": 1
+          }
+        },
+        "warm": {
+          "count": 5,
+          "p50_ms": 424.911,
+          "min_ms": 264.749,
+          "max_ms": 601.298,
+          "raw_ms": [
+            424.911,
+            265.072,
+            458.504,
+            264.749,
+            601.298
+          ]
+        },
+        "validated_warm_runs": 5,
+        "errors": [],
+        "error_count": 0
+      },
+      "baseline": {
+        "fresh_ms": 278.369,
+        "fresh_validation": {
+          "branch": "feature/benchmark",
+          "counts": {
+            "staged": 1,
+            "unstaged": 1,
+            "untracked": 1
+          }
+        },
+        "warm": {
+          "count": 5,
+          "p50_ms": 309.927,
+          "min_ms": 250.219,
+          "max_ms": 493.257,
+          "raw_ms": [
+            493.257,
+            276.796,
+            347.978,
+            250.219,
+            309.927
+          ]
+        },
+        "validated_warm_runs": 5,
+        "errors": [],
+        "error_count": 0
+      }
+    },
+    "--version": {
+      "candidate": {
+        "fresh_ms": 161.033,
+        "fresh_validation": {
+          "version": "0.4.0-beta.3"
+        },
+        "warm": {
+          "count": 5,
+          "p50_ms": 37.782,
+          "min_ms": 28.778,
+          "max_ms": 54.35,
+          "raw_ms": [
+            31.076,
+            39.635,
+            37.782,
+            54.35,
+            28.778
+          ]
+        },
+        "validated_warm_runs": 5,
+        "errors": [],
+        "error_count": 0
+      },
+      "baseline": {
+        "fresh_ms": 111.105,
+        "fresh_validation": {
+          "version": "0.4.0-beta.3"
+        },
+        "warm": {
+          "count": 5,
+          "p50_ms": 35.206,
+          "min_ms": 28.56,
+          "max_ms": 52.671,
+          "raw_ms": [
+            35.206,
+            30.969,
+            41.626,
+            52.671,
+            28.56
+          ]
+        },
+        "validated_warm_runs": 5,
+        "errors": [],
+        "error_count": 0
+      }
+    },
+    "--help": {
+      "candidate": {
+        "fresh_ms": 47.777,
+        "fresh_validation": {
+          "usage": true
+        },
+        "warm": {
+          "count": 5,
+          "p50_ms": 37.103,
+          "min_ms": 32.693,
+          "max_ms": 44.54,
+          "raw_ms": [
+            34.297,
+            37.103,
+            37.378,
+            44.54,
+            32.693
+          ]
+        },
+        "validated_warm_runs": 5,
+        "errors": [],
+        "error_count": 0
+      },
+      "baseline": {
+        "fresh_ms": 60.989,
+        "fresh_validation": {
+          "usage": true
+        },
+        "warm": {
+          "count": 5,
+          "p50_ms": 33.654,
+          "min_ms": 31.104,
+          "max_ms": 35.525,
+          "raw_ms": [
+            31.104,
+            34.507,
+            33.654,
+            35.525,
+            31.623
+          ]
+        },
+        "validated_warm_runs": 5,
+        "errors": [],
+        "error_count": 0
+      }
+    }
+  },
+  "errors": [],
+  "blocked_client_attempts": {
+    "candidate": {
+      "count": 90,
+      "log": "/var/folders/ph/7cfrg6mn3bj120hdsfs79d140000gn/T/ggh-performance-ul47awtu/profiles/candidate/blocked-client-attempts.jsonl",
+      "entries": [
+        "gh pr view --json number,title,state,url",
+        "gh auth status --json hosts --hostname github.com",
+        "codex login status",
+        "grok models",
+        "ollama list",
+        "gh pr view --json number,title,state,url",
+        "gh auth status --json hosts --hostname github.com",
+        "codex login status",
+        "grok models",
+        "ollama list",
+        "gh auth status --json hosts --hostname github.com",
+        "gh pr view --json number,title,state,url",
+        "codex login status",
+        "grok models",
+        "ollama list",
+        "gh pr view --json number,title,state,url",
+        "codex login status",
+        "gh auth status --json hosts --hostname github.com",
+        "grok models",
+        "ollama list",
+        "gh pr view --json number,title,state,url",
+        "gh auth status --json hosts --hostname github.com",
+        "codex login status",
+        "grok models",
+        "ollama list",
+        "gh auth status --json hosts --hostname github.com",
+        "gh pr view --json number,title,state,url",
+        "codex login status",
+        "grok models",
+        "ollama list",
+        "gh pr view --json number,title,state,url",
+        "codex login status",
+        "grok models",
+        "gh auth status --json hosts --hostname github.com",
+        "ollama list",
+        "gh pr view --json number,title,state,url",
+        "gh auth status --json hosts --hostname github.com",
+        "codex login status",
+        "grok models",
+        "ollama list",
+        "gh pr view --json number,title,state,url",
+        "gh auth status --json hosts --hostname github.com",
+        "codex login status",
+        "grok models",
+        "ollama list",
+        "gh auth status --json hosts --hostname github.com",
+        "gh pr view --json number,title,state,url",
+        "codex login status",
+        "grok models",
+        "ollama list",
+        "gh pr view --json number,title,state,url",
+        "codex login status",
+        "grok models",
+        "gh auth status --json hosts --hostname github.com",
+        "ollama list",
+        "gh pr view --json number,title,state,url",
+        "codex login status",
+        "gh auth status --json hosts --hostname github.com",
+        "grok models",
+        "ollama list",
+        "gh auth status --json hosts --hostname github.com",
+        "codex login status",
+        "grok models",
+        "gh pr view --json number,title,state,url",
+        "ollama list",
+        "gh pr view --json number,title,state,url",
+        "gh auth status --json hosts --hostname github.com",
+        "codex login status",
+        "grok models",
+        "ollama list",
+        "gh pr view --json number,title,state,url",
+        "gh auth status --json hosts --hostname github.com",
+        "grok models",
+        "ollama list",
+        "codex login status",
+        "gh pr view --json number,title,state,url",
+        "gh auth status --json hosts --hostname github.com",
+        "codex login status",
+        "grok models",
+        "ollama list",
+        "gh pr view --json number,title,state,url",
+        "gh auth status --json hosts --hostname github.com",
+        "codex login status",
+        "grok models",
+        "ollama list",
+        "gh pr view --json number,title,state,url",
+        "codex login status",
+        "gh auth status --json hosts --hostname github.com",
+        "grok models",
+        "ollama list"
+      ]
+    },
+    "baseline": {
+      "count": 108,
+      "log": "/var/folders/ph/7cfrg6mn3bj120hdsfs79d140000gn/T/ggh-performance-ul47awtu/profiles/baseline/blocked-client-attempts.jsonl",
+      "entries": [
+        "codex login status",
+        "ollama list",
+        "grok models",
+        "gh pr view --json number,title,state,url",
+        "gh auth status --json hosts --hostname github.com",
+        "gh auth token",
+        "gh pr view --json number,title,state,url",
+        "gh auth status --json hosts --hostname github.com",
+        "grok models",
+        "codex login status",
+        "ollama list",
+        "gh auth token",
+        "gh pr view --json number,title,state,url",
+        "gh auth status --json hosts --hostname github.com",
+        "codex login status",
+        "grok models",
+        "ollama list",
+        "gh auth token",
+        "gh pr view --json number,title,state,url",
+        "gh auth status --json hosts --hostname github.com",
+        "grok models",
+        "codex login status",
+        "ollama list",
+        "gh auth token",
+        "gh pr view --json number,title,state,url",
+        "gh auth status --json hosts --hostname github.com",
+        "codex login status",
+        "grok models",
+        "ollama list",
+        "gh auth token",
+        "gh pr view --json number,title,state,url",
+        "gh auth status --json hosts --hostname github.com",
+        "grok models",
+        "codex login status",
+        "ollama list",
+        "gh auth token",
+        "gh pr view --json number,title,state,url",
+        "gh auth status --json hosts --hostname github.com",
+        "codex login status",
+        "grok models",
+        "ollama list",
+        "gh auth token",
+        "gh pr view --json number,title,state,url",
+        "gh auth status --json hosts --hostname github.com",
+        "ollama list",
+        "grok models",
+        "codex login status",
+        "gh auth token",
+        "gh pr view --json number,title,state,url",
+        "gh auth status --json hosts --hostname github.com",
+        "codex login status",
+        "grok models",
+        "ollama list",
+        "gh auth token",
+        "gh pr view --json number,title,state,url",
+        "gh auth status --json hosts --hostname github.com",
+        "codex login status",
+        "grok models",
+        "ollama list",
+        "gh auth token",
+        "gh pr view --json number,title,state,url",
+        "gh auth status --json hosts --hostname github.com",
+        "codex login status",
+        "grok models",
+        "ollama list",
+        "gh auth token",
+        "gh pr view --json number,title,state,url",
+        "gh auth status --json hosts --hostname github.com",
+        "codex login status",
+        "grok models",
+        "ollama list",
+        "gh auth token",
+        "gh pr view --json number,title,state,url",
+        "codex login status",
+        "grok models",
+        "gh auth status --json hosts --hostname github.com",
+        "ollama list",
+        "gh auth token",
+        "gh pr view --json number,title,state,url",
+        "gh auth status --json hosts --hostname github.com",
+        "codex login status",
+        "grok models",
+        "ollama list",
+        "gh auth token",
+        "gh pr view --json number,title,state,url",
+        "gh auth status --json hosts --hostname github.com",
+        "codex login status",
+        "ollama list",
+        "grok models",
+        "gh auth token",
+        "gh pr view --json number,title,state,url",
+        "gh auth status --json hosts --hostname github.com",
+        "codex login status",
+        "grok models",
+        "ollama list",
+        "gh auth token",
+        "gh pr view --json number,title,state,url",
+        "gh auth status --json hosts --hostname github.com",
+        "codex login status",
+        "grok models",
+        "ollama list",
+        "gh auth token",
+        "gh auth status --json hosts --hostname github.com",
+        "gh pr view --json number,title,state,url",
+        "codex login status",
+        "grok models",
+        "ollama list",
+        "gh auth token"
+      ]
+    }
+  },
+  "fixture_file_count": 15020
+}

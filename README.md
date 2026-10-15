@@ -11,6 +11,8 @@ Git and GitHub commands are explicit. Use `ggh git <args>` for Git, `ggh gh <arg
 
 ## Install
 
+Follow the [platform installation and repair guide](docs/INSTALL.md) for checksum, PATH, and dependency steps.
+
 Download your platform's binary from [Releases](https://github.com/JonathanRReed/Good-GH-CLI/releases), verify its SHA-256 file, and place it on your PATH as `ggh`.
 
 Standalone binaries need Git, but not Bun or Node. GitHub operations also need `gh`. Local commits with an explicit message need neither a provider CLI nor `gh`; AI commands need a configured provider CLI.

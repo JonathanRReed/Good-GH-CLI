@@ -1,4 +1,6 @@
 import { Command } from "commander";
+import packageJson from "../../package.json";
+import { getInstallationGuidance } from "../services/install-guidance.ts";
 import {
   DEFAULT_CONFIG,
   findProjectConfigPath,
@@ -268,6 +270,8 @@ export function registerConfigCommand(program: Command, doctorDependencies: Conf
         return { id, displayName: provider.displayName, model: getConfiguredModel(provider), ...await provider.getDiagnostics() };
       }));
       const localTools = await inspectLocalTools(doctorDependencies);
+      const installation = getInstallationGuidance(process.platform, process.arch, packageJson.version);
+      p.log.info(config.ai_enabled ? "AI is optional and currently enabled." : "AI is optional and disabled. No provider setup is required.");
       const installed = new Set(providers.filter((provider) => provider.installed).map((provider) => provider.id));
       p.log.info(pc.dim("Checks local CLI installation and help output only. Sign-in and model access are not checked."));
       for (const [name, tool] of [["Git", localTools.git], ["GitHub CLI", localTools.gh]] as const) {
@@ -320,7 +324,7 @@ export function registerConfigCommand(program: Command, doctorDependencies: Conf
         }
       }
 
-      if (jsonOut({ config, projectFile: project?.path ?? null, problems, providers, localTools, fixed })) {
+      if (jsonOut({ config, projectFile: project?.path ?? null, problems, providers, localTools, fixed, installation })) {
         if (problems.length > 0) process.exitCode = 1;
         return;
       }
@@ -334,6 +338,13 @@ export function registerConfigCommand(program: Command, doctorDependencies: Conf
         return;
       }
       for (const problem of problems) p.log.warn(problem);
+      for (const name of ["git", "gh"] as const) {
+        if (!localTools[name].installed) {
+          const remedy = installation.dependencies[name];
+          p.log.info(`${name}: ${remedy.command ?? "Follow the installation instructions"}\n${remedy.url}`);
+        }
+      }
+      p.log.info(`After repairs: ${installation.nextChecks.join("; ")}`);
       if (options?.fix && fixed.length > 0) {
         p.outro(pc.green(`${fixed.length} issue(s) fixed, ${problems.length} remain.`));
       } else {

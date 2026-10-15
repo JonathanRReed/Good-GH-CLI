@@ -74,6 +74,8 @@ async function renderStatus(): Promise<void> {
       pullRequest: activePr,
       github: ghStatus,
       ai: {
+        enabled: config.ai_enabled,
+        optional: true,
         active: config.ai_provider || "codex",
         providers: PROVIDER_ORDER.map((id) => ({
           id,
@@ -139,7 +141,7 @@ async function renderStatus(): Promise<void> {
   }
 
   // AI Status
-  p.log.step(pc.bold("AI Integration (Zero API Keys)"));
+  p.log.step(pc.bold(config.ai_enabled ? "AI integration (optional, enabled)" : "AI integration (optional, disabled)"));
   for (const id of PROVIDER_ORDER) {
     const provider = getProviderById(id);
     const label = provider.displayName.padEnd(16);
@@ -154,17 +156,17 @@ async function renderStatus(): Promise<void> {
     `  Fallback: ${pc.dim(buildAttemptChain().map((a) => `${a.provider.id}/${a.model}`).join(" → "))}`,
   );
 
-  if (detected.size === 0) {
+  if (config.ai_enabled && detected.size === 0) {
     p.log.warn(
       pc.yellow("No AI provider detected. Sign in with `codex login` or `grok login`, or use `ggh commit -m`."),
     );
   }
 
   const githubOk = !ghStatus.notInstalled && ghStatus.authenticated;
-  if (githubOk && detected.size > 0) {
-    p.outro(pc.dim("All systems operational."));
+  if (githubOk) {
+    p.outro(pc.dim(gitStatus.isRepo ? "GitHub authenticated. Local repository status checked." : "GitHub authenticated. Open a Git repository to check local work."));
   } else {
-    p.outro(pc.yellow("Setup incomplete — see the warnings above."));
+    p.outro(pc.yellow("GitHub setup needs attention. Local status checks are available."));
   }
 }
 
