@@ -1,0 +1,42 @@
+{
+  "platform": "darwin",
+  "binarySha256": "68433e03cbc34f048c0668054558ec7f383f969d730a0ead829b9ddccb9269f2",
+  "cases": [
+    {
+      "name": "unicode-paste-typeahead-resize",
+      "passed": true,
+      "exitCode": 0,
+      "terminalRestored": true
+    },
+    {
+      "name": "word-delete",
+      "passed": true,
+      "exitCode": 0,
+      "terminalRestored": true
+    },
+    {
+      "name": "ctrl-c-preserves-index",
+      "passed": true,
+      "exitCode": 130,
+      "terminalRestored": true
+    },
+    {
+      "name": "sigterm-preserves-index",
+      "passed": true,
+      "exitCode": 143,
+      "terminalRestored": true
+    },
+    {
+      "name": "eof-preserves-index",
+      "passed": true,
+      "exitCode": 130,
+      "terminalRestored": true
+    },
+    {
+      "name": "closed-stdout",
+      "passed": true,
+      "exitCode": 0
+    }
+  ],
+  "scope": "Actual local macOS pseudoterminal and compiled binary. Hosted terminal matrix remains pending."
+}

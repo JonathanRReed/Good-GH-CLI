@@ -97,6 +97,7 @@ export function outro(text = ""): void {
 
 export function cancel(text = ""): void {
   if (!getCommandIssue()) recordCommandIssue({ status: "cancelled", message: text || "Cancelled." });
+  if (getCommandIssue()?.status === "cancelled" && !process.exitCode) process.exitCode = 130;
   if (chromeSuppressed()) return;
   writeErr(`${pc.red("✖")}  ${text}`);
   writeErr("");

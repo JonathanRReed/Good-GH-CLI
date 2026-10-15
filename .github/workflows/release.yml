@@ -214,6 +214,27 @@ jobs:
       - name: Native regression suite
         if: runner.os != 'Windows'
         run: python3 scripts/audit-regressions.py --binary "$PWD/native/${{ matrix.asset }}" --results regressions.json
+      - name: Qualify native POSIX terminal behavior
+        if: runner.os != 'Windows'
+        run: python3 scripts/qualify-terminal.py --binary "$PWD/native/${{ matrix.asset }}" --results terminal.json
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        if: runner.os == 'Windows'
+        with:
+          python-version: '3.12'
+      - name: Install the Windows console qualification dependency
+        if: runner.os == 'Windows'
+        run: |
+          python -m pip install --only-binary=:all: pywinpty==2.0.15
+      - name: Qualify native Windows console behavior
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: python scripts/qualify-terminal-windows.py --binary "$PWD/native/${{ matrix.asset }}" --results terminal.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: terminal-results-${{ matrix.asset }}
+          path: terminal.json
+          retention-days: 7
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always() && runner.os != 'Windows'
         with:
