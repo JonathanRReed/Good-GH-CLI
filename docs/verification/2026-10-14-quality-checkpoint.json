@@ -1,0 +1,161 @@
+{
+  "recordedAt": "2026-10-15T02:25:02.937165+00:00",
+  "source": {
+    "baseRevision": "4b1657e3d922e4feb73a73800615a315a84e8c42",
+    "workingTree": "uncommitted checkpoint candidate",
+    "version": "0.4.0-beta.3"
+  },
+  "checks": {
+    "typecheck": "passed",
+    "lint": "passed",
+    "manFreshness": "passed",
+    "actionlint": "passed",
+    "diffWhitespace": "passed",
+    "sourceTests": {
+      "passed": 541,
+      "skipped": 1,
+      "failed": 0,
+      "skipReason": "PowerShell is absent on local macOS; prepared runtime case must run on Windows CI"
+    },
+    "nativeRegressions": {
+      "passed": 71,
+      "failed": 0,
+      "binarySha256": "09423b390aee4bfa1a2613c55f47cc6811cb492f80f563aead01ee051fbe326e",
+      "scope": "Preceding native build; final checkpoint artifact regressions run again in hosted pipeline. The installation receipt identifies the later candidate hash separately."
+    },
+    "sourceSecretScans": {
+      "paths": [
+        "src",
+        "bin",
+        "scripts"
+      ],
+      "findings": 0
+    }
+  },
+  "nativeInstall": {
+    "probe": "native-artifact-clean-install",
+    "timestamp": "2026-10-15T02:23:26.865Z",
+    "platform": "darwin",
+    "arch": "arm64",
+    "profilePath": "simulated Unicode profile path, not an actual OS account",
+    "versions": {
+      "current": "0.4.0-beta.3",
+      "previous": "0.4.0-beta.2"
+    },
+    "artifactSha256": {
+      "current": "8cbb9a470d95dc200ae24bcde323c424b265ad301e16a240fe18509a0970cd3e",
+      "previous": "21621951c589ce3ba71e8f75c01dfa688a17cc9d6846fea8c7cad8446711fe62"
+    },
+    "stages": {
+      "current-source-version": {
+        "status": "passed"
+      },
+      "previous-source-version": {
+        "status": "passed"
+      },
+      "install-previous": {
+        "status": "passed",
+        "detail": {
+          "version": "0.4.0-beta.2",
+          "sha256": "21621951c589ce3ba71e8f75c01dfa688a17cc9d6846fea8c7cad8446711fe62",
+          "resolvedBy": "native OS PATH lookup"
+        }
+      },
+      "upgrade-current": {
+        "status": "passed",
+        "detail": {
+          "version": "0.4.0-beta.3",
+          "sha256": "8cbb9a470d95dc200ae24bcde323c424b265ad301e16a240fe18509a0970cd3e",
+          "resolvedBy": "native OS PATH lookup"
+        }
+      },
+      "rollback-previous": {
+        "status": "passed",
+        "detail": {
+          "version": "0.4.0-beta.2",
+          "sha256": "21621951c589ce3ba71e8f75c01dfa688a17cc9d6846fea8c7cad8446711fe62",
+          "resolvedBy": "native OS PATH lookup"
+        }
+      },
+      "restore-current": {
+        "status": "passed",
+        "detail": {
+          "version": "0.4.0-beta.3",
+          "sha256": "8cbb9a470d95dc200ae24bcde323c424b265ad301e16a240fe18509a0970cd3e",
+          "resolvedBy": "native OS PATH lookup"
+        }
+      },
+      "installed-help-and-agent-contract": {
+        "status": "passed",
+        "detail": {
+          "help": "passed",
+          "agentSchema": "ggh.agent v1"
+        }
+      },
+      "native-local-commit-and-installed-hook": {
+        "status": "passed",
+        "detail": {
+          "commits": 2,
+          "hook": "pre-commit"
+        }
+      },
+      "uninstall-fixture-binary": {
+        "status": "passed",
+        "detail": {
+          "directPathLaunch": "rejected",
+          "unrelatedSentinel": "preserved"
+        }
+      }
+    },
+    "status": "passed"
+  },
+  "packageInstall": {
+    "probe": "installed-package-clean-install",
+    "timestamp": "2026-10-15T02:24:24.222Z",
+    "platform": "darwin",
+    "arch": "arm64",
+    "profilePath": "simulated Unicode profile path, not an actual OS account",
+    "version": "0.4.0-beta.3",
+    "artifactSha256": {
+      "installedLauncher": "19d4241ba9643147d4cfe7cf5ab336080d321c3864ba290942659acca9f1b087"
+    },
+    "stages": {
+      "installed-package-provenance": {
+        "status": "passed",
+        "detail": {
+          "version": "0.4.0-beta.3",
+          "launcherSha256": "19d4241ba9643147d4cfe7cf5ab336080d321c3864ba290942659acca9f1b087"
+        }
+      },
+      "node-launcher-and-local-commit": {
+        "status": "passed",
+        "detail": {
+          "version": "0.4.0-beta.3",
+          "agentContract": "ggh.agent v1",
+          "commit": "test: node installed package"
+        }
+      },
+      "bun-launcher-and-local-commit": {
+        "status": "passed",
+        "detail": {
+          "version": "0.4.0-beta.3",
+          "agentContract": "ggh.agent v1",
+          "commit": "test: bun installed package"
+        }
+      }
+    },
+    "status": "passed"
+  },
+  "priorMacArtifact": {
+    "rawAsset": "ggh-darwin-arm64 from v0.4.0-beta.2",
+    "rawAssetResult": "Published checksum matched, but codesign strict verification failed and execution was SIGKILL. Not counted as a working rollback target.",
+    "rollbackSource": "Verified Developer ID binary extracted from checksum-verified published v0.4.0-beta.2 universal DMG",
+    "dmgSha256": "420a066e12abe0876e3519519520a2d09e943dda3063df829fb196321cffa6ae"
+  },
+  "openGates": [
+    "Exact revision hosted Linux/macOS/Windows source and five native artifact jobs",
+    "Windows private-storage and subprocess-tree qualification",
+    "Roadmap items07\u201318 and six prototypes",
+    "Final cleanup, performance, review, main merge and release"
+  ]
+}

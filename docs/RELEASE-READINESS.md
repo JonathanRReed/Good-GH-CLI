@@ -1,8 +1,46 @@
 # Release readiness
 
 This is a release checklist, not a claim of perfect software or a security
-certification. The 0.4.0-beta.3 candidate addresses the September 4 pre-adoption
-audit and the September 7 completion pass. Published assets and registry versions are separate from code on main.
+certification. The first section below tracks the October 14 implementation
+batch in the current dirty checkout. The audit map that follows records the
+earlier 0.4.0-beta.3 candidate. Published assets and registry versions are
+separate from code on main.
+
+## October 14 implementation batch
+
+Local acceptance passed on macOS. After test pruning, typecheck, lint, 500
+source tests, and 71 compiled-artifact regressions passed. The
+[test audit](verification/2026-10-14-test-audit.md) records removals and retained
+coverage across all 50 source test files.
+
+The earlier [acceptance receipt](verification/2026-10-14-local-acceptance.md)
+records the exact npm tarball, Node and Bun launcher checks, two local commits,
+native checksum, commit, hook, terminal editing, manual freshness, and runtime
+budgets. This test audit preserved the native and bundle hashes.
+
+The changes remain uncommitted and have no release tag. GitHub writes and
+provider generation in the regressions used local mocks. The source implements
+explicit Git and gh escapes, AI opt-in, repo and PR setup, media attachments,
+operation records, restack recovery, and an optional PR-and-CI stack view.
+See [complaint coverage](COMPLAINT-COVERAGE.md) for the behavior map.
+
+### Remaining launch checks
+
+- Run the Linux and Windows native and installed-package checks at the final
+  source revision. The prepared CI matrix covers all three platforms. Verify
+  private filesystem permissions on Windows directly.
+- Use a separately authorized disposable GitHub repository for live
+  publication, private access, native attachments, retries, and partial
+  failure checks. Mocked CLI fixtures do not establish these behaviors against
+  GitHub.
+- The macOS PTY probe passed ESC-DEL word deletion and Ctrl-C exit 130. Native
+  terminal checks on Linux and Windows remain open.
+- Run the new doctor tests and inspect their results on supported installed
+  tools. The doctor checks Git and `gh` versions and attachment flags, then
+  checks provider CLI versions and help capabilities. It does not check
+  authentication or provider model access.
+- Verify Developer ID signing and notarization, npm publication, and release
+  asset availability separately. None follows from passing source tests.
 
 ## Audit closure map
 

@@ -43,11 +43,16 @@ if a[:2]==['auth','status']:
  if '--hostname' in a: host=a[a.index('--hostname')+1]
  print(json.dumps({'hosts':{host:[{'active':True,'state':'success','login':os.getenv('AUDIT_ACCOUNT','audit-user'),'host':host,'gitProtocol':'https'}]}}))
 elif a[:2] in [['pr','list'],['issue','list']]:
- print(json.dumps([{'number':1,'title':os.getenv('AUDIT_TITLE',Path.cwd().name),'author':{'login':'audit'},'headRefName':'feature','state':'OPEN','url':'https://example.invalid/pull/1'}]))
+ print('[]' if os.getenv('AUDIT_PUBLICATION')=='1' else json.dumps([{'number':1,'title':os.getenv('AUDIT_TITLE',Path.cwd().name),'author':{'login':'audit'},'headRefName':'feature','state':'OPEN','url':'https://example.invalid/pull/1'}]))
 elif a[:2]==['pr','view']:
  print('no pull requests found',file=sys.stderr);sys.exit(1)
 elif a[:2]==['repo','view']:
+ if os.getenv('AUDIT_PUBLICATION')=='1':print('HTTP 404: Not Found',file=sys.stderr);sys.exit(1)
  print('audit/repository' if '-q' in a else json.dumps({'nameWithOwner':'audit/repository','defaultBranchRef':{'name':'main'}}))
+elif a[:2]==['repo','create'] and os.getenv('AUDIT_PUBLICATION')=='1':
+ print('https://github.com/'+a[2])
+elif a[:2]==['pr','create'] and os.getenv('AUDIT_PUBLICATION')=='1':
+ print('--attach <file>' if '--help' in a else 'https://github.com/audit-user/repo/pull/7')
 elif a and a[0]=='api':
  print('[]')
 else:
@@ -338,6 +343,9 @@ class Audit(unittest.TestCase):
         self.ok(self.ggh('stack','restack','parent','-y'))
         self.assertEqual(self.ok(self.git('show','child:parent.txt')).stdout,'v2\n')
         self.assertEqual(self.ok(self.git('log','--format=%s','main..child')).stdout.splitlines(),['child','parent'])
+        self.assertEqual(self.ok(self.git('config','branch.child.gh-merge-base')).stdout.strip(),'parent')
+        graph=json.loads(self.ok(self.ggh('stack','list','--all','--json')).stdout)
+        self.assertEqual(next(x for x in graph if x['branch']=='child')['parent'],'parent')
 
     def test_18_notifications_includes_gh_api_subcommand(self):
         p=self.ggh('notifications','--json')
@@ -495,12 +503,6 @@ class Audit(unittest.TestCase):
         self.ok(self.ggh('hook','remove',name,'-y'))
         self.assertFalse((self.repo/'.git/hooks'/name).exists())
 
-    def test_51_restack_keeps_short_parent_pointer(self):
-        self.test_17_restack_replays_amended_parent_correctly()
-        self.assertEqual(self.ok(self.git('config','branch.child.gh-merge-base')).stdout.strip(),'parent')
-        graph=json.loads(self.ok(self.ggh('stack','list','--all','--json')).stdout)
-        self.assertEqual(next(x for x in graph if x['branch']=='child')['parent'],'parent')
-
     def test_52_pr_checkout_requires_a_local_worktree(self):
         p=self.ggh('pr','checkout','42','-R','audit/remote',cwd=self.root)
         self.assertNotEqual(p.returncode,0)
@@ -514,6 +516,7 @@ class Audit(unittest.TestCase):
         self.ok(self.git('add','-A'));self.ok(self.git('commit','-m','nested fixture'))
         (self.repo/'file.txt').write_text('discard root\n');(nested/'file.txt').write_text('keep nested\n')
         result=json.loads(self.ok(self.ggh('discard','file.txt','-y','--json',cwd=nested)).stdout)
+        self.assertRegex(result.pop('operationId'),r'^[0-9a-f-]{36}$')
         self.assertEqual(result,{'discarded':['file.txt'],'count':1})
         self.assertEqual((self.repo/'file.txt').read_text(),'initial\n')
         self.assertEqual((nested/'file.txt').read_text(),'keep nested\n')
@@ -539,6 +542,7 @@ class Audit(unittest.TestCase):
         (self.repo/'new.txt').write_text('staged\n');self.ok(self.git('add','new.txt'))
         (self.repo/'new.txt').write_text('unstaged\n')
         result=json.loads(self.ok(self.ggh('discard','--all','-y','--json')).stdout)
+        self.assertRegex(result.pop('operationId'),r'^[0-9a-f-]{36}$')
         self.assertEqual(result,{'discarded':['new.txt'],'count':1})
         self.assertEqual(self.ok(self.git('status','--porcelain')).stdout,'')
 
@@ -611,6 +615,104 @@ class Audit(unittest.TestCase):
         self.assertIn('refs/ggh/squash/'+head,result.stderr)
         self.assertEqual(self.ok(self.git('rev-parse','refs/ggh/squash/'+head)).stdout.strip(),head)
         self.assertEqual(self.ok(self.git('diff','--cached','--name-only')).stdout.strip(),'second.txt\nthird.txt')
+
+    def test_65_repo_creation_requires_explicit_confirmation(self):
+        result=self.ggh('repo','create','--json',env={'AUDIT_PUBLICATION':'1'})
+        self.assertNotEqual(result.returncode,0)
+        self.assertEqual(json.loads(result.stdout)['status'],'needs_input')
+        self.assertEqual(self.ok(self.git('remote')).stdout.strip(),'')
+        calls=[json.loads(line)['argv'] for line in (self.root/'gh.jsonl').read_text().splitlines()]
+        self.assertFalse(any(args[:2]==['repo','create'] for args in calls))
+
+    def test_66_pr_bootstrap_publishes_existing_base_and_head_without_ai(self):
+        original=self.ok(self.git('rev-parse','HEAD')).stdout.strip()
+        bare=self.root/'publication.git';self.ok(self.git('init','--bare',str(bare)))
+        self.ok(self.git('config','--global','url.'+bare.as_uri()+'.insteadOf','https://github.com/audit-user/repo.git'))
+        self.feature();self.stage_change();self.ok(self.git('commit','-m','feature'))
+        head=self.ok(self.git('rev-parse','HEAD')).stdout.strip()
+        result=json.loads(self.ok(self.ggh('pr','create','-y','--json','--body','private-body-canary',env={'AUDIT_PUBLICATION':'1'})).stdout)
+        self.assertEqual(result['status'],'succeeded')
+        self.assertEqual(result['url'],'https://github.com/audit-user/repo/pull/7')
+        self.assertEqual(self.ok(self.git('rev-parse','refs/heads/main',cwd=bare)).stdout.strip(),original)
+        self.assertEqual(self.ok(self.git('rev-parse','refs/heads/feature',cwd=bare)).stdout.strip(),head)
+        self.assertEqual(self.ok(self.git('rev-parse','--abbrev-ref','@{u}')).stdout.strip(),'origin/feature')
+        record=(self.repo/'.git/ggh-operations'/(result['operationId']+'.json')).read_text()
+        self.assertNotIn('private-body-canary',record)
+        self.assertFalse((self.root/'ai.jsonl').exists())
+
+    def test_67_invalid_pr_base_never_creates_a_repository_or_commit(self):
+        head=self.ok(self.git('rev-parse','HEAD')).stdout
+        result=self.ggh('pr','create','--base','main','-y','--json',env={'AUDIT_PUBLICATION':'1'})
+        self.assertNotEqual(result.returncode,0)
+        self.assertEqual(json.loads(result.stdout)['status'],'needs_input')
+        self.assertEqual(self.ok(self.git('rev-parse','HEAD')).stdout,head)
+        self.assertEqual(self.ok(self.git('remote')).stdout.strip(),'')
+
+    def test_68_enterprise_media_refusal_precedes_publication_mutations(self):
+        self.feature();self.stage_change();self.ok(self.git('commit','-m','feature'))
+        image=self.root/'proof.png';image.write_bytes(bytes([137,80,78,71,13,10,26,10]))
+        head=self.ok(self.git('rev-parse','HEAD')).stdout
+        result=self.ggh('pr','create','--attach',str(image),'--base','main','-y','--json','--repo','github.enterprise.test/audit-user/repo')
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('GitHub.com or a GHE.com tenant',result.stderr)
+        self.assertEqual(self.ok(self.git('remote')).stdout.strip(),'')
+        self.assertEqual(self.ok(self.git('rev-parse','HEAD')).stdout,head)
+        calls=[json.loads(line)['argv'] for line in (self.root/'gh.jsonl').read_text().splitlines()]
+        self.assertFalse(any(args[:2] in [['repo','create'],['pr','create']] for args in calls))
+
+    def terminal_repo_name(self,payload):
+        import pty,select
+        master,slave=pty.openpty()
+        child=subprocess.Popen([str(BIN),'repo','create','-y'],cwd=self.root,
+            env={**self.env,'AUDIT_PUBLICATION':'1'},stdin=slave,stdout=slave,stderr=slave)
+        os.close(slave);output=b'';sent=False;deadline=time.monotonic()+10
+        try:
+            while time.monotonic()<deadline:
+                if select.select([master],[],[],0.1)[0]:
+                    try:output+=os.read(master,8192)
+                    except OSError:break
+                    if b'Repository name:' in output and not sent:
+                        os.write(master,payload);sent=True
+                if child.poll() is not None:break
+            if child.poll() is None:
+                child.kill();child.wait();self.fail('Terminal prompt exceeded 10 seconds')
+            return child.wait(),output.decode(errors='replace')
+        finally:
+            if child.poll() is None:child.kill();child.wait()
+            os.close(master)
+
+    def test_69_terminal_word_delete_preserves_the_intended_name(self):
+        code,output=self.terminal_repo_name(b'alpha beta\x1b\x7f\r')
+        self.assertEqual(code,0,output)
+        calls=[json.loads(line)['argv'] for line in (self.root/'gh.jsonl').read_text().splitlines()]
+        self.assertTrue(any(args[:3]==['repo','create','audit-user/alpha'] for args in calls))
+
+    def test_70_terminal_cancel_returns_shell_interrupt_status(self):
+        code,output=self.terminal_repo_name(b'\x03')
+        self.assertEqual(code,130,output)
+
+    def test_71_nested_pr_attachments_keep_the_invocation_context(self):
+        self.feature();self.stage_change();self.ok(self.git('commit','-m','feature'))
+        bare=self.root/'publication.git';self.ok(self.git('init','--bare',str(bare)))
+        self.ok(self.git('config','--global','url.'+bare.as_uri()+'.insteadOf','https://github.com/audit-user/repo.git'))
+        nested=self.repo/'nested';nested.mkdir();image=nested/'proof.png'
+        image.write_bytes(bytes([137,80,78,71,13,10,26,10]))
+        result=json.loads(self.ok(self.ggh('pr','create','--attach','proof.png','--body','![Proof](./proof.png)','-y','--json',cwd=nested,env={'AUDIT_PUBLICATION':'1'})).stdout)
+        self.assertEqual(result['status'],'succeeded')
+        calls=[json.loads(line) for line in (self.root/'gh.jsonl').read_text().splitlines()]
+        create=next(call for call in calls if call['argv'][:2]==['pr','create'] and '--help' not in call['argv'])
+        self.assertEqual(Path(create['cwd']).resolve(),nested.resolve())
+        self.assertIn(str(image.resolve()),create['argv'])
+        self.assertEqual(self.ok(self.git('ls-files','nested/proof.png')).stdout.strip(),'')
+
+    def test_72_protected_push_refuses_missing_approval_before_staging(self):
+        head=self.ok(self.git('rev-parse','HEAD')).stdout
+        (self.repo/'file.txt').write_text('unstaged change\n')
+        result=self.ggh('c','-a','-m','protected push','--push','--json',env={'GGH_NO_RECORDS':'1'})
+        self.assertNotEqual(result.returncode,0)
+        self.assertEqual(json.loads(result.stdout)['status'],'needs_input')
+        self.assertEqual(self.ok(self.git('rev-parse','HEAD')).stdout,head)
+        self.assertEqual(self.ok(self.git('diff','--cached','--name-only')).stdout.strip(),'')
 
 
 class Results(unittest.TextTestResult):

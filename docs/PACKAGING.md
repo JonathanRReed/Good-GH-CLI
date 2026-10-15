@@ -26,8 +26,12 @@ Pull requests run the same artifact build/install/smoke pipeline without
 publishing. Manual releases resolve `refs/tags/<tag>` once, verify its package
 version, and pass that immutable commit SHA to every build. Bun is pinned to
 1.4.0. Native jobs download and test the exact artifacts that will be uploaded,
-including checksums, a real commit, and an installed pre-commit hook. POSIX
-artifacts additionally run `scripts/audit-regressions.py`.
+including checksums, PATH discovery, a real commit, and an installed pre-commit
+hook. Native checks install the prior published beta, upgrade to the candidate,
+roll back, restore the candidate, and uninstall it. Fixture installation and
+profile paths contain spaces and Unicode. These simulated profile paths do not
+establish behavior under a different operating-system account. The workflow
+retains a per-platform JSON installation receipt. POSIX artifacts additionally run `scripts/audit-regressions.py`.
 
 npm publication is explicitly opt-in: set the repository variable
 `PUBLISH_NPM=true` and configure a valid `NPM_TOKEN`. Missing credentials then

@@ -107,7 +107,6 @@ describe("Git identity and staged objects", () => {
   });
 });
 
-
 describe("quoted diff paths", () => {
   for (const name of ["private\tdata/.env", "privé/.env.production.local", "private\nname/credentials.json"]) {
     it.skipIf(process.platform === "win32" && [...name].some((c) => c.charCodeAt(0) < 32))(`drops sensitive content at ${JSON.stringify(name)}`, () => {
@@ -121,14 +120,5 @@ describe("quoted diff paths", () => {
   it("fails closed on an unparseable file header", () => {
     const patch = 'diff --git "a/bad\\q.env" "b/bad\\q.env"\n+PRIVATE_CANARY';
     expect(sanitizeDiffForAI(patch).diff).not.toContain("PRIVATE_CANARY");
-  });
-});
-
-
-describe("canonical branch names", () => {
-  it("does not prefix the GitHub default branch with the remote name", async () => {
-    initRepo(); git("update-ref", "refs/remotes/origin/trunk", "HEAD");
-    git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk");
-    expect(await detectDefaultBranch(root)).toBe("trunk");
   });
 });

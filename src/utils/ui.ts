@@ -5,9 +5,10 @@ import {
   type AIAttemptFailure,
   type AIProvider,
 } from "../services/ai/index.ts";
-import { getFlags, isNonInteractive } from "../services/runtime.ts";
+import { type CommandIssue, getFlags, isNonInteractive, recordCommandIssue, rememberCommandResult } from "../services/runtime.ts";
 import { cancel, emitJson, intro, log, note, outro, spinner } from "./output.ts";
 import { confirmPrompt, selectMenu } from "./prompts.ts";
+import { PartialGitHubMutationError, PartialAttachmentOperationError } from "../services/github/attachments.ts";
 
 /**
  * Drop-in replacement for the @clack/prompts surface this CLI still used
@@ -63,8 +64,9 @@ export type {
  * Reports a command failure and marks the process as failed, so `ggh` can be
  * used in scripts and CI without every caller remembering to set exitCode.
  */
-export function fail(message: string): void {
+export function fail(message: string, metadata: Pick<CommandIssue, "code" | "requiredInputs"> = {}): void {
   process.exitCode = 1;
+  recordCommandIssue({ status: "failed", message, ...metadata });
   p.log.error(message);
 }
 
@@ -75,6 +77,11 @@ export function fail(message: string): void {
  */
 export function failFromGitHub(err: unknown): void {
   fail(err instanceof Error ? err.message : String(err));
+  if (err instanceof PartialGitHubMutationError) {
+    jsonOut({ status: "partially_completed", url: err.resourceUrl, attachments: err.attachments, error: { message: err.message } });
+  } else if (err instanceof PartialAttachmentOperationError) {
+    jsonOut({ status: "partially_completed", operation: err.operation, phase: err.phase, attachments: { uploaded: err.uploadedAttachments.map(item => ({ file: item.file.path, url: item.url })), remainingFiles: err.remainingFiles.map(file => file.path) }, error: { message: err.message } });
+  }
 }
 
 /**
@@ -83,6 +90,7 @@ export function failFromGitHub(err: unknown): void {
  * call sites into `if (jsonOut(v)) return;`.
  */
 export function jsonOut(value: unknown): boolean {
+  rememberCommandResult(value);
   if (!getFlags().json) return false;
   emitJson(value);
   return true;
@@ -105,6 +113,9 @@ export async function confirmOrAbort(
   });
   if (!confirmed && options?.cancelText !== null) {
     p.cancel(options?.cancelText ?? "Cancelled.");
+  }
+  if (!confirmed && isNonInteractive()) {
+    recordCommandIssue({ status: "needs_input", code: "confirmation_required", requiredInputs: [{ name: "--yes", description: message }], message: `Confirmation required: ${message}. Pass --yes to authorize this action.` });
   }
   return confirmed;
 }

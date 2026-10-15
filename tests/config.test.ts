@@ -46,6 +46,7 @@ describe("config service", () => {
   });
 
   it("reads and updates configuration values", () => {
+    expect(getConfig().ai_enabled).toBe(false);
     expect(getConfig().codex_model).toBe(DEFAULT_CONFIG.codex_model);
     saveConfig({ codex_model: "gpt-5.6-luna-test" });
     expect(getConfig().codex_model).toBe("gpt-5.6-luna-test");
@@ -85,6 +86,7 @@ describe("config service", () => {
   });
 
   it("reads every GGH_* environment override through the same validator", () => {
+    process.env.GGH_AI_ENABLED = "true";
     process.env.GGH_AI_FALLBACK = "false";
     process.env.GGH_HOSTED_AI_CONSENT = "true";
     process.env.GGH_CLAUDE_MODEL = "opus";
@@ -92,6 +94,7 @@ describe("config service", () => {
     const config = getConfig();
     expect(config.ai_fallback).toBe(false);
     expect(config.hosted_ai_consent).toBe(true);
+    expect(config.ai_enabled).toBe(true);
     expect(config.claude_model).toBe("opus");
     expect(config.ai_timeout_ms).toBe(DEFAULT_CONFIG.ai_timeout_ms);
   });
@@ -154,6 +157,14 @@ describe("project .ggh.json", () => {
     ]);
   });
 
+  it("rejects project-level AI opt-in", () => {
+    writeFileSync(join(repo, ".ggh.json"), JSON.stringify({ ai_enabled: true }));
+    expect(getConfig(repo).ai_enabled).toBe(false);
+    expect(getProjectConfig(repo)?.problems).toEqual([
+      { key: "ai_enabled", message: "not allowed in a project file; set it in your user config" },
+    ]);
+  });
+
   it("is found from a nested directory", () => {
     writeFileSync(join(repo, ".ggh.json"), JSON.stringify({ commit_style: "concise" }));
     const nested = join(repo, "a", "b");
@@ -172,6 +183,7 @@ describe("project .ggh.json", () => {
 
 describe("validateConfigValue", () => {
   it("coerces booleans and integers from strings", () => {
+    expect(validateConfigValue("ai_enabled", "on").value).toBe(true);
     expect(validateConfigValue("ai_fallback", "false").value).toBe(false);
     expect(validateConfigValue("hosted_ai_consent", "true").value).toBe(true);
     expect(validateConfigValue("ai_fallback", "on").value).toBe(true);

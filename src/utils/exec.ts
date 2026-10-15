@@ -1,3 +1,5 @@
+import { getFlags } from "../services/runtime.ts";
+
 export interface RunOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
@@ -83,7 +85,7 @@ export function commandExists(command: string): boolean {
  * and execa-style `reject: false` semantics.
  */
 export async function run(command: string, args: string[], options: RunOptions = {}): Promise<RunResult> {
-  const inherit = options.stdio === "inherit";
+  const inherit = options.stdio === "inherit" && !getFlags().json;
   const proc = Bun.spawn([command, ...args], {
     cwd: options.cwd,
     env: options.env ? { ...process.env, ...options.env } : process.env,

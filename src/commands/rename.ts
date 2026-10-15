@@ -73,6 +73,10 @@ export function registerRenameCommand(program: Command): void {
       }
 
       if (newName === current) {
+        if (getFlags().json) {
+          emitJson({ status: "no_op", reason: "already_named", branch: current });
+          return;
+        }
         p.log.warn(`Branch is already named '${current}'. Nothing to rename.`);
         return;
       }

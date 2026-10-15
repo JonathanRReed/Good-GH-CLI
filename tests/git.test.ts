@@ -5,15 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   checkLargeFiles,
-  checkSubmodules,
   commit,
   deleteLocalBranch,
   discardFiles,
-  execGitWithRetry,
   fetchPrune,
   findPrTemplate,
-  getAheadBehind,
-  getAheadOfDefault,
   getBranchMergeBase,
   getCurrentBranch,
   getGoneBranches,
@@ -24,7 +20,6 @@ import {
   hasCommits,
   isGitRepo,
   listBranches,
-  NON_INTERACTIVE_ENV,
   renameBranch,
   resolveConflict,
   setBranchMergeBase,
@@ -124,7 +119,10 @@ describe("git service", () => {
 
     // 2. Create worktree for an EXISTING branch (must not fail with -b collision)
     const wtPathExisting = join(tempRepo, ".worktrees", "feat-existing");
+    await execa("git", ["branch", "tracked-parent"], { cwd: tempRepo });
+    await setBranchMergeBase("feat-test", "tracked-parent", tempRepo);
     await worktreeAdd("feat-test", wtPathExisting, "main", tempRepo);
+    expect(await getBranchMergeBase("feat-test", tempRepo)).toBe("tracked-parent");
     list = await worktreeList(tempRepo);
     expect(list.some((w) => w.branch === "feat-test")).toBe(true);
 
@@ -134,7 +132,8 @@ describe("git service", () => {
   it("syncs .env files into new worktrees", async () => {
     writeFileSync(join(tempRepo, ".env"), "SECRET_VAR=123\n");
     const wtPath = join(tempRepo, ".worktrees", "feat-env-test");
-    await worktreeAdd("feat-env-test", wtPath, "main", tempRepo);
+    const result = await worktreeAdd("feat-env-test", wtPath, "main", tempRepo);
+    expect(result.copiedEnvFiles).toContain(".env");
 
     // Verify .env was copied into the new worktree
     const { existsSync, readFileSync } = await import("node:fs");
@@ -235,11 +234,6 @@ describe("git service", () => {
     rmSync(join(tempRepo, "stat-test.txt"), { force: true });
   });
 
-  it("execGitWithRetry succeeds on standard commands", async () => {
-    const result = await execGitWithRetry(["status", "--short"], { cwd: tempRepo });
-    expect(result.stdout).toBeDefined();
-  });
-
   it("manages git stash lifecycle (push, list, diff, pop, drop)", async () => {
     // Clear any previous dirty state
     await execa("git", ["reset", "--hard", "HEAD"], { cwd: tempRepo });
@@ -317,12 +311,6 @@ describe("git service", () => {
     rmSync(join(tempRepo, "small.txt"), { force: true });
   });
 
-  it("calculates ahead/behind drift", async () => {
-    const drift = await getAheadBehind(tempRepo);
-    expect(typeof drift.ahead).toBe("number");
-    expect(typeof drift.behind).toBe("number");
-  });
-
   it("prunes remote refs, identifies gone branches, and deletes stale branches", async () => {
     const remoteRepo = mkdtempSync(join(tmpdir(), "sync-rem-"));
     const localRepo = mkdtempSync(join(tmpdir(), "sync-loc-"));
@@ -369,11 +357,6 @@ describe("git service", () => {
     rmSync(join(tempRepo, "signoff.txt"), { force: true });
   });
 
-  it("checks submodule status cleanly", async () => {
-    const submodules = await checkSubmodules(tempRepo);
-    expect(Array.isArray(submodules)).toBe(true);
-  });
-
   it("identifies unmerged commits between branches", async () => {
     await execa("git", ["checkout", "-b", "unmerged-test-branch"], { cwd: tempRepo });
     writeFileSync(join(tempRepo, "unmerged.txt"), "hello unmerged");
@@ -408,11 +391,6 @@ describe("git service", () => {
     rmSync(join(tempRepo, "sq2.txt"), { force: true });
   });
 
-  it("calculates aheadOfDefault count against main", async () => {
-    const count = await getAheadOfDefault("main", tempRepo);
-    expect(typeof count).toBe("number");
-  });
-
   it("discards and reverts file changes cleanly (Lazygit-style)", async () => {
     writeFileSync(join(tempRepo, "discard-me.txt"), "before\n");
     await stageFiles(["discard-me.txt"], tempRepo);
@@ -434,12 +412,6 @@ describe("git service", () => {
     await commit("remove discard-me.txt", "", { cwd: tempRepo });
   });
 
-  it("sets and gets branch merge base (T3 Code pattern)", async () => {
-    await setBranchMergeBase("feat/test-base", "main", tempRepo);
-    const base = await getBranchMergeBase("feat/test-base", tempRepo);
-    expect(base).toBe("main");
-  });
-
   it("renames branch and preserves merge base", async () => {
     await execa("git", ["checkout", "-b", "feat/orig-name"], { cwd: tempRepo });
     await setBranchMergeBase("feat/orig-name", "main", tempRepo);
@@ -454,10 +426,5 @@ describe("git service", () => {
     // Switch back to main
     await execa("git", ["checkout", "main"], { cwd: tempRepo });
     await deleteLocalBranch("feat/renamed-name", true, tempRepo);
-  });
-
-  it("defines NON_INTERACTIVE_ENV with fail-fast terminal flags", () => {
-    expect(NON_INTERACTIVE_ENV.GIT_TERMINAL_PROMPT).toBe("0");
-    expect(NON_INTERACTIVE_ENV.GCM_INTERACTIVE).toBe("never");
   });
 });

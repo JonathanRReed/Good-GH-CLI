@@ -192,6 +192,7 @@ export async function createRepository(
     description?: string;
     push?: boolean;
     source?: string;
+    host?: string;
   },
   cwd = process.cwd(),
 ): Promise<string> {
@@ -200,7 +201,7 @@ export async function createRepository(
   if (fields.source) args.push("--source", fields.source);
   if (fields.push) args.push("--push");
   try {
-    const { stdout, stderr } = await ghGlobal(args, { cwd });
+    const { stdout, stderr } = await ghGlobal(args, { cwd, ...(fields.host ? { env: { GH_HOST: fields.host } } : {}) });
     return (stdout || stderr).trim();
   } catch (err) {
     throw classifyGitHubError(err, "create repository");

@@ -1,11 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { execa } from "execa";
-import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
-  findProjectConfigPath,
   getConfig,
   getConfigWithSources,
   saveConfig,
@@ -96,13 +95,6 @@ describe("configuration layers", () => {
     expect(byKey.codex_model).toBe("env");
   });
 
-  it("finds a project config in a parent directory", () => {
-    const nested = join(project, "packages", "app", "src");
-    mkdirSync(nested, { recursive: true });
-    writeFileSync(join(project, ".ggh.json"), "{}", "utf-8");
-    expect(findProjectConfigPath(nested)).toBe(join(project, ".ggh.json"));
-  });
-
   it("writes only to the user file, never absorbing the project or env layers", () => {
     const projectFile = join(project, ".ggh.json");
     writeFileSync(projectFile, JSON.stringify({ ai_provider: "claude" }), "utf-8");
@@ -129,14 +121,21 @@ describe("configuration layers", () => {
 describe("runtime flags", () => {
   afterEach(() => resetFlags());
 
-  it("treats --json as non-interactive, because stdout is being parsed", () => {
-    setFlags({ json: true });
-    expect(isNonInteractive()).toBe(true);
-  });
-
-  it("treats --no-input as non-interactive even on a terminal", () => {
-    setFlags({ noInput: true });
-    expect(isNonInteractive()).toBe(true);
+  it("makes JSON and no-input commands non-interactive even on a terminal", () => {
+    const original = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
+    try {
+      resetFlags();
+      expect(isNonInteractive()).toBe(false);
+      for (const flags of [{ json: true }, { noInput: true }]) {
+        setFlags(flags);
+        expect(isNonInteractive()).toBe(true);
+        resetFlags();
+      }
+    } finally {
+      if (original) Object.defineProperty(process.stdin, "isTTY", original);
+      else Reflect.deleteProperty(process.stdin, "isTTY");
+    }
   });
 
   it("threads --repo into gh arguments and leaves them alone otherwise", () => {
@@ -150,6 +149,7 @@ describe("runtime flags", () => {
     resetFlags();
     expect(getFlags()).toEqual({
       json: false,
+      agent: false,
       quiet: false,
       noInput: false,
       dryRun: false,

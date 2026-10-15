@@ -12,6 +12,12 @@ export class OllamaProvider extends CliAIProvider {
   readonly displayName = "Ollama (local)";
   readonly defaultModel = "qwen2.5-coder";
   readonly fallbackModels: readonly string[] = [];
+  protected readonly cliCommand = "ollama";
+  protected readonly diagnosticsVersionArgs = ["--version"] as const;
+  protected readonly diagnosticsHelpArgs = ["--help"] as const;
+  protected readonly diagnosticsCapabilities = [
+    { name: "local model inspection", pattern: /\bshow\b/ },
+  ] as const;
 
   async isAvailable(): Promise<boolean> {
     try {

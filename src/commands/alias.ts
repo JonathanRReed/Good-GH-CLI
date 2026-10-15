@@ -155,6 +155,10 @@ Examples:
   }
 
   async function setAlias(name: string, commandParts?: string[]): Promise<void> {
+    if (["git", "gh", "--"].includes(name)) {
+      fail(`Alias name "${name}" is reserved for an explicit native command.`);
+      return;
+    }
     if (!commandParts || commandParts.length === 0) {
       fail("Provide a command to alias. Example: `ggh alias ci commit --pr --yes`.");
       return;

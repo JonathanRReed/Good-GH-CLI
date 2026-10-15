@@ -1,8 +1,10 @@
 import { Command } from "commander";
 import { getFlags } from "../services/runtime.ts";
 import {
-  commentOnIssue,
+  commentOnIssueWithAttachments,
   createIssue,
+  describeAttachmentPlan,
+  editIssue,
   getCurrentRepositoryNameWithOwner,
   getIssueUrl,
   gh,
@@ -10,6 +12,8 @@ import {
   requireAuth,
   setIssueState,
   viewIssue,
+  readAttachmentBodyFile,
+  prepareAttachmentPlan,
 } from "../services/github.ts";
 import { requireGitRepo, switchBranch } from "../services/git.ts";
 import { getStagedDiff, getStagedDiffStat, getStatus } from "../services/git.ts";
@@ -24,6 +28,7 @@ import type { AIProvider as ConfigAIProvider } from "../services/config.ts";
 import { invalidateCache } from "../services/cache.ts";
 import { dryRun, isDryRun } from "../utils/flags.ts";
 import { sanitizeDiffForAI, sanitizeForAI } from "../utils/diff.ts";
+import { parsePositiveSafeInteger } from "../utils/numeric-target.ts";
 import {
   confirmOrAbort, jsonOut,
   emitJson,
@@ -59,18 +64,24 @@ export function registerIssueCommand(program: Command): void {
       state?: string; assignee?: string; author?: string; label?: string;
       search?: string; mine?: boolean; limit?: string;
     }) => {
-      header("GitHub Issues");
-      if (!(await requireAuth())) return;
-
-      if (issueNumber) {
-        const num = Number.parseInt(issueNumber, 10);
-        if (Number.isNaN(num)) {
+      let num: number | undefined;
+      if (issueNumber !== undefined) {
+        const parsed = parsePositiveSafeInteger(issueNumber);
+        if (parsed === null) {
           fail(`Invalid issue number: ${issueNumber}`);
           return;
         }
+        num = parsed;
+      }
+
+      header("GitHub Issues");
+
+      if (num !== undefined) {
+        if (!(await requireAuth())) return;
         await showIssue(num);
         return;
       }
+      if (!(await requireAuth())) return;
 
       // Read-only: --dry-run does not block listing.
       const s = p.spinner();
@@ -156,6 +167,8 @@ export function registerIssueCommand(program: Command): void {
     .description("Open a new issue")
     .option("-t, --title <title>", "Issue title")
     .option("-b, --body <body>", "Issue body")
+    .option("--body-file <path>", "Read issue body from a file")
+    .option("--attach <path>", "Attach images up to 10 MiB or videos up to 100 MiB; GitHub may impose lower limits (repeatable)", (path: string, previous: string[]) => [...previous, path], [])
     .option("-l, --label <label...>", "Labels to apply")
     .option("-a, --assignee <user>", "Assign to a user")
     .option("--ai", "Generate the issue body with AI from the title (and optional --notes)")
@@ -165,8 +178,10 @@ export function registerIssueCommand(program: Command): void {
     .action(async (options: {
       title?: string;
       body?: string;
+      bodyFile?: string;
       label?: string[];
       assignee?: string;
+      attach?: string[];
       ai?: boolean;
       fromDiff?: boolean;
       notes?: string;
@@ -175,10 +190,28 @@ export function registerIssueCommand(program: Command): void {
       header("Create Issue");
       if (!(await requireAuth())) return;
 
+      if (options.body !== undefined && options.bodyFile) {
+        fail("Pass either --body or --body-file, not both.");
+        return;
+      }
+      try {
+        if (options.bodyFile) options.body = readAttachmentBodyFile(options.bodyFile);
+      } catch (err) {
+        fail(err instanceof Error ? err.message : String(err));
+        return;
+      }
+      let attachmentPlan: Awaited<ReturnType<typeof prepareAttachmentPlan>>;
+      try {
+        attachmentPlan = await prepareAttachmentPlan({ attachments: options.attach, operation: "issue-create", recipient: "issue:create", visibility: "unknown" });
+      } catch (err) {
+        fail(err instanceof Error ? err.message : String(err));
+        return;
+      }
+
       let title = options.title;
 
       // --from-diff: generate both title and body from the current diff.
-      if (options.fromDiff) {
+      if (options.fromDiff && !getFlags().aiDisabled) {
         if (!(await requireGitRepo())) return;
         const diffStatus = await getStatus();
         const hasChanges = diffStatus.staged.length > 0 || diffStatus.unstaged.length > 0;
@@ -187,7 +220,7 @@ export function registerIssueCommand(program: Command): void {
           return;
         }
 
-        if (dryRun("generate and open an issue from diff with AI")) return;
+        if (dryRun(`generate and open an issue from diff with AI${describeAttachmentPlan(attachmentPlan)}`)) return;
 
         const [rawDiff, diffStat] = await Promise.all([getStagedDiff(), getStagedDiffStat()]);
         const { diff: sanitizedDiff, redactedCount } = sanitizeDiffForAI(rawDiff);
@@ -221,7 +254,7 @@ export function registerIssueCommand(program: Command): void {
 
           if (getFlags().json) {
             // In JSON mode, skip the interactive flow and open directly.
-            const url = await createIssue({ title, body: aiResult.body, labels: options.label, assignee: options.assignee });
+            const url = await createIssue({ title, body: aiResult.body, labels: options.label, assignee: options.assignee, attachments: options.attach });
             emitJson({ number: 0, action: "create", url, title, body: aiResult.body });
             return;
           }
@@ -252,11 +285,11 @@ export function registerIssueCommand(program: Command): void {
               return;
             }
             // Skip the rest of the AI flow and go straight to opening.
-            if (dryRun(`open an issue titled "${title}"`)) return;
+            if (dryRun(`open an issue titled "${title}"${describeAttachmentPlan(attachmentPlan)}`)) return;
             const openSpinner = p.spinner();
             openSpinner.start("Opening issue...");
             try {
-              const url = await createIssue({ title, body: editedBody, labels: options.label, assignee: options.assignee });
+              const url = await createIssue({ title, body: editedBody, labels: options.label, assignee: options.assignee, attachments: options.attach });
               openSpinner.stop(pc.green("Issue opened."));
               p.log.success(pc.bold(pc.cyan(url)));
               p.outro("Done.");
@@ -268,11 +301,11 @@ export function registerIssueCommand(program: Command): void {
           }
 
           // "use" — open with the AI-generated title and body.
-          if (dryRun(`open an issue titled "${title}"`)) return;
+          if (dryRun(`open an issue titled "${title}"${describeAttachmentPlan(attachmentPlan)}`)) return;
           const openSpinner = p.spinner();
           openSpinner.start("Opening issue...");
           try {
-            const url = await createIssue({ title, body: aiResult.body, labels: options.label, assignee: options.assignee });
+            const url = await createIssue({ title, body: aiResult.body, labels: options.label, assignee: options.assignee, attachments: options.attach });
             openSpinner.stop(pc.green("Issue opened."));
             p.log.success(pc.bold(pc.cyan(url)));
             p.outro("Done.");
@@ -304,7 +337,7 @@ export function registerIssueCommand(program: Command): void {
       }
 
       let body = options.body;
-      if (body === undefined && !options.ai) {
+      if (body === undefined && (!options.ai || getFlags().aiDisabled)) {
         if (isDryRun()) {
           body = "";
         } else {
@@ -317,8 +350,8 @@ export function registerIssueCommand(program: Command): void {
         }
       }
 
-      if (options.ai && body === undefined) {
-        if (dryRun(`generate and open an issue titled "${title}" with AI`)) return;
+      if (options.ai && !getFlags().aiDisabled && body === undefined) {
+        if (dryRun(`generate and open an issue titled "${title}" with AI${describeAttachmentPlan(attachmentPlan)}`)) return;
         let notes = options.notes;
         if (notes === undefined) {
           const typed = await promptInput({
@@ -468,12 +501,12 @@ export function registerIssueCommand(program: Command): void {
         }
       }
 
-      if (dryRun(`open an issue titled "${title}"`)) return;
+      if (dryRun(`open an issue titled "${title}"${describeAttachmentPlan(attachmentPlan)}`)) return;
 
       const s = p.spinner();
       s.start("Opening issue...");
       try {
-        const url = await createIssue({ title, body, labels: options.label, assignee: options.assignee });
+        const url = await createIssue({ title, body, labels: options.label, assignee: options.assignee, attachments: options.attach });
         s.stop(pc.green("Issue opened."));
         if (jsonOut({ number: 0, action: "create", url, title, body })) return;
         p.log.success(pc.bold(pc.cyan(url)));
@@ -489,14 +522,14 @@ export function registerIssueCommand(program: Command): void {
       .description(`${action === "close" ? "Close" : "Reopen"} an issue`)
       .option("-y, --yes", "Skip the confirmation prompt")
       .action(async (issueNumber: string, options?: { yes?: boolean }) => {
-        header(`${action === "close" ? "Close" : "Reopen"} Issue`);
-        if (!(await requireAuth())) return;
-
-        const num = Number.parseInt(issueNumber, 10);
-        if (Number.isNaN(num)) {
+        const num = parsePositiveSafeInteger(issueNumber);
+        if (num === null) {
           fail(`Invalid issue number: ${issueNumber}`);
           return;
         }
+
+        header(`${action === "close" ? "Close" : "Reopen"} Issue`);
+        if (!(await requireAuth())) return;
 
         if (dryRun(`${action} issue #${num}`)) return;
 
@@ -523,17 +556,36 @@ export function registerIssueCommand(program: Command): void {
   issue.command("comment <issueNumber>")
     .description("Add a comment to an issue")
     .option("-b, --body <body>", "Comment body")
-    .action(async (issueNumber: string, options?: { body?: string }) => {
-      header("Comment on Issue");
-      if (!(await requireAuth())) return;
-
-      const num = Number.parseInt(issueNumber, 10);
-      if (Number.isNaN(num)) {
+    .option("--body-file <path>", "Read comment body from a file")
+    .option("--attach <path>", "Attach images up to 10 MiB or videos up to 100 MiB; GitHub may impose lower limits (repeatable)", (path: string, previous: string[]) => [...previous, path], [])
+    .action(async (issueNumber: string, options?: { body?: string; bodyFile?: string; attach?: string[] }) => {
+      const num = parsePositiveSafeInteger(issueNumber);
+      if (num === null) {
         fail(`Invalid issue number: ${issueNumber}`);
         return;
       }
 
+      header("Comment on Issue");
+      if (!(await requireAuth())) return;
+
+      if (options?.body !== undefined && options.bodyFile) {
+        fail("Pass either --body or --body-file, not both.");
+        return;
+      }
       let body = options?.body;
+      try {
+        if (options?.bodyFile) body = readAttachmentBodyFile(options.bodyFile);
+      } catch (err) {
+        fail(err instanceof Error ? err.message : String(err));
+        return;
+      }
+      let attachmentPlan: Awaited<ReturnType<typeof prepareAttachmentPlan>>;
+      try {
+        attachmentPlan = await prepareAttachmentPlan({ attachments: options?.attach, operation: "issue-comment", recipient: `issue:${num}`, visibility: "unknown" });
+      } catch (err) {
+        fail(err instanceof Error ? err.message : String(err));
+        return;
+      }
       if (!body) {
         if (isDryRun()) {
           body = "";
@@ -550,10 +602,10 @@ export function registerIssueCommand(program: Command): void {
         }
       }
 
-    if (dryRun(`comment on issue #${num}`)) return;
+    if (dryRun(`comment on issue #${num}${describeAttachmentPlan(attachmentPlan)}`)) return;
 
       try {
-        const url = await commentOnIssue(num, body);
+        const url = await commentOnIssueWithAttachments(num, body, { attachments: options?.attach });
         p.log.success(pc.green("Comment posted."));
         if (jsonOut({ number: num, action: "comment", url })) return;
         if (url) p.log.message(pc.dim(url));
@@ -567,15 +619,15 @@ export function registerIssueCommand(program: Command): void {
     .description("Create and switch to a branch for an issue, named from its title")
     .option("--base <branch>", "Base branch to branch from")
     .action(async (issueNumber: string, options?: { base?: string }) => {
-      header("Start Work on Issue");
-      const [isRepo, authed] = await Promise.all([requireGitRepo(), requireAuth()]);
-      if (!isRepo || !authed) return;
-
-      const num = Number.parseInt(issueNumber, 10);
-      if (Number.isNaN(num)) {
+      const num = parsePositiveSafeInteger(issueNumber);
+      if (num === null) {
         fail(`Invalid issue number: ${issueNumber}`);
         return;
       }
+
+      header("Start Work on Issue");
+      const [isRepo, authed] = await Promise.all([requireGitRepo(), requireAuth()]);
+      if (!isRepo || !authed) return;
 
       let detail;
       try {
@@ -597,14 +649,16 @@ export function registerIssueCommand(program: Command): void {
       }
 
       let branch = `${num}-${detail.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40)}`;
-      const s = p.spinner();
-      s.start("Naming the branch...");
-      try {
-        const { result } = await generateBranchNameWithFallback(sanitized.text);
-        s.stop("Branch name suggested.");
-        branch = result;
-      } catch {
-        s.stop(pc.dim(`Using a slug from the issue title.`));
+      if (!getFlags().aiDisabled) {
+        const s = p.spinner();
+        s.start("Naming the branch...");
+        try {
+          const { result } = await generateBranchNameWithFallback(sanitized.text);
+          s.stop("Branch name suggested.");
+          branch = result;
+        } catch {
+          s.stop(pc.dim(`Using a slug from the issue title.`));
+        }
       }
 
       const chosen = await selectMenu<string>({
@@ -625,6 +679,7 @@ export function registerIssueCommand(program: Command): void {
       try {
         await switchBranch(chosen, true, process.cwd(), options?.base);
         p.log.success(pc.green(`Switched to ${pc.bold(pc.cyan(chosen))}.`));
+        if (jsonOut({ action: "develop", number: num, branch: chosen, ...(options?.base ? { base: options.base } : {}) })) return;
         p.log.info(pc.dim(`Commit with \`ggh c -i ${num}\` to link the work back to the issue.`));
         p.outro("Done.");
       } catch (err) {
@@ -665,13 +720,14 @@ export function registerIssueCommand(program: Command): void {
     .description("Transfer an issue to another repository")
     .option("-y, --yes", "Skip the confirmation prompt")
     .action(async (issueNumber: string, destinationRepo: string, options?: { yes?: boolean }) => {
-      header("Transfer Issue");
-      if (!(await requireAuth())) return;
-      const num = Number.parseInt(issueNumber, 10);
-      if (Number.isNaN(num)) {
+      const num = parsePositiveSafeInteger(issueNumber);
+      if (num === null) {
         fail(`Invalid issue number: ${issueNumber}`);
         return;
       }
+
+      header("Transfer Issue");
+      if (!(await requireAuth())) return;
 
       if (dryRun(`transfer issue #${num} to ${destinationRepo}`)) return;
 
@@ -683,6 +739,7 @@ export function registerIssueCommand(program: Command): void {
         await gh(["issue", "transfer", String(num), destinationRepo]);
         invalidateCache("issue-list:");
         s.stop(pc.green("Issue transferred."));
+        if (jsonOut({ action: "transfer", number: num, destinationRepo })) return;
       } catch (err) {
         s.stop(pc.red("Transfer failed."));
         failFromGitHub(err);
@@ -693,43 +750,52 @@ export function registerIssueCommand(program: Command): void {
     .description("Edit an issue title, body, or labels")
     .option("-t, --title <title>", "New title")
     .option("-b, --body <body>", "New body")
+    .option("--body-file <path>", "Read new body from a file")
+    .option("--attach <path>", "Attach images up to 10 MiB or videos up to 100 MiB; GitHub may impose lower limits (repeatable)", (path: string, previous: string[]) => [...previous, path], [])
     .option("--add-label <label...>", "Add labels")
     .option("--remove-label <label...>", "Remove labels")
     .option("-a, --assignee <user>", "Set assignee")
     .action(async (issueNumber: string, options?: {
-      title?: string; body?: string; addLabel?: string[]; removeLabel?: string[]; assignee?: string;
+      title?: string; body?: string; bodyFile?: string; addLabel?: string[]; removeLabel?: string[]; assignee?: string; attach?: string[];
     }) => {
-      header("Edit Issue");
-      if (!(await requireAuth())) return;
-
-      const num = Number.parseInt(issueNumber, 10);
-      if (Number.isNaN(num)) {
+      const num = parsePositiveSafeInteger(issueNumber);
+      if (num === null) {
         fail(`Invalid issue number: ${issueNumber}`);
         return;
       }
 
-      if (!options?.title && !options?.body && !options?.addLabel?.length && !options?.removeLabel?.length && !options?.assignee) {
+      header("Edit Issue");
+      if (!(await requireAuth())) return;
+
+      if (options?.body !== undefined && options.bodyFile) {
+        fail("Pass either --body or --body-file, not both.");
+        return;
+      }
+      const fields = { ...options };
+      try {
+        if (options?.bodyFile) fields.body = readAttachmentBodyFile(options.bodyFile);
+      } catch (err) {
+        fail(err instanceof Error ? err.message : String(err));
+        return;
+      }
+      let attachmentPlan: Awaited<ReturnType<typeof prepareAttachmentPlan>>;
+      try {
+        attachmentPlan = await prepareAttachmentPlan({ attachments: options?.attach, operation: "issue-edit", recipient: `issue:${num}`, visibility: "unknown" });
+      } catch (err) {
+        fail(err instanceof Error ? err.message : String(err));
+        return;
+      }
+      if (!options?.title && !fields.body && !options?.addLabel?.length && !options?.removeLabel?.length && !options?.assignee && !options?.attach?.length) {
         fail("Nothing to change. Pass --title, --body, --add-label, --remove-label, or --assignee.");
         return;
       }
 
-      if (dryRun(`edit issue #${num}`)) return;
-
-      const args = ["issue", "edit", String(num)];
-      let input: string | undefined;
-      if (options?.title) args.push("--title", options.title);
-      if (options?.body !== undefined) {
-        args.push("--body-file", "-");
-        input = options.body;
-      }
-      for (const label of options?.addLabel ?? []) args.push("--add-label", label);
-      for (const label of options?.removeLabel ?? []) args.push("--remove-label", label);
-      if (options?.assignee) args.push("--assignee", options.assignee);
+      if (dryRun(`edit issue #${num}${describeAttachmentPlan(attachmentPlan)}`)) return;
 
       const s = p.spinner();
       s.start(`Editing issue #${num}...`);
       try {
-        await gh(args, { input });
+        await editIssue(num, { ...fields, attachments: options?.attach });
         invalidateCache("issue-list:");
         s.stop(pc.green("Issue updated."));
         if (getFlags().json) {
@@ -749,14 +815,14 @@ export function registerIssueCommand(program: Command): void {
     issueNumber: string,
     options?: { reason?: string; yes?: boolean },
   ): Promise<void> {
-    header(`${action.charAt(0).toUpperCase()}${action.slice(1)} Issue`);
-    if (!(await requireAuth())) return;
-
-    const num = Number.parseInt(issueNumber, 10);
-    if (Number.isNaN(num)) {
+    const num = parsePositiveSafeInteger(issueNumber);
+    if (num === null) {
       fail(`Invalid issue number: ${issueNumber}`);
       return;
     }
+
+    header(`${action.charAt(0).toUpperCase()}${action.slice(1)} Issue`);
+    if (!(await requireAuth())) return;
 
     if (dryRun(`${action} issue #${num}`)) return;
 
@@ -771,6 +837,7 @@ export function registerIssueCommand(program: Command): void {
       await gh(args);
       invalidateCache("issue-list:");
       s.stop(pc.green(`Issue #${num} ${action}d.`));
+      if (jsonOut({ action, number: num, ...(action === "lock" && options?.reason ? { reason: options.reason } : {}) })) return;
     } catch (err) {
       s.stop(pc.red("Failed."));
       failFromGitHub(err);

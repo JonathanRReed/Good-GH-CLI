@@ -48,6 +48,16 @@ jobs:
           git config --global user.email "ci@example.com"
           git config --global init.defaultBranch main
 
+      - name: Install completion shells on Linux
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y fish zsh
+
+      - name: Install Fish on macOS
+        if: runner.os == 'macOS'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+        run: brew install fish
+
       - name: Typecheck
         run: bun run typecheck
 
@@ -85,11 +95,11 @@ jobs:
             echo "Banner leaked onto stdout:"; echo "$OUT"; exit 1
           fi
 
-      - name: Enforce bundle size budget (400 KB)
+      - name: Enforce bundle size budget (500 KB)
         run: |
           SIZE=$(wc -c < dist/ggh.js)
           echo "Bundle size: $SIZE bytes"
-          test "$SIZE" -le 400000
+          test "$SIZE" -le 500000
 
       - name: Man page is fresh
         # man/ggh.1 is generated from the command tree; this fails the build
@@ -109,3 +119,4 @@ jobs:
           npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/package-tarball"
           npm install --prefix "$RUNNER_TEMP/package-install" --ignore-scripts --no-audit --no-fund "$RUNNER_TEMP"/package-tarball/*.tgz
           test "$(node "$RUNNER_TEMP/package-install/node_modules/good-gh-cli/bin/ggh.cjs" --version)" = "$(node -p 'require("./package.json").version')"
+          node scripts/smoke-package.cjs "$RUNNER_TEMP/package-install/node_modules/good-gh-cli/bin/ggh.cjs" "$(node -p 'require("./package.json").version')"

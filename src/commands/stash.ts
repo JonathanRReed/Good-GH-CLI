@@ -43,6 +43,7 @@ export function registerStashCommand(program: Command): void {
         try {
           await stashPush(options?.message);
           s.stop(pc.green("Changes stashed successfully!"));
+          if (jsonOut({ action: "push", files: files.length, ...(options?.message ? { message: options.message } : {}) })) return;
         } catch (err) {
           s.stop(pc.red("Stash failed."));
           fail(String(err));
@@ -58,6 +59,7 @@ export function registerStashCommand(program: Command): void {
         try {
           await stashPop();
           s.stop(pc.green("Stash applied and popped!"));
+          if (jsonOut({ action: "pop", ref: "latest" })) return;
         } catch (err) {
           s.stop(pc.red("Failed to pop stash."));
           fail(String(err));
@@ -251,6 +253,7 @@ export function registerStashCommand(program: Command): void {
       try {
         await stashPop(ref);
         p.log.success(pc.green(ref ? `Stash ${ref} popped.` : "Latest stash popped."));
+        if (jsonOut({ action: "pop", ref: ref ?? "latest" })) return;
       } catch (err) {
         fail(`Failed to pop stash: ${String(err)}`);
       }
@@ -266,6 +269,7 @@ export function registerStashCommand(program: Command): void {
       try {
         await stashDrop(ref);
         p.log.success(pc.green(`Dropped ${ref}.`));
+        if (jsonOut({ action: "drop", ref })) return;
       } catch (err) {
         fail(`Failed to drop stash: ${String(err)}`);
       }
@@ -287,6 +291,7 @@ export function registerStashCommand(program: Command): void {
       try {
         await stashPush(options?.message);
         s.stop(pc.green("Changes stashed successfully!"));
+        if (jsonOut({ action: "push", files: files.length, ...(options?.message ? { message: options.message } : {}) })) return;
       } catch (err) {
         s.stop(pc.red("Stash failed."));
         fail(String(err));

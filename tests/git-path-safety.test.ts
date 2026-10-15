@@ -245,7 +245,7 @@ describe("repository-root and literal path boundaries", () => {
       code: 0,
       stderr: "",
     });
-    expect(JSON.parse(stdout)).toEqual({ discarded: ["new.txt"], count: 1 });
+    expect(JSON.parse(stdout)).toMatchObject({ discarded: ["new.txt"], count: 1, operationId: expect.any(String) });
     expect(git("status", "--porcelain")).toBe("");
   });
 });

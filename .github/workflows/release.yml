@@ -58,9 +58,11 @@ jobs:
           test "$TAG" = "v$VERSION"
           SHA=$(git rev-parse HEAD)
           if [ "$GITHUB_EVENT_NAME" != pull_request ]; then test "$SHA" = "$(git rev-parse "refs/tags/$TAG^{commit}")"; fi
-          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          {
+            echo "sha=$SHA"
+            echo "version=$VERSION"
+            echo "tag=$TAG"
+          } >> "$GITHUB_OUTPUT"
           printf 'Release %s from commit %s\n' "$TAG" "$SHA" >> "$GITHUB_STEP_SUMMARY"
       - run: bun install --frozen-lockfile
       - name: Configure test identity
@@ -83,9 +85,11 @@ jobs:
           test -f "$PACKAGE"
           npm install --prefix "$RUNNER_TEMP/package-smoke" --ignore-scripts --no-audit --no-fund "$PACKAGE"
           test "$(node "$RUNNER_TEMP/package-smoke/node_modules/good-gh-cli/bin/ggh.cjs" --version)" = "${{ steps.identity.outputs.version }}"
+          node scripts/smoke-package.cjs "$RUNNER_TEMP/package-smoke/node_modules/good-gh-cli/bin/ggh.cjs" "${{ steps.identity.outputs.version }}"
           bun run bin/ggh.ts completion bash > dist-extra/ggh.bash
           bun run bin/ggh.ts completion zsh > dist-extra/_ggh
           bun run bin/ggh.ts completion fish > dist-extra/ggh.fish
+          bun run bin/ggh.ts completion powershell > dist-extra/ggh.ps1
           cp man/ggh.1 dist-extra/
           cd dist-extra
           for file in *; do sha256sum "$file" > "$file.sha256"; done
@@ -175,8 +179,35 @@ jobs:
         with:
           name: release-${{ matrix.asset }}
           path: native
-      - name: Checksum and real Git operations without rebuilding
-        run: node scripts/smoke-artifact.cjs native/${{ matrix.asset }} ${{ needs.verify.outputs.version }}
+      - name: Download the previous published artifact for upgrade and rollback
+        if: runner.os != 'macOS'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download v0.4.0-beta.2 --repo JonathanRReed/Good-GH-CLI --pattern '${{ matrix.asset }}' --pattern '${{ matrix.asset }}.sha256' --dir previous
+      - name: Extract the previous signed macOS release for rollback
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release download v0.4.0-beta.2 --repo JonathanRReed/Good-GH-CLI --pattern 'Good-GH-CLI-0.4.0-beta.2-universal.dmg*' --dir previous
+          (cd previous; shasum -a 256 -c Good-GH-CLI-0.4.0-beta.2-universal.dmg.sha256)
+          MOUNT="$RUNNER_TEMP/ggh-previous-mount"
+          hdiutil attach -readonly -nobrowse -mountpoint "$MOUNT" previous/Good-GH-CLI-0.4.0-beta.2-universal.dmg
+          trap 'hdiutil detach "$MOUNT"' EXIT
+          codesign --verify --strict "$MOUNT/bin/ggh"
+          cp "$MOUNT/bin/ggh" previous/${{ matrix.asset }}
+          (cd previous; shasum -a 256 '${{ matrix.asset }}' > '${{ matrix.asset }}.sha256')
+      - name: Verify checksum, clean install, PATH, upgrade, rollback and uninstall
+        run: node scripts/smoke-artifact.cjs native/${{ matrix.asset }} ${{ needs.verify.outputs.version }} previous/${{ matrix.asset }} native-smoke.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: install-results-${{ matrix.asset }}
+          path: native-smoke.json
+          retention-days: 7
       - name: Native regression suite
         if: runner.os != 'Windows'
         run: python3 scripts/audit-regressions.py --binary "$PWD/native/${{ matrix.asset }}" --results regressions.json
@@ -257,7 +288,7 @@ jobs:
           for asset in ggh-linux-x64 ggh-linux-arm64 ggh-darwin-x64 ggh-darwin-arm64 ggh-windows-x64.exe "good-gh-cli-$VERSION.tgz"; do test -s "artifacts/$asset"; done
           node scripts/release-notes.cjs CHANGELOG.md "$VERSION" > RELEASE_NOTES.md
           {
-            printf '\nSource commit: `%s`\n\n' "$SOURCE_SHA"
+            printf '\nSource commit: %s\n\n' "$SOURCE_SHA"
             echo 'Download the native executable for your operating system and verify its accompanying SHA-256 checksum.'
             echo 'The macOS executables are not Developer-ID signed or notarized by this workflow. Signed DMGs are a separate packaging step.'
             echo ''

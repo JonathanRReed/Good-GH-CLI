@@ -1,7 +1,17 @@
 import { describe, expect, it } from "bun:test";
 import { run } from "../src/utils/exec.ts";
+import { resetFlags, setFlags } from "../src/services/runtime.ts";
 
 describe("subprocess contracts", () => {
+  it("captures inherited subprocess output in app JSON mode", async () => {
+    resetFlags();
+    setFlags({ json: true });
+    try {
+      const result = await run(process.execPath, ["-e", "console.log('progress');console.error('diagnostic')"], { stdio: "inherit" });
+      expect(result.stdout).toBe("progress\n");
+      expect(result.stderr).toBe("diagnostic\n");
+    } finally { resetFlags(); }
+  });
   it("inherits PATH when callers override individual environment keys", async () => {
     const result = await run(process.execPath, ["-e", "console.log(JSON.stringify([process.env.PATH, process.env.GGH_EXEC_TEST]))"], { env: { GGH_EXEC_TEST: "override" } });
     expect(JSON.parse(result.stdout)).toEqual([process.env.PATH, "override"]);

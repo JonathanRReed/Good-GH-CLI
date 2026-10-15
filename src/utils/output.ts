@@ -1,5 +1,7 @@
+import { agentEnvelope } from "../services/agent-contract.ts";
+import { getCommandPath, getEmittedJson, getFinishedOperation } from "../services/runtime.ts";
 import pc from "picocolors";
-import { getFlags } from "../services/runtime.ts";
+import { getFlags, getCommandIssue, getPreview, hasJsonOutput, recordCommandIssue, stageJson, takePendingJson } from "../services/runtime.ts";
 
 /**
  * All human-facing chrome goes to stderr so that stdout carries only data:
@@ -13,12 +15,34 @@ function writeErr(line: string): void {
 
 /** The one channel that writes to stdout. Everything else is chrome. */
 export function data(line: string): void {
+  if (getFlags().agent) { emitJson(line); return; }
   process.stdout.write(`${line}\n`);
 }
 
 /** Emits a value as JSON on stdout and nothing else. */
 export function emitJson(value: unknown): void {
+  if (stageJson(value)) return;
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
+}
+
+export function finalizeJsonOutput(): void {
+  if (!getFlags().json) return;
+  const issue = getCommandIssue();
+  if (getFlags().agent) {
+    const result = getEmittedJson()?.value;
+    takePendingJson();
+    process.stdout.write(`${JSON.stringify(agentEnvelope({ command: getCommandPath(), result, issue: issue ? { ...issue, message: stripAnsi(issue.message) } : undefined, operation: getFinishedOperation(), failed: Boolean(process.exitCode), dryRun: getFlags().dryRun, preview: getPreview() }), null, 2)}\n`);
+    return;
+  }
+  if (!hasJsonOutput() && issue) {
+    emitJson({ status: issue.status, error: { message: stripAnsi(issue.message) } });
+  } else if (!hasJsonOutput() && process.exitCode && process.exitCode !== 0) {
+    emitJson({ status: "failed", error: { message: "Command did not complete." } });
+  } else if (!hasJsonOutput() && getFlags().dryRun) {
+    emitJson({ status: "planned", steps: getPreview() });
+  }
+  const pending = takePendingJson();
+  if (pending) process.stdout.write(`${JSON.stringify(pending.value, null, 2)}\n`);
 }
 
 function chromeSuppressed(): boolean {
@@ -72,6 +96,7 @@ export function outro(text = ""): void {
 }
 
 export function cancel(text = ""): void {
+  if (!getCommandIssue()) recordCommandIssue({ status: "cancelled", message: text || "Cancelled." });
   if (chromeSuppressed()) return;
   writeErr(`${pc.red("✖")}  ${text}`);
   writeErr("");

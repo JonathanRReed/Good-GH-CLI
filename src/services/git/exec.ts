@@ -3,6 +3,7 @@
  */
 
 import { run } from "../../utils/exec.ts";
+import { isNonInteractive } from "../runtime.ts";
 
 export const NON_INTERACTIVE_ENV = Object.freeze({
   GCM_INTERACTIVE: "never",
@@ -40,7 +41,7 @@ export async function execGitWithRetry(
   const maxRetries = options.maxRetries ?? 3;
   let delay = options.delayMs ?? 250;
   // Default to non-interactive when stdin is not a TTY so git never blocks on credential prompts
-  const nonInteractive = options.nonInteractive ?? !process.stdin.isTTY;
+  const nonInteractive = options.nonInteractive ?? isNonInteractive();
   const env = nonInteractive
     ? { ...process.env, ...options.env, ...NON_INTERACTIVE_ENV }
     : options.env

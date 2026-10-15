@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { isAIExplicitlyDisabled, setFlags } from "../services/runtime.ts";
 import {
   checkoutPullRequest,
   commentOnPullRequest,
@@ -18,6 +19,7 @@ import { registerPrReviewCommand } from "./pr-review.ts";
 import { type AIAttempt, type AIAttemptFailure, generatePrWithFallback } from "../services/ai/index.ts";
 import { dryRun } from "../utils/flags.ts";
 import { sanitizeDiffForAI } from "../utils/diff.ts";
+import { parsePositiveSafeInteger } from "../utils/numeric-target.ts";
 import {
   confirmOrAbort, jsonOut,
   fail,
@@ -53,22 +55,27 @@ export function registerPrCommand(program: Command): void {
       author?: string; label?: string; state?: string; search?: string; mine?: boolean; limit?: string;
       yes?: boolean;
     }) => {
+      let num: number | undefined;
+      if (prNumber !== undefined) {
+        const parsed = parsePositiveSafeInteger(prNumber);
+        if (parsed === null) {
+          fail(`Invalid PR number: ${prNumber}`);
+          return;
+        }
+        num = parsed;
+      }
+
       header("GitHub Pull Requests");
 
       const [isRepo, authed] = await Promise.all([requireGitHubRepo(), requireAuth()]);
       if (!isRepo || !authed) return;
 
       if ((options?.checkout || options?.worktree) && !(await requireGitRepo())) return;
-      if (prNumber) {
-        const num = parseInt(prNumber, 10);
-        if (isNaN(num)) {
-          fail(`Invalid PR number: ${prNumber}`);
-          return;
-        }
-
+      if (num !== undefined) {
         if (options?.web) {
           try {
             await viewPullRequestInBrowser(num);
+            if (jsonOut({ action: "open", number: num })) return;
           } catch (err) {
             failFromGitHub(err);
           }
@@ -85,6 +92,7 @@ export function registerPrCommand(program: Command): void {
             await fetchPullRequestBranch(num, branchName);
             await worktreeAdd(branchName, worktreePath);
             s.stop(pc.green(`PR #${num} checked out to isolated worktree at ${pc.bold(pc.cyan(worktreePath))}!`));
+            if (jsonOut({ action: "worktree", number: num, branch: branchName, path: worktreePath })) return;
             p.log.info(`Run ${pc.bold(pc.cyan(`cd ${worktreePath}`))} to start working.`);
           } catch (err) {
             s.stop(pc.red(`Failed to checkout PR #${num} into worktree.`));
@@ -100,6 +108,7 @@ export function registerPrCommand(program: Command): void {
           try {
             await checkoutPullRequest(num);
             s.stop(pc.green(`Checked out PR #${num} successfully!`));
+            if (jsonOut({ action: "checkout", number: num })) return;
           } catch (err) {
             s.stop(pc.red(`Failed to checkout PR #${num}.`));
             failFromGitHub(err);
@@ -134,13 +143,14 @@ export function registerPrCommand(program: Command): void {
   pr.command("diff <prNumber>")
     .description("Show the diff for a pull request")
     .action(async (prNumber: string) => {
-      header("Pull Request Diff");
-      if (!(await requireGitHubRepo())) return;
-      const num = parseInt(prNumber, 10);
-      if (isNaN(num)) {
+      const num = parsePositiveSafeInteger(prNumber);
+      if (num === null) {
         fail(`Invalid PR number: ${prNumber}`);
         return;
       }
+
+      header("Pull Request Diff");
+      if (!(await requireGitHubRepo())) return;
       const s = p.spinner();
       s.start(`Fetching diff for PR #${num}...`);
       try {
@@ -161,19 +171,21 @@ export function registerPrCommand(program: Command): void {
   pr.command("checkout <prNumber>")
     .description("Check out a pull request locally")
     .action(async (prNumber: string) => {
-      header("Checkout Pull Request");
-      if (!(await requireGitRepo())) return;
-      const num = parseInt(prNumber, 10);
-      if (isNaN(num)) {
+      const num = parsePositiveSafeInteger(prNumber);
+      if (num === null) {
         fail(`Invalid PR number: ${prNumber}`);
         return;
       }
+
+      header("Checkout Pull Request");
+      if (!(await requireGitRepo())) return;
       if (dryRun(`checkout PR #${num}`)) return;
       const s = p.spinner();
       s.start(`Checking out PR #${num}...`);
       try {
         await checkoutPullRequest(num);
         s.stop(pc.green(`Checked out PR #${num} successfully!`));
+        if (jsonOut({ action: "checkout", number: num })) return;
       } catch (err) {
         s.stop(pc.red("Checkout failed."));
         failFromGitHub(err);
@@ -373,6 +385,11 @@ export function registerPrCommand(program: Command): void {
         failFromGitHub(err);
       }
     } else if (action === "review") {
+      if (isAIExplicitlyDisabled()) {
+        p.log.info(pc.dim("AI is disabled for this invocation."));
+        return;
+      }
+      setFlags({ aiDisabled: false });
       const reviewSpinner = p.spinner();
       reviewSpinner.start("Fetching diff and generating AI review...");
 

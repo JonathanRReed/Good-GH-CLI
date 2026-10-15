@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { getFlags } from "../services/runtime.ts";
 import { join, resolve } from "node:path";
 import {
   getCurrentBranch,
@@ -88,7 +89,7 @@ export function registerWorktreeCommand(program: Command): void {
       const looksLikeNaturalLanguage =
         branchName.includes(" ") || (!branchName.includes("/") && branchName.length > 15);
 
-      if (looksLikeNaturalLanguage && !isDryRun()) {
+      if (looksLikeNaturalLanguage && !isDryRun() && !getFlags().aiDisabled) {
         const s = p.spinner();
         s.start("Generating semantic branch name with AI...");
         try {
@@ -118,8 +119,8 @@ export function registerWorktreeCommand(program: Command): void {
           reportAIFailure(err, "Could not generate a branch name with AI:");
           branchName = `feat/${branchName.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30)}`;
         }
-      } else if (looksLikeNaturalLanguage && isDryRun()) {
-        // Best-effort slug for the dry-run preview, no AI call.
+      } else if (looksLikeNaturalLanguage) {
+        // Best-effort slug when AI is off or for a dry-run preview.
         branchName = `feat/${branchName.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30)}`;
       } else {
         const validationError = validateBranchName(branchName);
@@ -148,6 +149,7 @@ export function registerWorktreeCommand(program: Command): void {
       try {
         const result = await worktreeAdd(branchName, targetPath, baseBranch);
         s.stop(pc.green("Worktree created successfully!"));
+        if (jsonOut({ action: "add", branch: branchName, path: targetPath, base: baseBranch, copiedEnvFiles: result.copiedEnvFiles })) return;
         if (result.copiedEnvFiles.length > 0) {
           p.log.info(
             pc.dim(
@@ -179,6 +181,7 @@ export function registerWorktreeCommand(program: Command): void {
       const nonMainList = list.filter((w) => !w.isBare && resolve(w.path) !== resolve(repoRoot));
 
       if (nonMainList.length === 0) {
+        if (jsonOut({ status: "no_op", reason: "no_secondary_worktrees" })) return;
         p.log.warn("No removable secondary worktrees found.");
         return;
       }
@@ -222,6 +225,7 @@ export function registerWorktreeCommand(program: Command): void {
       try {
         await worktreeRemove(selectedPath, options?.force);
         s.stop(pc.green("Worktree removed and references pruned."));
+        if (jsonOut({ action: "remove", path: selectedPath, forced: options?.force === true })) return;
         p.outro("Done.");
       } catch (err: unknown) {
         s.stop(pc.yellow("Worktree removal blocked."));
@@ -235,6 +239,7 @@ export function registerWorktreeCommand(program: Command): void {
             try {
               await worktreeRemove(selectedPath, true);
               forceSpinner.stop(pc.green("Worktree force removed and metadata pruned!"));
+              if (jsonOut({ action: "remove", path: selectedPath, forced: true })) return;
               p.outro("Done.");
               return;
             } catch (forceErr) {

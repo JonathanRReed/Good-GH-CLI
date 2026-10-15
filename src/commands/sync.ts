@@ -30,6 +30,7 @@ export function registerSyncCommand(program: Command): void {
 
       const remotes = await getRemotes();
       if (remotes.length === 0) {
+        if (jsonOut({ status: "no_op", reason: "no_remotes" })) return;
         p.log.warn(pc.yellow("No git remotes configured for this repository."));
         p.log.info("Add a remote with `git remote add origin <url>` to sync with remote.");
         return;

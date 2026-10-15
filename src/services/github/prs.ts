@@ -2,9 +2,10 @@
  * Pull request operations. Depends on client only.
  */
 
-import { GitHubError, clampLimit, classifyGitHubError, getCurrentRepositoryNameWithOwner, gh, ghApi, parseRepoFlag, stdinTextRequest } from "./client.ts";
+import { GitHubError, clampLimit, classifyGitHubError, getCurrentRepositoryNameWithOwner, gh, ghApi, ghGlobal, parseRepoFlag, stdinTextRequest } from "./client.ts";
 import { invalidateCache } from "../cache.ts";
 import { cachedGitHub } from "./cache.ts";
+import { addAttachmentArgs, appendFallbackMarkdown, fallbackMutationFailure, PartialAttachmentOperationError, PartialGitHubMutationError, prepareAttachmentPlan, uploadFallbackAttachments, type AttachmentPlan, type AttachmentVisibility } from "./attachments.ts";
 
 export interface PullRequestItem {
   number: number;
@@ -233,12 +234,22 @@ export async function commentOnPullRequest(
   prNumber: number | undefined,
   body: string,
   cwd = process.cwd(),
+  options: { attachments?: string[]; visibility?: AttachmentVisibility } = {},
 ): Promise<string> {
-  const request = stdinTextRequest(["pr", "comment", ...(prNumber ? [String(prNumber)] : [])], "--body-file", body);
+  const plan = await prepareAttachmentPlan({
+    attachments: options.attachments, operation: "pr-comment", recipient: prNumber ? `pr:${prNumber}` : "pr:current",
+    visibility: options.visibility ?? "unknown", cwd,
+  });
+  const fallbackUploads = await uploadFallbackAttachments(plan);
+  const finalBody = appendFallbackMarkdown(body, fallbackUploads);
+  const request = stdinTextRequest(addAttachmentArgs(["pr", "comment", ...(prNumber ? [String(prNumber)] : [])], plan), "--body-file", finalBody);
   try {
     const { stdout } = await gh(request.args, { cwd, input: request.input });
     return stdout.trim();
   } catch (err) {
+    const partial = fallbackMutationFailure(plan, fallbackUploads, classifyGitHubError(err, "comment on pull request"));
+    if (partial) throw partial;
+    if (err instanceof PartialAttachmentOperationError) throw err;
     throw classifyGitHubError(err, "comment on pull request");
   } finally {
     invalidateCache("pr-list:");
@@ -248,21 +259,38 @@ export async function commentOnPullRequest(
 
 export async function editPullRequest(
   prNumber: number | undefined,
-  fields: { title?: string; body?: string; base?: string; addLabel?: string[] },
+  fields: { title?: string; body?: string; base?: string; addLabel?: string[]; attachments?: string[]; visibility?: AttachmentVisibility; repo?: string; host?: string },
   cwd = process.cwd(),
 ): Promise<void> {
-  const args = ["pr", "edit", ...(prNumber ? [String(prNumber)] : [])];
+  const plan = await prepareAttachmentPlan({
+    attachments: fields.attachments, operation: "pr-edit", recipient: prNumber ? `pr:${prNumber}` : "pr:current",
+    visibility: fields.visibility ?? "unknown", repo: fields.repo, host: fields.host, cwd,
+  });
+  const existingBody = plan.kind === "fallback" && fields.body === undefined
+    ? await readPullRequestBody(prNumber, fields.repo, fields.host, cwd)
+    : undefined;
+  const fallbackUploads = await uploadFallbackAttachments(plan);
+  const args = addAttachmentArgs(["pr", "edit", ...(prNumber ? [String(prNumber)] : [])], plan);
   let input: string | undefined;
   if (fields.title) args.push("--title", fields.title);
   if (fields.body !== undefined) {
     args.push("--body-file", "-");
-    input = fields.body;
+    input = appendFallbackMarkdown(fields.body, fallbackUploads);
+  } else if (fallbackUploads.length > 0) {
+    args.push("--body-file", "-");
+    input = appendFallbackMarkdown(existingBody ?? "", fallbackUploads);
   }
   if (fields.base) args.push("--base", fields.base);
   for (const label of fields.addLabel ?? []) args.push("--add-label", label);
+  const explicitRepo = fields.repo ? parseRepoFlag(fields.repo) : null;
+  if (explicitRepo) args.push("--repo", explicitRepo.repoArg);
   try {
-    await gh(args, { cwd, input });
+    if (explicitRepo) await ghGlobal(args, { cwd, input, env: { GH_REPO: explicitRepo.nameWithOwner, GH_HOST: fields.host ?? explicitRepo.host } });
+    else await gh(args, { cwd, input });
   } catch (err) {
+    const partial = fallbackMutationFailure(plan, fallbackUploads, classifyGitHubError(err, "edit pull request"));
+    if (partial) throw partial;
+    if (err instanceof PartialAttachmentOperationError) throw err;
     throw classifyGitHubError(err, "edit pull request");
   } finally {
     invalidateCache("pr-list:");
@@ -352,22 +380,90 @@ export async function createPullRequest(
     web?: boolean;
     base?: string;
     cwd?: string;
+    attachments?: string[];
+    repo?: string;
+    head?: string;
+    host?: string;
+    visibility?: AttachmentVisibility;
   },
 ): Promise<string> {
-  const request = stdinTextRequest(["pr", "create", "--title", options.title], "--body-file", options.body);
+  const cwd = options.cwd || process.cwd();
+  const plan = await prepareAttachmentPlan({
+    attachments: options.attachments, operation: "pr-create", recipient: "pr:create",
+    visibility: options.visibility ?? "unknown", repo: options.repo, host: options.host, cwd,
+  });
+  const fallbackUploads = await uploadFallbackAttachments(plan);
+  const request = stdinTextRequest(addAttachmentArgs(["pr", "create", "--title", options.title], plan), "--body-file", appendFallbackMarkdown(options.body, fallbackUploads));
   const args = request.args;
   if (options.base) args.push("--base", options.base);
+  if (options.head) args.push("--head", options.head);
+  const explicitRepo = options.repo ? parseRepoFlag(options.repo) : null;
+  if (explicitRepo) args.push("--repo", explicitRepo.repoArg);
   if (options.draft) args.push("--draft");
   if (options.web) args.push("--web");
 
   try {
-    const { stdout } = await gh(args, { cwd: options.cwd || process.cwd(), input: request.input });
+    const result = explicitRepo
+      ? await ghGlobal(args, { cwd, input: request.input, env: { GH_REPO: explicitRepo.nameWithOwner, GH_HOST: options.host ?? explicitRepo.host } })
+      : await gh(args, { cwd, input: request.input });
+    const { stdout } = result;
     return stdout.trim();
   } catch (err) {
+    const partial = fallbackMutationFailure(plan, fallbackUploads, classifyGitHubError(err, "create pull request"));
+    if (partial) throw partial;
+    if (err instanceof PartialAttachmentOperationError) throw err;
+    const resourceUrl = resourceUrlFromStdout(err, /\/pull\/\d+\/?$/);
+    if (resourceUrl && plan.kind !== "none") {
+      throw new PartialGitHubMutationError({ resourceUrl, operation: "Pull request creation", requestedCount: plan.files.length });
+    }
     throw classifyGitHubError(err, "create pull request");
   } finally {
     invalidateCache("pr-list:");
   }
+}
+
+export { PartialGitHubMutationError };
+export type { AttachmentPlan };
+
+function errorStdout(err: unknown): string {
+  if (!err || typeof err !== "object") return err instanceof Error ? err.message : String(err);
+  const value: unknown = Object.getOwnPropertyDescriptor(err, "stdout")?.value;
+  return typeof value === "string" ? value : "";
+}
+
+function resourceUrlFromStdout(err: unknown, resourcePath: RegExp): string | undefined {
+  for (const line of errorStdout(err).split(/\r?\n/)) {
+    const candidate = line.trim();
+    if (!candidate.startsWith("https://")) continue;
+    try {
+      const url = new URL(candidate);
+      if (!url.username && !url.password && resourcePath.test(url.pathname)) return url.toString();
+    } catch {
+      // Ignore non-URL output lines.
+    }
+  }
+  return undefined;
+}
+
+async function readPullRequestBody(
+  prNumber: number | undefined,
+  repoName: string | undefined,
+  host: string | undefined,
+  cwd: string,
+): Promise<string> {
+  const args = ["pr", "view", ...(prNumber ? [String(prNumber)] : []), "--json", "body"];
+  const repo = repoName ? parseRepoFlag(repoName) : null;
+  if (repo) args.push("--repo", repo.repoArg);
+  try {
+    const result = repo
+      ? await ghGlobal(args, { cwd, env: { GH_REPO: repo.nameWithOwner, GH_HOST: host ?? repo.host } })
+      : await gh(args, { cwd, ...(host ? { env: { GH_HOST: host } } : {}) });
+    const parsed: unknown = JSON.parse(result.stdout);
+    if (parsed && typeof parsed === "object" && "body" in parsed && typeof parsed.body === "string") return parsed.body;
+  } catch {
+    // Return one actionable preflight error below without leaking CLI internals.
+  }
+  throw new Error("Could not read the current pull request body before using configured attachment storage. No attachment was uploaded.");
 }
 
 /* ------------------------------------------------------------------ *

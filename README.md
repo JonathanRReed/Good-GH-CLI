@@ -5,9 +5,9 @@
 
 I hated the GitHub CLI. This makes it bearable.
 
-`ggh` wraps `git` and `gh` for commits, pull requests, issues, CI, releases, and stacked branches. Optional AI uses provider CLIs you are already signed in to. `ggh` has no account, server, or telemetry.
+`ggh` provides commands for commits, pull requests, issues, CI, releases, and stacked branches. It uses your installed `git`, `gh`, and, when requested, AI provider CLI. `ggh` has no account, server, or telemetry.
 
-Unrecognized commands pass through to Git. `ggh add .`, `ggh push`, and `ggh rebase -i` behave as their Git equivalents do.
+Git and GitHub commands are explicit. Use `ggh git <args>` for Git, `ggh gh <args>` for GitHub CLI, or `ggh -- <git-args>` as a short Git escape. Unknown commands do not run as Git.
 
 ## Install
 
@@ -43,12 +43,13 @@ ggh commit                  # Alias: ggh c
 ggh c -a                    # Stage everything first
 ggh c --push                # Commit and push
 ggh c --pr                  # Commit, push, and open a PR
+ggh c --pr --branch feat/login --yes # Name the PR branch and approve publication
 ggh c --amend
 ggh c --review              # Check for console.log, debugger, and localhost
 ggh c -m "fix: parser" -y   # Commit without AI or prompts
 ```
 
-On `main`, `ggh` offers to create a feature branch. It reads the last ten commits to match their style, rejects staged blobs over GitHub's 100 MB limit, and blocks commits with unresolved conflicts.
+On `main`, `ggh` offers to create a feature branch. AI generation is disabled by default. Set `ai_enabled` in your user config or pass `--ai` for a command that supports it. `--no-ai` disables generation for one invocation. An explicit commit message never invokes AI. `ggh` rejects staged blobs over GitHub's 100 MB limit and blocks commits with unresolved conflicts.
 
 `ggh c --split` proposes file groups from an index snapshot. It rejects missing, duplicate, or extra paths and preserves unstaged changes. It cannot run with `--no-ai`, `-m`, `--amend`, or `--fixup`.
 
@@ -58,11 +59,12 @@ If a split fails partway through, completed commits remain. The original index i
 
 ```bash
 ggh pr                      # Browse PRs
-ggh pr create --draft        # Generate a title and body
+ggh pr create --draft --ai   # Generate a title and body
+ggh pr create --attach 'proof.png#Sign-in screen' # Attach media when supported
 ggh pr view 42
 ggh pr diff 42
 ggh pr edit 42
-ggh pr review 42             # Review and submit selected findings
+ggh pr review 42 --ai        # Review and submit selected findings
 ggh pr review --local        # Print a review without posting
 ggh pr review --approve
 ggh pr review --request-changes
@@ -76,6 +78,32 @@ ggh pr ready | close | reopen
 ```
 
 AI review findings must refer to lines added by the diff. `ggh` discards invalid locations, shows the remaining findings for selection, and posts the selected findings as a GitHub review.
+
+Repeated `--attach` options accept validated images and videos. `ggh` checks
+whether the installed `gh` supports native attachments. GitHub documents the
+flag for PR and issue create, edit, and comment commands in its [attachment
+guide](https://docs.github.com/en/github-cli/github-cli/attaching-files-with-github-cli)
+and [`gh pr create` manual](https://cli.github.com/manual/gh_pr_create).
+
+The local preflight accepts PNG, GIF, JPG, JPEG, SVG, WEBP, MP4, MOV, and WEBM.
+It allows up to 50 files per operation, with ceilings of 10 MiB per image and
+100 MiB per video. The GitHub CLI manual also lists 50 files per PR command.
+GitHub's attachment docs list 10 MB images and videos up to 10 MB for free plans
+or 100 MB for paid plans, with access requirements for uploads over 10 MB. The
+local ceilings do not guarantee GitHub will accept a file. The [CLI attachment
+reference](https://github.com/cli/cli/blob/trunk/skills/gh/SKILL.md) also lists WEBP.
+Native uploads require GitHub.com or a GHE.com tenant and repository write
+access. Other hosts can use configured storage for verified public targets.
+
+Set `attachment_upload_command` to an absolute executable path for a fallback
+on verified public repositories. Configured public storage is refused for
+private repositories.
+
+### Create a repository or PR from local work
+
+Inside a named local repository with commits and no remote, `ggh repo create` infers the repository name and root, defaults to private visibility, adds `origin`, and pushes the current branch after one confirmation. Explicit flags can change visibility, source, remote, or the push choice. Set `ggh config set repo_create_confirm false` to skip this confirmation for unambiguous repo creation. `--confirm` restores it for one command.
+
+`ggh pr create` can use the same setup plan when the local repository has no GitHub remote. It requires a valid base and head before remote changes, then creates the repository, pushes the base and head, and opens the PR in that order. `ggh commit --pr` runs the commit and PR workflow together. Noninteractive publication requires `--yes` or an exact `--approve-plan` snapshot. Configured fast mode also authorizes unambiguous repo creation.
 
 ## Issues and CI
 
@@ -97,16 +125,21 @@ ggh run rerun 12345 --failed
 ggh run cancel 12345
 ```
 
-Issue generation uses the title and optional `--notes` to draft a description, reproduction steps, and expected and actual results. Accept, edit, or regenerate before opening the issue.
+With `--ai`, issue generation uses the title and optional `--notes` to draft a description, reproduction steps, and expected and actual results. Accept, edit, or regenerate before opening the issue.
 
 ## Stacked branches
 
-`ggh` records each new branch's parent in Git config. `ggh stack` reads those relationships; it needs no separate service or account.
+Each new branch's parent is stored in Git config. `ggh stack` reads those relationships; it needs no separate service or account. Restacking updates local branches. `stack submit` is the explicit publication action and uses `--force-with-lease` when a rewritten branch must replace a remote tip. A changed remote tip stops the update.
+
+Plain `ggh stack list` stays local and offline. `--remote` fetches PR review and CI status for the visible branches, uses at most five concurrent lookups, and checks no more than 25 branches per view. GitHub errors appear as unavailable status without hiding the local branch tree.
 
 ```bash
 ggh stack next feat/api     # Stack a branch on the current one
 ggh stack list              # Show parents and drift
+ggh stack list --remote     # Add GitHub PR review and CI status
 ggh stack restack           # Replay after amending a parent
+ggh stack restack --continue # Resume after resolving a conflict
+ggh stack restack --abort   # Restore saved local branch tips
 ggh stack submit            # Push and open one PR per branch
 ggh stack on main           # Adopt an existing branch
 ggh stack checkout
@@ -117,7 +150,8 @@ ggh stack checkout
 ```bash
 ggh switch                  # Alias: ggh sw
 ggh sw -c feat/login
-ggh wt add "add dark mode"  # AI names the branch; copies .env files
+ggh wt add "add dark mode"  # Uses a deterministic branch name by default
+ggh wt add "add dark mode" --ai # Allow AI to name the branch
 ggh wt list
 ggh wt remove
 ggh undo                    # Soft-reset HEAD~1; keep changes staged
@@ -125,11 +159,13 @@ ggh discard                 # Select files to revert
 ggh stash                   # Alias: ggh sh
 ggh resolve                 # Resolve conflicts file by file
 ggh squash 3
+ggh squash 3 --no-input --yes # Authorize an inferred message and history rewrite
+ggh squash 3 --message "feat: combine changes" --no-input
 ggh rename feat/new-name    # Rename locally and remotely
 ggh sync                    # Fetch, prune, and delete stale branches
 ggh log                     # Alias: ggh graph
 
-ggh draft                   # Stash work with an AI description
+ggh draft --ai              # Stash work with an AI description
 ggh draft list
 ggh draft resume
 ggh draft drop
@@ -153,7 +189,7 @@ ggh alias --remove ci
 | `ggh changelog v1.0.0` | Write a generated changelog to `CHANGELOG.md` |
 | `ggh search` | Search issues, PRs, repositories, or code |
 | `ggh notifications` | Browse, triage, or mark notifications read |
-| `ggh triage` | Group notifications and issues with AI, without changing them |
+| `ggh triage --ai` | Group notifications and issues without changing them |
 | `ggh browse` | Open a repository, PR, or issue in the browser |
 | `ggh label`, `ggh secret`, `ggh variable` | Manage repository labels, secrets, and variables |
 | `ggh gist`, `ggh workflow` | Manage gists and workflow runs |
@@ -178,6 +214,7 @@ These shared flags apply where the command advertises them:
 | Flag | Effect |
 | --- | --- |
 | `--json` | Write only machine-readable output to stdout |
+| `--agent` | Use the versioned agent envelope and never prompt |
 | `--dry-run` | Describe changes without making them |
 | `-y, --yes` | Accept every confirmation |
 | `-q, --quiet` | Hide progress, not errors |
@@ -193,14 +230,31 @@ ggh stack list --json | jq '.[] | select(.behind > 0) | .branch'
 ggh discard --all --dry-run
 ```
 
+`ggh agent schema --json` lists supported commands, inputs, and the version 1
+`ggh.agent` envelope. With `--agent`, read `status`, `error.code`,
+`error.retryability`, `requiredInputs`, and `effects` before continuing. Detailed
+result schemas cover the core workflows; other `result` payloads remain
+command-specific. Legacy `--json` shapes are preserved. Native `git`, `gh`, and
+`--` escapes keep their native streams and exit codes. MCP and shell completion
+use their own protocols and reject `--agent`.
+
+For repo creation, PR creation, and publication recovery, `--dry-run` returns a
+`snapshotId` alongside the plan. Review that plan, then supply
+`--approve-plan <snapshotId>` with the same inputs. This approves the exact
+target, visibility, destination, revisions, content, and attachment bytes.
+Material changes require a fresh preview and approval. `--yes` still approves
+the plan prepared by that invocation.
+
 File selections from status are relative to the repository root, even when you
 run `ggh` from a subdirectory. Selected filenames are literal, not glob patterns.
 `discard --all` keeps untracked files unless you also pass `--include-untracked`;
 restoring a rename refuses to overwrite a newly created, untracked source file.
 
-Squash collects the new message before changing history. It keeps the original
-commits at `refs/ggh/squash/<original-head>` and reports that ref if the final
-commit fails. Inspect `git status` and the saved history before recovering.
+In a no-input run, squash requires `--yes` to authorize an inferred message, or
+an explicit `--message`. It collects the message before changing history and
+keeps the original commits at `refs/ggh/squash/<original-head>`. If the final
+commit fails, it reports that ref. Inspect `git status` and the saved history
+before recovering.
 
 Typos get command suggestions unless the word is a Git command or one of your Git aliases, which take precedence.
 
@@ -216,6 +270,7 @@ ggh config get ai_provider
 ggh config unset ai_timeout_ms
 ggh config doctor
 ggh config cache-clear
+ggh config set ai_enabled true
 ```
 
 Precedence is flags, `GGH_*` environment variables, project `.ggh.json`, user file, then defaults. Project files may set only `commit_style`; they cannot override providers, models, consent, paths, fallback, or timeouts.
@@ -228,9 +283,11 @@ Environment variables use the corresponding key names, including `GGH_AI_PROVIDE
 
 `ggh config cache-clear` removes only recognized cache entries. Cache errors disable caching rather than expand filesystem access.
 
+`ggh config doctor` checks for Git and `gh`, reports their local versions, probes `gh` attachment flags, and checks provider CLI versions and capabilities. It does not verify sign-in, model access, or live provider availability.
+
 ## AI and privacy
 
-`ggh` stores no provider API keys. It uses the configured CLI, then tries the remaining Codex tiers, Grok, Claude Code, and local Ollama. The default is Codex with `gpt-5.6-luna`; the Codex tiers are `gpt-5.6-terra` and `gpt-5.6-luna`. Ollama needs a running daemon and downloaded model.
+`ggh` stores no provider API keys. AI generation is off by default, even when a provider is configured. Use `--ai` for a single command or set `ai_enabled` in your user config. Provider choice, fallback, and hosted-content consent remain separate settings. Ollama needs a running daemon and downloaded model.
 
 An account-wide usage limit skips that provider for the rest of the run. When all providers fail, `ggh` reports each provider, model, and error, then opens the Conventional Commit wizard. `-m` and `--no-ai` make no AI calls.
 
@@ -247,6 +304,23 @@ The Ollama adapter requires a loopback HTTP endpoint and a Modelfile that identi
 
 Codex runs with `--ignore-user-config`. Claude runs in an isolated directory with safe mode, no built-in or MCP tools, and no session persistence. Older Claude CLIs must support those flags; `ggh` does not retry with weaker permissions. See [SECURITY.md](SECURITY.md) for limits.
 
+### Local operation records
+
+Mutating and AI-assisted commands can record command identity, status, revision, completed steps, resource URLs, and provider-reported usage in local Git metadata or user configuration. Records exclude prompts, source content, message bodies, transcripts, and raw output. `ggh operation list`, `view`, and `evidence` inspect records or associate an existing local file by reference. Evidence files are not copied or checked. Use `ggh operation prune` to remove old records after confirmation. Set `GGH_NO_RECORDS=1` to disable recording.
+
+`ggh operation recover <id>` shows confirmed, pending, and uncertain effects
+with inspection commands. `ggh operation resume <id> --dry-run` reconciles a
+saved publication plan. Supply PR title/body, unconfirmed attachment files,
+and any unconfirmed repository description again, then approve the remaining
+work. Recovery refuses changed targets or revisions and does not recreate
+commits, comments, or confirmed uploads from missing content. Stack recovery
+uses `ggh stack restack --continue` or `--abort`.
+
+A crashed local writer's lock is reclaimed when its process is proven dead.
+`ggh operation unlock <id> --unknown-owner --yes` is available for legacy or
+unknown locks after you have stopped other writers. Known live writers cannot
+be unlocked.
+
 ## Development and completion
 
 [CONTRIBUTING.md](CONTRIBUTING.md) covers development. Report bugs or send small fixes; open an issue before a large feature. `./scripts/demo.sh` runs a 60-second tour in a temporary repository without network access or authentication.
@@ -260,6 +334,15 @@ ggh completion fish > ~/.config/fish/completions/ggh.fish
 ```
 
 Completions are generated from the command tree.
+
+For PowerShell, add this to your `$PROFILE`:
+
+```powershell
+ggh completion powershell | Out-String | Invoke-Expression
+```
+
+All four shells resolve nested commands, aliases, and flags from the installed
+CLI. Branch and file suggestions use local state and do not contact GitHub.
 
 ## License
 

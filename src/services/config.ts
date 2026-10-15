@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { CommitStyle } from "../utils/conventions.ts";
 
 export type AIProvider = "codex" | "grok" | "claude" | "ollama";
@@ -11,6 +11,10 @@ export const CLONE_MODES: readonly CloneMode[] = ["blobless", "shallow", "standa
 export const COMMIT_STYLES = ["auto", "conventional", "gitmoji", "concise"] as const;
 
 export interface GoodGhConfig {
+  repo_create_confirm?: boolean;
+  attachment_upload_command?: string;
+  /** User-owned permission for commands to generate content with AI. */
+  ai_enabled?: boolean;
   ai_provider?: AIProvider;
   /**
    * When false, only the configured provider is tried. Set this when the
@@ -33,6 +37,9 @@ export interface GoodGhConfig {
 }
 
 export const DEFAULT_CONFIG: Required<GoodGhConfig> = {
+  repo_create_confirm: true,
+  attachment_upload_command: "",
+  ai_enabled: false,
   ai_provider: "codex",
   ai_fallback: true,
   codex_model: "gpt-5.6-luna",
@@ -65,11 +72,17 @@ export interface ConfigProblem {
  */
 export function validateConfigValue(key: string, raw: unknown): { value?: unknown; problem?: string } {
   switch (key as keyof GoodGhConfig) {
+    case "attachment_upload_command":
+      return typeof raw === "string" && (raw === "" || (isAbsolute(raw) && raw.length <= 4096 && !/[\0\r\n]/.test(raw)))
+        ? { value: raw }
+        : { problem: "must be an absolute executable path, or empty to disable configured storage" };
     case "ai_provider":
       return AI_PROVIDERS.includes(raw as AIProvider)
         ? { value: raw }
         : { problem: `must be one of ${AI_PROVIDERS.join(", ")}` };
     case "ai_fallback":
+    case "repo_create_confirm":
+    case "ai_enabled":
     case "hosted_ai_consent":
     case "first_run_completed": {
       if (typeof raw === "boolean") return { value: raw };
@@ -208,7 +221,7 @@ export function getProjectConfig(cwd = process.cwd()): ProjectConfig | null {
 
 /**
  * Environment overrides, named after the config keys they set:
- * GGH_AI_PROVIDER, GGH_AI_FALLBACK, GGH_CODEX_MODEL, GGH_GROK_MODEL,
+ * GGH_AI_ENABLED, GGH_AI_PROVIDER, GGH_AI_FALLBACK, GGH_CODEX_MODEL, GGH_GROK_MODEL,
  * GGH_CLAUDE_MODEL, GGH_OLLAMA_MODEL, GGH_AI_TIMEOUT_MS, GGH_COMMIT_STYLE,
  * GGH_DEFAULT_CLONE_DIR, GGH_DEFAULT_CLONE_MODE, GGH_HOSTED_AI_CONSENT.
  */

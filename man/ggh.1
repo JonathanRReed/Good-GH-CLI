@@ -7,6 +7,13 @@ ggh \- Git and GitHub in one CLI
 .SH DESCRIPTION
 Git and GitHub in one CLI: pull requests, issues, CI, stacked branches, and AI. Anything \fBggh\fR does not recognise goes straight to \fBgit\fR, so \fBggh add .\fR, \fBggh push\fR, and \fBggh rebase \-i\fR behave exactly as \fBgit\fR does.
 .SH COMMANDS
+.SS "Native tools"
+.TP
+\fBgit\fR
+Run git with its native arguments, output, and exit status
+.TP
+\fBgh\fR
+Run gh with its native arguments, output, and exit status
 .SS "Status"
 .TP
 \fBstatus, st\fR
@@ -42,7 +49,7 @@ Rebase a branch and everything above it onto their recorded parents
 .RS
 .TP
 \fBsubmit\fR
-Push the stack and open a Pull Request for each branch against its real parent
+Push the selected stack and open a Pull Request for each branch against its parent
 .RE
 .RS
 .TP
@@ -196,7 +203,7 @@ Check out a pull request locally
 .RS
 .TP
 \fBcreate\fR
-Open a Pull Request for the current branch, with an AI-written title and body
+Publish the current branch and open a pull request
 .RE
 .RS
 .TP
@@ -501,11 +508,11 @@ AI-triage notifications and issues (read-only)
 .SS "Local workflow"
 .TP
 \fBdraft\fR
-Stash uncommitted work with an AI-generated description, then restore it later
+Stash uncommitted work with a short description, then restore it later
 .RS
 .TP
 \fBcreate\fR
-Save current changes as a draft with an AI-generated description
+Save current changes as a draft
 .RE
 .RS
 .TP
@@ -586,6 +593,44 @@ Remove an installed git hook
 \fBedit\fR
 Show or update a git hook (--command to update)
 .RE
+.TP
+\fBoperation, op\fR
+List and inspect local operation records
+.RS
+.TP
+\fBrecover\fR
+Inspect completed, uncertain and remaining effects before recovery
+.RE
+.RS
+.TP
+\fBresume\fR
+Reconcile and resume a saved publication plan after explicit approval
+.RE
+.RS
+.TP
+\fBunlock\fR
+Recover an abandoned operation update lock; never unlock a known live writer
+.RE
+.RS
+.TP
+\fBlist\fR
+List recent local operations
+.RE
+.RS
+.TP
+\fBview\fR
+View one local operation record
+.RE
+.RS
+.TP
+\fBevidence\fR
+Associate a local file with the operation revision
+.RE
+.RS
+.TP
+\fBprune\fR
+Remove old local operation records
+.RE
 .SS "Extensions"
 .TP
 \fBmcp\fR
@@ -629,7 +674,7 @@ List your team-stack gists
 .SS "Setup"
 .TP
 \fBconfig\fR
-Configure providers, models, and defaults
+Configure AI permission, providers, models, and defaults
 .RS
 .TP
 \fBlist, ls\fR
@@ -648,7 +693,7 @@ Get a specific configuration value
 .RS
 .TP
 \fBset\fR
-Set a configuration value (e.g. ai_provider grok, ai_fallback false)
+Set a configuration value (e.g. ai_enabled true, ai_provider grok)
 .RE
 .RS
 .TP
@@ -658,11 +703,20 @@ Remove a value from your user config so the default (or project/env) applies
 .RS
 .TP
 \fBdoctor\fR
-Check your configuration, the project .ggh.json, and every AI provider
+Check configuration and inspect installed AI CLI versions and capabilities
 .RE
 .TP
 \fBcompletion\fR
 Generate completions for zsh, bash, fish, or powershell
+.SS "Other commands"
+.TP
+\fBagent\fR
+Discover the versioned automation contract
+.RS
+.TP
+\fBschema\fR
+Print the envelope schema and managed command paths
+.RE
 .SH GLOBAL OPTIONS
 Every command follows the same rules.
 .TP

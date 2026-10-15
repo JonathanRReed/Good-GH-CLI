@@ -41,7 +41,7 @@ export function registerDiscardCommand(program: Command): void {
       });
 
       if (allDirty.length === 0) {
-        if (jsonOut({ discarded: [], count: 0 })) return;
+        if (jsonOut({ status: "no_op", reason: "no_changes", discarded: [], count: 0 })) return;
         p.log.success(pc.green("Working tree is completely clean. No changes to discard!"));
         return;
       }
@@ -61,6 +61,7 @@ export function registerDiscardCommand(program: Command): void {
       } else if (fileArgs && fileArgs.length > 0) {
         toDiscard = allDirty.filter((f) => fileArgs.includes(f.path));
         if (toDiscard.length === 0) {
+          if (jsonOut({ status: "no_op", reason: "no_matching_changes", discarded: [], count: 0 })) return;
           p.log.warn("None of the specified files have changes to discard.");
           return;
         }
@@ -77,6 +78,7 @@ export function registerDiscardCommand(program: Command): void {
           }
           toDiscard = toDiscard.filter((f) => !f.untracked);
           if (toDiscard.length === 0) {
+            if (jsonOut({ status: "no_op", reason: "untracked_files_excluded", discarded: [], count: 0 })) return;
             return;
           }
         }
@@ -98,6 +100,11 @@ export function registerDiscardCommand(program: Command): void {
         }
 
         toDiscard = allDirty.filter((f) => selected.includes(f.path));
+      }
+
+      if (toDiscard.length === 0) {
+        if (jsonOut({ status: "no_op", reason: "no_eligible_changes", discarded: [], count: 0 })) return;
+        return;
       }
 
       const untrackedToDelete = toDiscard.filter((f) => f.untracked);

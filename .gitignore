@@ -5,3 +5,6 @@ release/
 .worktrees/
 *.log
 .DS_Store
+
+/ggh
+/ggh.sha256

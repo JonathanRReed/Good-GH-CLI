@@ -5,8 +5,27 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added
+
+- Add explicit `ggh git`, `ggh gh`, and `ggh --` escape commands. Unknown
+  commands no longer run as Git. Disable AI generation by default, with
+  user-owned `ai_enabled` and per-command `--ai` / `--no-ai` controls.
+- Infer private repository creation from the current Git root, name, `origin`,
+  and current branch. Add a one-confirmation repo flow and shared setup for
+  PR creation and `commit --pr` when no GitHub remote exists.
+- Add repeatable PR and issue media attachments with capability checks,
+  configured public-only fallback, and partial-result reporting.
+- Record local operation status, revisions, resources, reported AI usage, and
+  explicit evidence references. Add list, view, evidence, and prune commands.
+- Add resumable stack restack recovery with conflict continuation, abort,
+  saved branch tips, and force-with-lease checks during explicit submission.
+- Add opt-in `ggh stack list --remote` status for pull request review and CI,
+  with bounded lookups, plus local Git and GitHub CLI checks in `config doctor`.
+
 ### Fixed
 
+- Require `--yes` or an explicit message before a no-input squash rewrites
+  history with an inferred commit message.
 - Resolve selected Git paths from the repository root, including nested working
   directories, staged-object checks, split commits, conflict resolution and
   review patches. Treat selected filenames literally, not as Git pathspecs.

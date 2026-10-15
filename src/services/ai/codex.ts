@@ -16,6 +16,12 @@ export class CodexProvider extends CliAIProvider {
   readonly displayName = "Codex (ChatGPT)";
   readonly defaultModel = "gpt-5.6-luna";
   readonly fallbackModels = CODEX_MODEL_CHAIN;
+  protected readonly cliCommand = "codex";
+  protected readonly diagnosticsVersionArgs = ["--version"] as const;
+  protected readonly diagnosticsHelpArgs = ["exec", "--help"] as const;
+  protected readonly diagnosticsCapabilities = [
+    { name: "JSON event output", pattern: /--json/ },
+  ] as const;
 
   async isAvailable(): Promise<boolean> {
     try {
@@ -38,7 +44,7 @@ export class CodexProvider extends CliAIProvider {
     const outputPath = join(tmpDir, "output.txt");
 
     try {
-      await run(
+      const result = await run(
         "codex",
         [
           "exec",
@@ -50,6 +56,7 @@ export class CodexProvider extends CliAIProvider {
           "--ignore-user-config",
           "--color",
           "never",
+          "--json",
           "-s",
           "read-only",
           "--model",
@@ -60,6 +67,7 @@ export class CodexProvider extends CliAIProvider {
         ],
         { input: prompt, timeoutMs, cwd: tmpDir },
       );
+      this.setLastUsage(parseCodexUsage(result.stdout));
 
       if (!existsSync(outputPath)) {
         throw new AIGenerationError(this.id, model, "empty_response", "codex wrote no output file");
@@ -73,4 +81,29 @@ export class CodexProvider extends CliAIProvider {
       }
     }
   }
+}
+
+/** Extracts only the per-turn scalars in Codex's documented JSONL events. */
+export function parseCodexUsage(output: string): unknown {
+  let usage: unknown;
+  for (const line of output.split(/\r?\n/)) {
+    try {
+      const event: unknown = JSON.parse(line);
+      if (!event || typeof event !== "object" || Array.isArray(event)) continue;
+      const eventRecord = new Map(Object.entries(event));
+      if (eventRecord.get("type") !== "turn.completed") continue;
+      const value = eventRecord.get("usage");
+      if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+      const fields = new Map(Object.entries(value));
+      usage = {
+        inputTokens: fields.get("input_tokens"),
+        outputTokens: fields.get("output_tokens"),
+        cachedInputTokens: fields.get("cached_input_tokens"),
+        cacheWriteInputTokens: fields.get("cache_write_input_tokens"),
+      };
+    } catch {
+      // Ignore non-JSON lines and retain plain CLI output compatibility.
+    }
+  }
+  return usage;
 }

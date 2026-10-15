@@ -147,6 +147,7 @@ export async function requireGitHubRepo(): Promise<boolean> {
 
 function mergeEnv(options?: RunOptions): NodeJS.ProcessEnv | undefined {
   const base = options?.env ? { ...options.env } : undefined;
+  if (base?.GH_HOST) return base;
   const host = getActiveHost();
   if (host === "github.com" && !base) return undefined;
   if (host === "github.com") return base;
@@ -336,6 +337,7 @@ export async function requireAuth(): Promise<boolean> {
     auth.notInstalled
       ? "GitHub CLI (`gh`) is not installed. Install it from https://cli.github.com."
       : "GitHub CLI is not authenticated. Run `gh auth login`.",
+    { code: auth.notInstalled ? "provider_unavailable" : "authentication_required" },
   );
   return false;
 }
@@ -402,6 +404,13 @@ export function parseGitHubRepositoryNameWithOwnerFromRemoteUrl(
 ): string | ParsedRepoName | null {
   const trimmed = url?.trim() ?? "";
   if (trimmed.length === 0) return null;
+  if (trimmed.includes("://")) {
+    try {
+      const parsed = new URL(trimmed);
+      const sshUser = parsed.protocol === "ssh:" && parsed.username === "git" && !parsed.password;
+      if ((parsed.username || parsed.password) && !sshUser || parsed.search || parsed.hash) return null;
+    } catch { return null; }
+  }
 
   const match = new RegExp(
     "^(?:git@([^:\\s]+):|ssh://git@([^/\\s:]+)(?::\\d+)?/|https?://([^/\\s:]+)/|git://([^/\\s:]+)/)([^/\\s]+/[^/\\s]+?)(?:\\.git)?/?$",
@@ -414,6 +423,8 @@ export function parseGitHubRepositoryNameWithOwnerFromRemoteUrl(
   if (!rawName) return null;
   const nameWithOwner = rawName.trim().replace(/\.git$/, "").replace(/\/+$/, "");
   if (nameWithOwner.length === 0) return null;
+  try { parseRepoFlag(`${host}/${nameWithOwner}`); }
+  catch { return null; }
 
   if (host === "github.com") return nameWithOwner;
   return { host, nameWithOwner, toString: () => `${host}/${nameWithOwner}` };

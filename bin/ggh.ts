@@ -1,7 +1,9 @@
 #!/usr/bin/env bun
 import { runCli } from "../src/index.ts";
 import { killAllChildren } from "../src/utils/exec.ts";
-import { restoreTerminal } from "../src/utils/output.ts";
+import { restoreTerminal, finalizeJsonOutput } from "../src/utils/output.ts";
+import { recordCommandIssue } from "../src/services/runtime.ts";
+import { finishCommandOperation } from "../src/services/command-operations.ts";
 
 let interrupted = false;
 
@@ -11,17 +13,21 @@ let interrupted = false;
  * any subprocess down with us, then exit 130 as the shell expects. A second
  * interrupt skips cleanup entirely.
  */
-function onInterrupt(signal: NodeJS.Signals): void {
+async function onInterrupt(signal: NodeJS.Signals): Promise<void> {
   if (interrupted) process.exit(130);
   interrupted = true;
   process.stderr.write("\n\x1b[31m✖\x1b[0m  Cancelled.\n");
+  recordCommandIssue({ status: "cancelled", message: "Cancelled." });
   restoreTerminal();
   killAllChildren();
-  process.exit(signal === "SIGTERM" ? 143 : 130);
+  process.exitCode = signal === "SIGTERM" ? 143 : 130;
+  await finishCommandOperation();
+  finalizeJsonOutput();
+  process.exit(process.exitCode);
 }
 
-process.on("SIGINT", () => onInterrupt("SIGINT"));
-process.on("SIGTERM", () => onInterrupt("SIGTERM"));
+process.on("SIGINT", () => { void onInterrupt("SIGINT"); });
+process.on("SIGTERM", () => { void onInterrupt("SIGTERM"); });
 process.on("exit", restoreTerminal);
 
 /**
@@ -31,9 +37,13 @@ process.on("exit", restoreTerminal);
  */
 process.on("SIGPIPE", () => process.exit(0));
 
-runCli(process.argv).catch((err) => {
+runCli(process.argv).catch(async (err) => {
   restoreTerminal();
   killAllChildren();
   console.error(err instanceof Error ? err.message : String(err));
+  recordCommandIssue({ status: "failed", message: err instanceof Error ? err.message : String(err) });
+  process.exitCode = 1;
+  await finishCommandOperation();
+  finalizeJsonOutput();
   process.exit(1);
 });

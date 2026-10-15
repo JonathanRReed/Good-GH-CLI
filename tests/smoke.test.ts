@@ -14,7 +14,7 @@ async function runCli(
     stdout: "pipe",
     stderr: "pipe",
     stdin: "ignore",
-    env: { ...process.env, NO_COLOR: "1" },
+    env: { ...process.env, GGH_NO_RECORDS: "1", NO_COLOR: "1" },
   });
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(proc.stdout).text(),
@@ -25,13 +25,6 @@ async function runCli(
 }
 
 describe("CLI smoke tests", () => {
-  it("starts, prints help, and exits cleanly", async () => {
-    const { exitCode, stdout } = await runCli(["--help"]);
-    expect(exitCode).toBe(0);
-    expect(stdout).toContain("Usage:");
-    expect(stdout).toContain("ggh");
-  });
-
   it("reports the package version (single source of truth: package.json)", async () => {
     const pkg = JSON.parse(await Bun.file(join(repoRoot, "package.json")).text());
     const { exitCode, stdout } = await runCli(["--version"]);
@@ -40,7 +33,10 @@ describe("CLI smoke tests", () => {
   });
 
   it("lists all documented commands in help output", async () => {
-    const { stdout } = await runCli(["--help"]);
+    const { stdout, exitCode } = await runCli(["--help"]);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("Usage:");
+    expect(stdout).toContain("ggh");
     for (const command of [
       "clone",
       "commit",
@@ -66,9 +62,10 @@ describe("CLI smoke tests", () => {
   });
 
   it("rejects an invalid log count with a non-zero exit code", async () => {
-    const { exitCode, stderr } = await runCli(["log", "-n", "abc"]);
+    const { exitCode, stdout, stderr } = await runCli(["log", "-n", "abc"]);
     expect(exitCode).not.toBe(0);
     expect(stderr).toContain("Invalid commit count");
+    expect(stdout).not.toContain("Invalid commit count");
   });
 });
 
@@ -84,14 +81,8 @@ describe("stream separation", () => {
     expect(stdout).not.toContain("good-gh");
   });
 
-  it("writes errors to stderr, so redirecting stdout never hides them", async () => {
-    const { stdout, stderr } = await runCli(["log", "-n", "abc"]);
-    expect(stderr).toContain("Invalid commit count");
-    expect(stdout).not.toContain("Invalid commit count");
-  });
-
   it("puts git passthrough data on stdout", async () => {
-    const { stdout } = await runCli(["rev-parse", "--is-inside-work-tree"]);
+    const { stdout } = await runCli(["git", "rev-parse", "--is-inside-work-tree"]);
     expect(stdout.trim()).toBe("true");
   });
 });
@@ -140,7 +131,7 @@ describe("CLI exit codes", () => {
 });
 
 describe("shell completion is generated from the real command tree", () => {
-  it("includes every registered command and alias in each shell", async () => {
+  it("resolves every registered command and alias through the shared shell query", async () => {
     const { createProgram } = await import("../src/index.ts");
     const program = await createProgram();
 
@@ -151,19 +142,17 @@ describe("shell completion is generated from the real command tree", () => {
       for (const alias of command.aliases()) surface.add(alias);
     }
 
-    for (const shell of ["zsh", "bash", "fish"]) {
-      const { stdout, exitCode } = await runCli(["completion", shell]);
+    const query = await runCli(["completion", "--query", "--", ""]);
+    expect(query.exitCode).toBe(0);
+    expect(query.stderr).toBe("");
+    const candidates = query.stdout.trim().split("\n");
+    for (const name of surface) expect(candidates).toContain(name);
+    for (const shell of ["zsh", "bash", "fish", "powershell"]) {
+      const { stdout, stderr, exitCode } = await runCli(["completion", shell]);
+      expect(stderr).toBe("");
       expect(exitCode).toBe(0);
-      for (const name of surface) {
-        expect(stdout, `${shell} completion is missing "${name}"`).toContain(name);
-      }
+      expect(stdout).toContain("completion --query");
     }
-  });
-
-  it("writes the script to stdout so `eval $(ggh completion zsh)` works", async () => {
-    const { stdout, stderr } = await runCli(["completion", "zsh"]);
-    expect(stdout).toContain("#compdef ggh");
-    expect(stderr.trim()).toBe("");
   });
 
   it("rejects an unsupported shell with a non-zero exit code", async () => {

@@ -15,6 +15,12 @@ export class GrokProvider extends CliAIProvider {
   readonly displayName = "xAI Grok";
   readonly defaultModel = "grok-4.5";
   readonly fallbackModels: readonly string[] = [];
+  protected readonly cliCommand = "grok";
+  protected readonly diagnosticsVersionArgs = ["--version"] as const;
+  protected readonly diagnosticsHelpArgs = ["--help"] as const;
+  protected readonly diagnosticsCapabilities = [
+    { name: "JSON output", pattern: /--output-format/ },
+  ] as const;
 
   async isAvailable(): Promise<boolean> {
     try {

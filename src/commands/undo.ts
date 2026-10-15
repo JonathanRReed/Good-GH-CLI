@@ -22,6 +22,10 @@ export function registerUndoCommand(program: Command): void {
       if (!(await requireGitRepo())) return;
 
       if (!(await hasCommits())) {
+        if (getFlags().json) {
+          emitJson({ status: "no_op", reason: "no_commits" });
+          return;
+        }
         p.log.warn("Repository has no commits to undo.");
         return;
       }

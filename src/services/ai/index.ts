@@ -12,6 +12,7 @@ import {
   extractFailureDetail,
   type AIFailureKind,
   type AIProvider,
+  type AIUsage,
   type AIProviderId,
 } from "./provider.ts";
 import type {
@@ -183,8 +184,32 @@ export interface AIRunResult<T> {
   provider: AIProvider;
   providerName: string;
   model: string;
+  usage?: AIUsage;
   /** Every attempt that failed before the one that succeeded. */
   failures: AIAttemptFailure[];
+}
+
+export interface AIUsageReport {
+  provider: AIProviderId;
+  model: string;
+  outcome: "succeeded" | "failed";
+  usage?: AIUsage;
+}
+
+const MAX_AI_USAGE_REPORTS = 100;
+const aiUsageReports: AIUsageReport[] = [];
+
+export function getAIUsageReports(): AIUsageReport[] {
+  return aiUsageReports.map((report) => ({ ...report, ...(report.usage ? { usage: { ...report.usage } } : {}) }));
+}
+
+export function clearAIUsageReports(): void {
+  aiUsageReports.length = 0;
+}
+
+function recordAIUsageReport(report: AIUsageReport): void {
+  aiUsageReports.push({ ...report, ...(report.usage ? { usage: { ...report.usage } } : {}) });
+  if (aiUsageReports.length > MAX_AI_USAGE_REPORTS) aiUsageReports.splice(0, aiUsageReports.length - MAX_AI_USAGE_REPORTS);
 }
 
 const REMEDIATION: Partial<Record<AIFailureKind, string>> = {
@@ -314,15 +339,31 @@ export async function runAIWithFallback<T>(
     (attempt.provider as unknown as { timeoutMs: number }).timeoutMs = timeoutMs;
 
     try {
+      attempt.provider.resetLastUsage();
       const result = await task(attempt.provider, attempt.model);
+      const usage = attempt.provider.getLastUsage();
+      recordAIUsageReport({
+        provider: attempt.provider.id,
+        model: attempt.model,
+        outcome: "succeeded",
+        ...(usage ? { usage } : {}),
+      });
       return {
         result,
         provider: attempt.provider,
         providerName: attempt.providerName,
         model: attempt.model,
+        ...(usage ? { usage } : {}),
         failures,
       };
     } catch (err) {
+      const usage = attempt.provider.getLastUsage();
+      recordAIUsageReport({
+        provider: attempt.provider.id,
+        model: attempt.model,
+        outcome: "failed",
+        ...(usage ? { usage } : {}),
+      });
       const failure = toFailure(attempt, err);
       failures.push(failure);
 
