@@ -878,6 +878,14 @@ async function pushHeadFastForward(
   );
 }
 
+function matchRefPattern(pattern: string, ref: string): string | null {
+  const star = pattern.indexOf("*");
+  if (star === -1) return pattern === ref ? "" : null;
+  const prefix = pattern.slice(0, star), suffix = pattern.slice(star + 1);
+  return ref.startsWith(prefix) && ref.endsWith(suffix) && ref.length >= prefix.length + suffix.length
+    ? ref.slice(prefix.length, ref.length - suffix.length) : null;
+}
+
 async function establishBranchUpstream(
   remote: string,
   branch: string,
@@ -886,6 +894,18 @@ async function establishBranchUpstream(
 ): Promise<void> {
   if ((await tip(`refs/heads/${branch}`, cwd)) !== expectedTip) return;
   const trackingRef = `refs/remotes/${remote}/${branch}`;
+  const source = `refs/heads/${branch}`;
+  const specs = (await git(["config", "--get-all", `remote.${remote}.fetch`], cwd, false)).split("\n").filter(Boolean);
+  if (specs.some(spec => spec.startsWith("^") && matchRefPattern(spec.slice(1), source) !== null)) {
+    throw new Error(`Remote fetch settings exclude "${branch}". Update remote.${remote}.fetch before configuring its upstream.`);
+  }
+  const mapped = specs.some(spec => {
+    const [from, to] = spec.replace(/^\+/, "").split(":");
+    if (!from || !to) return false;
+    const capture = matchRefPattern(from, source);
+    return capture !== null && to.replace("*", capture) === trackingRef;
+  });
+  if (!mapped) await execGitWithRetry(["remote", "set-branches", "--add", remote, branch], { cwd });
   await execGitWithRetry(["update-ref", trackingRef, expectedTip], { cwd });
   await execGitWithRetry(
     ["branch", "--set-upstream-to", `${remote}/${branch}`, branch],

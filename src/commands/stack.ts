@@ -850,6 +850,7 @@ export function registerStackCommand(program: Command): void {
                 title: entry.branch,
                 body: "Part of a stack. Base: `" + entry.parent + "`.\n\nStack:\n" + stackText,
                 base: entry.parent,
+                head: entry.branch,
                 draft: options?.draft,
                 cwd,
                 ...(explicitTarget ? { repo: explicitTarget.repoArg, host: explicitTarget.host } : {}),

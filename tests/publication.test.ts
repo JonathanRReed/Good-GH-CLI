@@ -149,6 +149,44 @@ describe("publication service", () => {
     expect(git(["--git-dir", bare, "rev-parse", "refs/heads/feature"], rootOf(bare))).toBe(published);
   });
 
+  test("adds a published branch to a single-branch remote fetch mapping once", async () => {
+    const { repo, bare } = makeRepository(tempRoot());
+    git(
+      [
+        "config",
+        "--local",
+        "--replace-all",
+        "remote.origin.fetch",
+        "+refs/heads/main:refs/remotes/origin/main",
+      ],
+      repo,
+    );
+    const responses = [privateRepositoryView];
+    const result = await runFixture([], {
+      root: repo,
+      cwd: repo,
+      responses,
+      invoke: `${setupRewrite(bare)} ${serviceInvoke(
+        "const publish=async()=>{const prepared=await preparePublication({kind:'repo'});return prepared.status==='ready'?await executePublication(prepared.plan):prepared;};const first=await publish();const second=await publish();process.stdout.write(JSON.stringify({first,second}));",
+      )}`,
+    });
+
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      first: { status: "succeeded" },
+      second: { status: "succeeded" },
+    });
+    expect(git(["rev-parse", "--abbrev-ref", "@{u}"], repo)).toBe("origin/feature");
+    expect(
+      git(["config", "--get-all", "remote.origin.fetch"], repo).split("\n"),
+    ).toEqual([
+      "+refs/heads/main:refs/remotes/origin/main",
+      "+refs/heads/feature:refs/remotes/origin/feature",
+    ]);
+    expect(
+      git(["--git-dir", bare, "rev-parse", "refs/heads/feature"], rootOf(bare)),
+    ).toBe(git(["rev-parse", "HEAD"], repo));
+  });
+
   test("refuses credentialed remote URLs without copying secrets into output", async () => {
     for (const remote of ["https://sensitive-token@github.com/fixture/project.git", "https://github.com/fixture/project.git?token=sensitive-token"]) {
       const { repo } = makeRepository(tempRoot(), remote);

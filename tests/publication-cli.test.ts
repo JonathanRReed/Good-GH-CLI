@@ -45,6 +45,24 @@ function records(repo: string): string[] {
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 describe("publication command integration", () => {
+  test("editor preflight requires a terminal without provider or GitHub calls", async () => {
+    const root = fixtureRoot("ggh-editor-preflight-"); roots.push(root);
+    const result = await runFixture(["pr", "create", "--editor", "--json"], { root, cwd: root, responses: [] });
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stdout)).toMatchObject({ status: "needs_input" });
+    expect(result.calls).toHaveLength(0);
+    expect(result.providerCalls).toHaveLength(0);
+  });
+  test("dry-run previews an explicit editor draft without running its editor", async () => {
+    const { root, repo, bare } = fixture(true);
+    const file = join(repo, "draft.md"); writeFileSync(file, "Résumé preview\n\n## Body\n\nLine two\n");
+    const result = await runFixture([], { root, cwd: repo, responses, invoke: invoke(["pr", "create", "--editor", file, "--base", "main", "--dry-run", "--json", "--no-ai"], bare) });
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ status: "planned", title: "Résumé preview", body: "## Body\n\nLine two\n", editorRun: false, snapshotProvisional: true });
+    expect(result.calls.some(args => args[0] === "repo" && args[1] === "create")).toBe(false);
+    expect(readFileSync(file, "utf8")).toBe("Résumé preview\n\n## Body\n\nLine two\n");
+    expect(result.providerCalls).toHaveLength(0);
+  });
   test("requires confirmation before inferred repository creation", async () => {
     const { root, repo, bare } = fixture();
     const result = await runFixture([], { root, cwd: repo, responses, invoke: invoke(["repo", "create", "--json"], bare) });

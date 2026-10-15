@@ -244,6 +244,9 @@ describe("stack recovery", () => {
     expect(partial.exitCode).not.toBe(0);
     const report = JSON.parse(partial.stdout);
     expect(report.status).toBe("partially_completed");
+    expect(partial.calls.filter(call => call[0] === "pr" && call[1] === "create").map(call => ({
+      head: call[call.indexOf("--head") + 1], base: call[call.indexOf("--base") + 1],
+    }))).toEqual([{ head: "parent", base: "main" }, { head: "child", base: "parent" }]);
     expect(report.opened.map((item: { url: string }) => item.url)).toEqual(["https://github.com/test/repo/pull/10"]);
     expect(git("branch", "--show-current")).toBe("main");
     expect(git("show-ref", "--verify", "refs/remotes/origin/parent")).toBeTruthy();

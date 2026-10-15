@@ -274,7 +274,9 @@ try:
                 pulls = api(f'repos/{target}/pulls?state=open')
                 if any(branch['name'] not in info['branches'] for branch in branches):
                     raise RuntimeError('Unexpected branch; automatic cleanup stopped before writes.')
-                if any(state['run'] not in ((pull.get('title') or '') + (pull.get('body') or '')) for pull in pulls):
+                confirmed = {pull['number']: (pull['head'], pull['base']) for pull in info.get('confirmedPullRequests', [])}
+                if any(state['run'] not in ((pull.get('title') or '') + (pull.get('body') or ''))
+                       and confirmed.get(pull['number']) != (pull['head']['ref'], pull['base']['ref']) for pull in pulls):
                     raise RuntimeError('Unexpected pull request; automatic cleanup stopped before writes.')
                 for pull in pulls:
                     api(f'repos/{target}/pulls/{pull["number"]}', '-X', 'PATCH', '-f', 'state=closed')

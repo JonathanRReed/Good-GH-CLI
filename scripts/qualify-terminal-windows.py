@@ -41,14 +41,28 @@ class Console:
         threading.Thread(target=self.read, daemon=True).start()
         try:
             if not direct:
-                self.send("@echo off\r\n")
-                self.send("echo GGH_READY\r\n")
+                self.send("@echo off\r")
+                self.send("echo GGH_READY\r")
                 self.expect("GGH_READY")
-                self.send(subprocess.list2cmdline([str(binary), *COMMIT_ARGS]) + "\r\n")
+                probe = "import os,sys;print('GGH_TTY',*[os.isatty(i) for i in range(3)]);print('GGH_PYTHON',sys.version);print('GGH_PROBE_DONE')"
+                self.send(subprocess.list2cmdline([sys.executable, "-c", probe]) + "\r")
+                self.expect("GGH_PROBE_DONE")
+                self.send(subprocess.list2cmdline([str(binary), *COMMIT_ARGS]) + "\r")
             self.expect("Select commit type:")
-        except Exception:
+        except Exception as error:
+            self.drain()
+            error.console_output = self.output[-24000:]
+            error.console_alive = self.proc.isalive()
+            error.console_exit_code = None if error.console_alive else self.proc.exitstatus
             self.close()
             raise
+
+    def drain(self):
+        while True:
+            try:
+                self.output = (self.output + self.chunks.get_nowait())[-48000:]
+            except queue.Empty:
+                return
 
     def read(self):
         try:
@@ -71,16 +85,16 @@ class Console:
                 self.offset = index + len(text)
                 return
             try:
-                self.output += self.chunks.get(timeout=0.1)
+                self.output = (self.output + self.chunks.get(timeout=0.1))[-48000:]
             except queue.Empty:
                 pass
         raise AssertionError("Timed out waiting for " + repr(text))
 
     def shell_usable(self, exit_code=0):
         # /Q suppresses command echo, so this marker must come from cmd execution.
-        self.send("echo GGH_EXIT_%errorlevel%\r\n")
+        self.send("echo GGH_EXIT_%errorlevel%\r")
         self.expect("GGH_EXIT_" + str(exit_code))
-        self.send("echo GGH_SHELL_USABLE\r\n")
+        self.send("echo GGH_SHELL_USABLE\r")
         self.expect("GGH_SHELL_USABLE")
 
     def close(self):
@@ -135,16 +149,20 @@ def qualify(binary, name, fixture):
     started = time.monotonic()
     try:
         if name == "closed_output_pipe":
-            child = subprocess.Popen([str(binary), "--help"], cwd=fixture.repo, env=fixture.env,
-                                     stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-            child.stdout.close()
-            try:
-                receipt["exitCode"] = child.wait(timeout=TIMEOUT)
-                assert receipt["exitCode"] == 0, "Closed-output command must exit 0"
-            finally:
-                if child.poll() is None:
-                    child.kill()
-                    child.wait(timeout=TIMEOUT)
+            with tempfile.TemporaryFile() as stderr:
+                child = subprocess.Popen([str(binary), "--help"], cwd=fixture.repo, env=fixture.env,
+                                         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=stderr)
+                child.stdout.close()
+                try:
+                    receipt["exitCode"] = child.wait(timeout=TIMEOUT)
+                    assert receipt["exitCode"] == 0, "Closed-output command must exit 0"
+                finally:
+                    if child.poll() is None:
+                        child.kill()
+                        child.wait(timeout=TIMEOUT)
+                    stderr.seek(0, os.SEEK_END)
+                    stderr.seek(max(0, stderr.tell() - 24000))
+                    receipt["stderr"] = stderr.read().decode("utf-8", errors="replace")
             receipt["status"] = "passed"
             return receipt
         direct = name == "windows_forced_termination"
@@ -205,6 +223,10 @@ def qualify(binary, name, fixture):
         receipt["status"] = "passed"
     except Exception as error:
         receipt["error"] = str(error)
+        if hasattr(error, "console_output"):
+            receipt["output"] = error.console_output
+            receipt["consoleAlive"] = error.console_alive
+            receipt["consoleExitCode"] = error.console_exit_code
     finally:
         receipt["elapsedSeconds"] = round(time.monotonic() - started, 3)
         if console is not None:

@@ -60,5 +60,29 @@
     "organizationAndSSO": "Authenticated account has no organizations",
     "crossAccountFork": "No second account available"
   },
-  "cleanup": "Pending after independent agent qualification; known synthetic resources only. Archive because existing token lacks delete_repo scope."
+  "cleanup": {
+    "verified": [
+      {
+        "kind": "private",
+        "id": 1420144573,
+        "target": "JonathanRReed/ggh-qa-private-20261014-a592cc3c",
+        "archived": true,
+        "branches": [
+          "main"
+        ],
+        "openPullRequests": 0
+      },
+      {
+        "kind": "public",
+        "id": 1420145274,
+        "target": "JonathanRReed/ggh-qa-public-20261014-a592cc3c",
+        "archived": true,
+        "branches": [
+          "main"
+        ],
+        "openPullRequests": 0
+      }
+    ],
+    "method": "Closed five known synthetic PRs, removed known test branches, archived both repositories. No deletion scope or unrelated resource changes."
+  }
 }

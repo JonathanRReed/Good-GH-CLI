@@ -1,0 +1,27 @@
+{
+  "binarySha256": "df3ecf35673fb916db507a33f3c2cc78dea97e9959e9a05904550ad6ec2dd580",
+  "editor": "/usr/bin/vi -u NONE -N",
+  "method": "Actual POSIX controlling terminal. Replaced title/body in vi, declined publication, verified absent remote branch, reopened saved draft in vi and confirmed one private draftPR.",
+  "multilineUnicodePreserved": true,
+  "declineHadNoRemoteEffects": true,
+  "savedDraftReopened": true,
+  "userSelectedFilePreserved": true,
+  "pullRequest": {
+    "number": 5,
+    "url": "https://github.com/JonathanRReed/ggh-qa-private-20261014-a592cc3c/pull/5",
+    "draft": true,
+    "head": "qa-editor",
+    "base": "main"
+  },
+  "interruptedAttempt": {
+    "completed": [
+      "push_head"
+    ],
+    "remaining": [
+      "set_head_upstream",
+      "create_pull_request"
+    ],
+    "reason": "Single-branch clone fetch specification did not map the newly published branch"
+  },
+  "recovery": "Preserved main-only fetch mapping, added the published branch mapping and resumed without another push or duplicate PR."
+}

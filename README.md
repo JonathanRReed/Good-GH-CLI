@@ -60,6 +60,7 @@ If a split fails partway through, completed commits remain. The original index i
 ```bash
 ggh pr                      # Browse PRs
 ggh pr create --draft --ai   # Generate a title and body
+ggh pr create --editor --no-ai # Edit a multiline draft in your Git editor
 ggh pr create --attach 'proof.png#Sign-in screen' # Attach media when supported
 ggh pr view 42
 ggh pr diff 42
@@ -76,6 +77,16 @@ ggh pr merge 42 --auto       # Merge when required checks pass
 ggh pr comment 42 -b "lgtm"
 ggh pr ready | close | reopen
 ```
+
+`--editor` opens your Git editor with a first-line title, a blank line, and the
+Markdown body. It honors `GIT_EDITOR`, Git's `core.editor`, `VISUAL`, and `EDITOR`.
+The publication preview follows the edit and identifies the target, draft state,
+and effects before confirmation. `--template NAME` selects a named PR template.
+
+If editing or publication stops, the private draft stays on disk. The recovery
+command reopens it with its publication options. Successful direct creation
+removes generated drafts. A file you supplied with `--editor FILE` stays intact.
+Dry runs never launch an editor. Scripts can use `--title` and `--body-file`.
 
 AI review findings must refer to lines added by the diff. `ggh` discards invalid locations, shows the remaining findings for selection, and posts the selected findings as a GitHub review.
 
@@ -230,7 +241,7 @@ ggh stack list --json | jq '.[] | select(.behind > 0) | .branch'
 ggh discard --all --dry-run
 ```
 
-`ggh agent schema --json` lists supported commands, inputs, and the version 1
+`ggh agent schema` lists supported commands, inputs, and the version 1
 `ggh.agent` envelope. With `--agent`, read `status`, `error.code`,
 `error.retryability`, `requiredInputs`, and `effects` before continuing. Detailed
 result schemas cover the core workflows; other `result` payloads remain

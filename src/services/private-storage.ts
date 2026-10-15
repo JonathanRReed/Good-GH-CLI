@@ -130,6 +130,8 @@ export function assertWindowsPrivateDirectory(path: string, create = true, refre
       if ("exception" in value && typeof value.exception === "string" && /^[A-Za-z]{1,64}$/.test(value.exception)) reason += `/${value.exception}`;
     }
   } catch { /* Invalid helper output fails closed. */ }
+  if (result.error) reason = "code" in result.error && result.error.code === "ETIMEDOUT" ? "inspection_timeout" : "inspection_spawn_failed";
+  else if (!result.stdout?.trim()) reason = "inspection_empty_output";
   if (result.error || result.status !== 0 || !accepted) throw new PrivateStorageError(`Private storage has unsafe or unverifiable Windows permissions (${reason}): ${root}. Restrict access to your account or move this directory aside before retrying.`);
   const verified = identity(root);
   if (verified) audited.set(root, verified);
