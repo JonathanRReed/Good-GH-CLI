@@ -64,11 +64,18 @@ jobs:
       - name: Lint
         run: bun run lint
 
-      - name: Test
-        run: bun test --timeout 30000
-
       - name: Build
         run: bun run build
+
+      - name: Performance budgets
+        # Startup and status must complete, not just eventually: an accidental
+        # network call or unmemoized 15 s probe on these paths shows up here.
+        # Budgets are flake-proof on purpose; see docs/PERF.md for real numbers.
+        # (A script, not timeout(1): macOS runners don't have timeout.)
+        run: bun run scripts/perf-budget.ts
+
+      - name: Test
+        run: bun test --timeout 30000
 
       - name: Smoke test the built artifact
         run: |
@@ -105,13 +112,6 @@ jobs:
         # man/ggh.1 is generated from the command tree; this fails the build
         # when someone adds a command and forgets `bun run man`.
         run: bun run man --check
-
-      - name: Performance budgets
-        # Startup and status must complete, not just eventually: an accidental
-        # network call or unmemoized 15 s probe on these paths shows up here.
-        # Budgets are flake-proof on purpose; see docs/PERF.md for real numbers.
-        # (A script, not timeout(1): macOS runners don't have timeout.)
-        run: bun run scripts/perf-budget.ts
 
       - name: Test the installed npm package, not only the source launcher
         run: |

@@ -279,12 +279,12 @@ async function writeAt(directory: string, record: OperationRecord): Promise<void
   const json = `${JSON.stringify(record, null, 2)}\n`;
   if (Buffer.byteLength(json) > MAX_RECORD_BYTES) throw new Error("Operation record is too large.");
   const temp = join(directory, `.${record.id}.${randomUUID()}.tmp`);
-  const file = await open(temp, "wx", 0o600);
   try {
-    await file.writeFile(json, "utf8");
-    await file.sync();
-  } finally { await file.close(); }
-  try {
+    const file = await open(temp, "wx", 0o600);
+    try {
+      await file.writeFile(json, "utf8");
+      await file.sync();
+    } finally { await file.close(); }
     const existing = await lstat(path).catch((error: NodeJS.ErrnoException) => error.code === "ENOENT" ? undefined : Promise.reject(error));
     const hasPrivateUnixMode = !existing || process.platform === "win32" || (existing.mode & 0o077) === 0;
     if (existing && (!existing.isFile() || existing.isSymbolicLink() || !hasPrivateUnixMode || (typeof process.getuid === "function" && existing.uid !== process.getuid()))) {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { fixtureRoot, runFixture } from "./cli-fixture.ts";
@@ -40,6 +40,28 @@ afterEach(() => {
 });
 
 describe("commit publication", () => {
+  test("preserves a foreign index lock and staged content when commit refuses", async () => {
+    const root = tempRoot();
+    const { repo, baseTip } = makeRepository(root);
+    writeFileSync(join(repo, "README.md"), "staged content\n");
+    git(["add", "README.md"], repo);
+    writeFileSync(join(repo, "README.md"), "unstaged content\n");
+    const indexPath = join(repo, ".git", "index");
+    const index = readFileSync(indexPath);
+    const staged = git(["diff", "--cached"], repo);
+    const lockPath = join(repo, ".git", "index.lock");
+    writeFileSync(lockPath, "foreign lock\n");
+    const result = await runFixture(["commit", "--all", "--message", "must refuse", "--no-verify", "--json"], { root, cwd: repo });
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stdout + result.stderr).toContain("index.lock");
+    expect(readFileSync(lockPath, "utf8")).toBe("foreign lock\n");
+    expect(readFileSync(indexPath)).toEqual(index);
+    expect(git(["diff", "--cached"], repo)).toBe(staged);
+    expect(git(["rev-parse", "HEAD"], repo)).toBe(baseTip);
+    expect(readFileSync(join(repo, "README.md"), "utf8")).toBe("unstaged content\n");
+    expect(result.providerCalls).toHaveLength(0);
+  });
+
   test("requires protected push approval before staging, even with records disabled", async () => {
     const root = tempRoot();
     const { repo, baseTip } = makeRepository(root);

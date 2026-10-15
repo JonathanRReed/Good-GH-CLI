@@ -8,6 +8,7 @@ import { run } from "../src/utils/exec.ts";
 import { addOperationEvidence, listOperations, pruneOperations, readOperation, startOperation, updateOperation } from "../src/services/operations.ts";
 import { registerOperationCommand } from "../src/commands/operation.ts";
 import { resetFlags, setFlags } from "../src/services/runtime.ts";
+import { runFixture } from "./cli-fixture.ts";
 
 const roots: string[] = [];
 
@@ -63,6 +64,37 @@ afterEach(async () => {
 });
 
 describe("local operation records", () => {
+  test("a full-disk journal write stops a commit before effects and removes its incomplete file", async () => {
+    const cwd = await repository();
+    await run("git", ["config", "user.name", "Fault fixture"], { cwd });
+    await run("git", ["config", "user.email", "fixture@example.invalid"], { cwd });
+    await writeFile(join(cwd, "staged.txt"), "preserved staged content\n");
+    await run("git", ["add", "staged.txt"], { cwd });
+    const index = await readFile(join(cwd, ".git", "index"));
+    const result = await runFixture([], { root: cwd, cwd, invoke: `
+      const fs = await import('node:fs/promises');
+      const originalOpen = fs.open;
+      const {mock} = await import('bun:test');
+      mock.module('node:fs/promises', () => ({...fs, open: async (...args) => {
+        const file = await originalOpen(...args);
+        if (String(args[0]).replaceAll('\\\\','/').includes('/ggh-operations/') && String(args[0]).endsWith('.tmp')) {
+          return new Proxy(file, {get(target,key) {
+            if (key === 'writeFile') return async () => { throw Object.assign(new Error('Synthetic disk full'), {code:'ENOSPC'}); };
+            const value = Reflect.get(target,key); return typeof value === 'function' ? value.bind(target) : value;
+          }});
+        }
+        return file;
+      }}));
+      const {runCli} = await import(${JSON.stringify(join(import.meta.dir, "../src/index.ts"))});
+      await runCli(['bun','ggh','commit','-m','must not commit','--no-ai','--agent']);
+    ` });
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stdout)).toMatchObject({ status: "failed", error: { message: expect.stringContaining("Synthetic disk full") } });
+    expect(await readFile(join(cwd, ".git", "index"))).toEqual(index);
+    expect((await run("git", ["rev-parse", "--verify", "HEAD"], { cwd, reject: false })).exitCode).not.toBe(0);
+    expect((await readdir(await recordsDirectory(cwd))).filter(name => name.endsWith(".tmp") || name.endsWith(".json"))).toEqual([]);
+  });
+
   test("persists only structured operation metadata and reopens it", async () => {
     const cwd = await repository();
     const record = await startOperation({ command: "ggh pr create", target: "owner/repo", revision: "abc123", steps: ["checks"], cwd });

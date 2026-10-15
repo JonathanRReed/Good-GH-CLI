@@ -1,6 +1,6 @@
 {
   "platform": "darwin",
-  "binarySha256": "68433e03cbc34f048c0668054558ec7f383f969d730a0ead829b9ddccb9269f2",
+  "binarySha256": "e229247d77b53ab8796aa9a19bf41ba885938b96c7773f8e15333003bfac63a6",
   "cases": [
     {
       "name": "unicode-paste-typeahead-resize",
@@ -38,5 +38,5 @@
       "exitCode": 0
     }
   ],
-  "scope": "Actual local macOS pseudoterminal and compiled binary. Hosted terminal matrix remains pending."
+  "scope": "Local native macOS pseudoterminal. Cancellation fix narrowed to promptInput after hosted source tests caught explicit restack abort returning130. Hosted terminal results pending."
 }

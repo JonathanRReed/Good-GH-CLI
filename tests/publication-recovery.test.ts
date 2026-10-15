@@ -44,6 +44,44 @@ function responses(succeed: boolean, repositoryExists = false): FixtureResponse[
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 describe("publication recovery", () => {
+  test("preserves local HEAD, confirmed pushes, and recovery metadata after rate limiting", async () => {
+    const { root, repo, bare } = fixture();
+    const head = git(["rev-parse", "HEAD"], repo);
+    const limited = responses(false);
+    limited[limited.length - 1] = { prefix: ["pr", "create"], stderr: "HTTP 429: API rate limit exceeded", exitCode: 1 };
+    const first = await runFixture([], { root, cwd: repo, responses: limited, invoke: invoke(["pr", "create", "--title", "title", "--body", "body", "--yes", "--agent"], bare) });
+    const report = JSON.parse(first.stdout);
+    expect(report.status).toBe("partially_completed");
+    expect(report.operationId).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(report.effects.completed).toEqual(expect.arrayContaining(["push_base", "push_head"]));
+    expect(report.effects.pending).toContain("create_pull_request");
+    expect(git(["rev-parse", "HEAD"], repo)).toBe(head);
+    expect(git(["rev-parse", "refs/heads/feature"], bare)).toBe(head);
+    const record = await readOperation(report.operationId, repo);
+    expect(record.resume).toMatchObject({ kind: "publication", requiresPrContent: true });
+  });
+
+  test("reconciles a PR whose creation response was lost without creating it again", async () => {
+    const { root, repo, bare } = fixture();
+    const head = git(["rev-parse", "HEAD"], repo);
+    const lost = responses(false);
+    lost[lost.length - 1] = { prefix: ["pr", "create"], stderr: "connection reset while reading response", exitCode: 1 };
+    const first = await runFixture([], { root, cwd: repo, responses: lost, invoke: invoke(["pr", "create", "--title", "title", "--body", "body", "--yes", "--agent"], bare) });
+    const report = JSON.parse(first.stdout);
+    expect(report.status).toBe("partially_completed");
+    expect(first.calls.filter(call => call[0] === "pr" && call[1] === "create")).toHaveLength(1);
+    const recovered = responses(true, true).map(response => response.prefix[0] === "pr" && response.prefix[1] === "list"
+      ? { ...response, stdout: JSON.stringify([{ url: "https://github.com/fixture/project/pull/7" }]) }
+      : response);
+    const retry = await runFixture([], { root, cwd: repo, responses: recovered, invoke: invoke(["operation", "resume", report.operationId, "--title", "title", "--body", "body", "--yes", "--agent"], bare) });
+    expect(JSON.parse(retry.stdout)).toMatchObject({ status: "succeeded", operationId: report.operationId, result: { url: "https://github.com/fixture/project/pull/7" } });
+    expect(retry.calls.find(call => call[0] === "pr" && call[1] === "list")).toEqual(["pr", "list", "--state", "open", "--head", "feature", "--base", "main", "--json", "url"]);
+    expect(retry.calls.some(call => call[1] === "create" || call[1] === "edit")).toBe(false);
+    expect(git(["rev-parse", "HEAD"], repo)).toBe(head);
+    expect(git(["rev-parse", "refs/heads/feature"], bare)).toBe(head);
+    expect((await readOperation(report.operationId, repo)).status).toEqual({ state: "succeeded" });
+  });
+
   test("keeps original execution exclusive until its journal is finalized", async () => {
     const { root, repo } = fixture();
     const module = (name: string) => JSON.stringify(join(import.meta.dir, "../src/services", name + ".ts"));

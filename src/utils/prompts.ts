@@ -62,7 +62,11 @@ export async function promptInput(options: {
       promptStr,
       prefix,
     );
-    if (answer === null) return null;
+    if (answer === null) {
+      if (!process.exitCode) process.exitCode = 130;
+      recordCommandIssue({ status: "cancelled", message: "Input cancelled." });
+      return null;
+    }
     const result = answer.trim() || defaultVal || "";
     if (options.validate) {
       const err = options.validate(result);
