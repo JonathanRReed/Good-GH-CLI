@@ -42,4 +42,4 @@ Each item ends in a focused behavioral receipt before implementation advances. T
 
 ## Active tranche
 
-Items 01 through 05 passed their focused checks. Item 06 expands exact-artifact installation checks to cover PATH, spaces and Unicode paths, an actual prior release upgrade and rollback, and uninstall. The hosted matrix must run on the checkpoint revision. Item 07 then closes Windows private-storage and subprocess-tree gaps. Outside human testers remain waived.
+Items 01 through 05 passed their focused checks. Item 06 local install qualification passed. The first hosted run found platform-specific fixture errors, now repaired locally; its exact-artifact jobs await a successful source gate. Item 07 Windows storage and subprocess-tree changes are implemented with a dedicated cross-user qualification job. Run that checkpoint on Windows before closing these gates or starting live GitHub qualification. Outside human testers remain waived.

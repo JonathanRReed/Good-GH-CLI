@@ -1,7 +1,8 @@
+import { assertWindowsPrivateDirectory } from "./private-storage.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, open, readFile, readdir, rmdir, unlink } from "node:fs/promises";
 import { hostname } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 interface LockOwner {
   schemaVersion: 1;
@@ -35,6 +36,7 @@ function alive(owner: LockOwner): ProcessLockStatus {
 }
 
 async function view(path: string): Promise<LockView> {
+  assertWindowsPrivateDirectory(dirname(path), false);
   const info = await lstat(path).catch((error: NodeJS.ErrnoException) => {
     if (error.code === "ENOENT") return undefined;
     throw error;
@@ -104,6 +106,7 @@ export async function recoverProcessLock(path: string, options: { allowUnknown?:
 }
 
 export async function acquireProcessLock(path: string, waitMs = 5000): Promise<() => Promise<void>> {
+  assertWindowsPrivateDirectory(dirname(path));
   const deadline = Date.now() + waitMs;
   const record: LockOwner = { schemaVersion: 1, pid: process.pid, host: HOST, token: randomUUID(), startedAt: new Date().toISOString() };
   const ownerName = `${HOST_ID}.${record.pid}.${record.token}.owner`;

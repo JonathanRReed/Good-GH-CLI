@@ -63,7 +63,7 @@ describe("command-tree completion", () => {
       if (process.platform !== "win32") chmodSync(shim, 0o700);
       const env = { ...process.env, PATH: `${root}${delimiter}${process.env.PATH}`, HOME: root, XDG_CONFIG_HOME: root, GGH_NO_PLUGINS: "1", GGH_NO_RECORDS: "1" };
       const generated = Bun.spawn([process.execPath, entry, "completion", shell], { env, stdout: "pipe", stderr: "pipe" });
-      const file = join(root, `${shell}.completion`);
+      const file = join(root, shell === "pwsh" ? "powershell.ps1" : `${shell}.completion`);
       writeFileSync(file, await new Response(generated.stdout).text());
       expect(await generated.exited).toBe(0);
       let args: string[];

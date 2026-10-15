@@ -120,3 +120,27 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/package-install" --ignore-scripts --no-audit --no-fund "$RUNNER_TEMP"/package-tarball/*.tgz
           test "$(node "$RUNNER_TEMP/package-install/node_modules/good-gh-cli/bin/ggh.cjs" --version)" = "$(node -p 'require("./package.json").version')"
           node scripts/smoke-package.cjs "$RUNNER_TEMP/package-install/node_modules/good-gh-cli/bin/ggh.cjs" "$(node -p 'require("./package.json").version')"
+
+  windows-privacy:
+    name: Windows private storage and process trees
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.0
+      - run: bun install --frozen-lockfile
+      - name: Verify real cross-user access and unsafe storage refusal
+        run: ./scripts/qualify-windows.ps1 -ProjectRoot $PWD -ResultsFile windows-privacy.json
+      - name: Verify timeout and cancellation terminate child trees
+        run: bun test --timeout 30000 tests/exec.test.ts
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: windows-privacy-results
+          path: windows-privacy.json
+          retention-days: 7

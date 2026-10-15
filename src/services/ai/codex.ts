@@ -1,6 +1,7 @@
+import { assertWindowsPrivateDirectory, privateTemporaryDirectory } from "../private-storage.ts";
 import { commandExists, run } from "../../utils/exec.ts";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { existsSync, readFileSync, rmSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { CliAIProvider } from "./base.ts";
 import { AIGenerationError, type AIProviderId } from "./provider.ts";
@@ -40,7 +41,7 @@ export class CodexProvider extends CliAIProvider {
   }
 
   protected async invoke(prompt: string, model: string, timeoutMs: number): Promise<string> {
-    const tmpDir = mkdtempSync(join(tmpdir(), "good-gh-codex-"));
+    const tmpDir = privateTemporaryDirectory("good-gh-codex-");
     const outputPath = join(tmpDir, "output.txt");
 
     try {
@@ -69,6 +70,7 @@ export class CodexProvider extends CliAIProvider {
       );
       this.setLastUsage(parseCodexUsage(result.stdout));
 
+      assertWindowsPrivateDirectory(tmpDir, false, true);
       if (!existsSync(outputPath)) {
         throw new AIGenerationError(this.id, model, "empty_response", "codex wrote no output file");
       }

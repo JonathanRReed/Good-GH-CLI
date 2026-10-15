@@ -1,3 +1,4 @@
+import { assertWindowsPrivateDirectory } from "./private-storage.ts";
 import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, readdir, realpath, rename, stat, lstat, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -233,6 +234,7 @@ async function operationsDirectory(cwd = process.cwd(), create = true): Promise<
   const base = common
     ? resolve(cwd, common, "ggh-operations")
     : join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "good-gh", "operations");
+  assertWindowsPrivateDirectory(base, create);
   if (create) await mkdir(base, { recursive: true, mode: 0o700 });
   const info = await lstat(base).catch((error: NodeJS.ErrnoException) => error.code === "ENOENT" && !create ? undefined : Promise.reject(error));
   if (!info) return base;
@@ -441,7 +443,3 @@ export async function pruneOperations(options: { before: Date; authorized: boole
   }
   return removed;
 }
-
-// POSIX file modes restrict access on Unix systems. On Windows, Node's mode
-// argument does not guarantee restrictive ACLs. Privacy depends on the parent
-// directory ACL there, and Windows behavior has not been verified here.

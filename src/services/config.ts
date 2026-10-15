@@ -1,4 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { assertWindowsPrivateDirectory } from "./private-storage.ts";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { CommitStyle } from "../utils/conventions.ts";
@@ -181,6 +183,7 @@ function readJsonFile(filePath: string): unknown {
 }
 
 function readUserConfig(): Partial<GoodGhConfig> {
+  assertWindowsPrivateDirectory(getConfigDir(), false);
   return sanitizeConfig(readJsonFile(getConfigPath())).config;
 }
 
@@ -285,10 +288,15 @@ export function saveConfig(updates: Partial<GoodGhConfig>): GoodGhConfig {
   }
 
   const dir = getConfigDir();
+  assertWindowsPrivateDirectory(dir);
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
   }
 
-  writeFileSync(getConfigPath(), JSON.stringify(merged, null, 2) + "\n", { encoding: "utf-8", mode: 0o600 });
+  const temporary = join(dir, `.config.${randomUUID()}.tmp`);
+  try {
+    writeFileSync(temporary, JSON.stringify(merged, null, 2) + "\n", { encoding: "utf-8", mode: 0o600, flag: "wx" });
+    renameSync(temporary, getConfigPath());
+  } finally { rmSync(temporary, { force: true }); }
   return { ...DEFAULT_CONFIG, ...merged };
 }

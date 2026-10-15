@@ -1,3 +1,4 @@
+import { assertWindowsPrivateDirectory } from "../private-storage.ts";
 /**
  * Stacked-branch graph (git-config parent pointers) and restack. Depends on exec/branch only.
  */
@@ -54,6 +55,7 @@ function validOperationId(id: string): boolean {
 async function recoveryDirectory(cwd: string): Promise<string> {
   const result = await run("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd });
   const directory = join(result.stdout.trim(), "ggh-stack-recovery");
+  assertWindowsPrivateDirectory(directory);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const info = await lstat(directory);
   if (!info.isDirectory() || info.isSymbolicLink() || (process.platform !== "win32" && (info.mode & 0o077) !== 0) || (typeof process.getuid === "function" && info.uid !== process.getuid())) {

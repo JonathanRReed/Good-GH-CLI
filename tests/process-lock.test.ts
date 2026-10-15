@@ -41,7 +41,7 @@ describe("process ownership locks", () => {
       child.kill("SIGKILL");
       await child.exited;
       expect((await inspectProcessLock(path)).state).toBe("abandoned");
-      const attempts = await Promise.allSettled([acquireProcessLock(path, 0), acquireProcessLock(path, 0)]);
+      const attempts = await Promise.allSettled([acquireProcessLock(path, 250), acquireProcessLock(path, 250)]);
       const acquired = attempts.filter((item): item is PromiseFulfilledResult<() => Promise<void>> => item.status === "fulfilled");
       expect(acquired).toHaveLength(1);
       expect(attempts.filter(item => item.status === "rejected")).toHaveLength(1);

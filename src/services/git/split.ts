@@ -1,3 +1,4 @@
+import { assertWindowsPrivateDirectory } from "../private-storage.ts";
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { commit, getRepoRoot, type CommitOptions } from "../git.ts";
@@ -116,12 +117,12 @@ export async function executeSplitCommits(
   const completed: string[] = [];
   let success = false;
   try {
-    writeFileSync(lock, JSON.stringify({ operation: "ggh split", pid: process.pid, head: snapshot.head }));
     const currentBranch = await branchAt(cwd);
     if (currentBranch !== snapshot.branch || await headAt(cwd) !== snapshot.head || !readFileSync(indexPath).equals(snapshot.indexBytes)) {
       throw new Error("Repository or index changed after AI planning. Retry without discarding your changes.");
     }
     const parent = join(dirname(indexPath), "ggh-split");
+    assertWindowsPrivateDirectory(parent);
     mkdirSync(parent, { recursive: true, mode: 0o700 });
     checkpoint = mkdtempSync(join(parent, "checkpoint-"));
     writeFileSync(join(checkpoint, "original-index"), snapshot.indexBytes, { mode: 0o600 });

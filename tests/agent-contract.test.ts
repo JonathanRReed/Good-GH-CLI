@@ -73,7 +73,7 @@ describe("agent contract", () => {
     try {
       expect(Bun.spawnSync(["git", "init", local]).exitCode).toBe(0);
       const args = ["discard", "--all", "--agent"];
-      const result = await runFixture([], { root, cwd: local, invoke: `process.env.GGH_NO_RECORDS = '1'; const { runCli } = await import(${JSON.stringify(new URL("../src/index.ts", import.meta.url).pathname)}); await runCli(['bun', 'ggh', ...${JSON.stringify(args)}]);` });
+      const result = await runFixture([], { root, cwd: local, invoke: `process.env.GGH_NO_RECORDS = '1'; const { runCli } = await import(${JSON.stringify(new URL("../src/index.ts", import.meta.url).href)}); await runCli(['bun', 'ggh', ...${JSON.stringify(args)}]);` });
       expect(JSON.parse(result.stdout)).toMatchObject({ status: "no_op", effects: { completed: [], pending: [], uncertain: [] } });
       const partial = agentEnvelope({ command: ["pr", "create"], result: { status: "partially_completed", completed: ["push_head"], remaining: ["create_pull_request"] }, failed: true, dryRun: false, preview: [] });
       expect(partial).toMatchObject({ status: "partially_completed", effects: { completed: ["push_head"], pending: ["create_pull_request"], uncertain: ["command_effects"] } });

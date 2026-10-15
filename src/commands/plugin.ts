@@ -1,3 +1,4 @@
+import { assertWindowsPrivateDirectory } from "../services/private-storage.ts";
 import { Command } from "commander";
 import { getFlags } from "../services/runtime.ts";
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
@@ -38,6 +39,7 @@ function getManifestPath(): string {
 function readManifest(): PluginManifest[] {
   const path = getManifestPath();
   if (!existsSync(path)) return [];
+  assertWindowsPrivateDirectory(getConfigDir(), false);
   try {
     const raw = JSON.parse(readFileSync(path, "utf-8"));
     return Array.isArray(raw) ? raw.filter((item): item is PluginManifest =>
@@ -50,7 +52,9 @@ function readManifest(): PluginManifest[] {
 }
 
 function writeManifest(plugins: PluginManifest[]): void {
+  assertWindowsPrivateDirectory(getConfigDir());
   const dir = getPluginsDir();
+  assertWindowsPrivateDirectory(dir);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   writeFileSync(getManifestPath(), JSON.stringify(plugins, null, 2) + "\n", {
     encoding: "utf-8",
@@ -200,7 +204,9 @@ Examples:
       : `Install plugin "${name}"? It will run with your full user privileges.`;
     if (!(await confirmOrAbort(prompt, { assumeYes }))) return;
 
+    assertWindowsPrivateDirectory(getConfigDir());
     const dir = getPluginsDir();
+    assertWindowsPrivateDirectory(dir);
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 
     const pluginPath = getPluginPath(name);

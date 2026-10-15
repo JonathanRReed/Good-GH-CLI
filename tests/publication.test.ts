@@ -1,5 +1,5 @@
-import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { chmodSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, test } from "bun:test";
 import { fixtureRoot, runFixture } from "./cli-fixture.ts";
@@ -92,7 +92,7 @@ describe("publication service", () => {
     });
     const value = JSON.parse(result.stdout);
     expect(value.prepared.plan.kind).toBe("pr");
-    expect(value.prepared.plan.root).toBe(repo);
+    expect(realpathSync(value.prepared.plan.root)).toBe(realpathSync(repo));
     expect(value.prepared.plan.head).toBe("feature");
     expect(value.prepared.plan.base).toBe("main");
     expect(value.invalid).toMatchObject({
@@ -110,10 +110,9 @@ describe("publication service", () => {
       responses: [privateRepositoryView],
       invoke: `${setupRewrite(bare)} ${serviceInvoke(`const prepared = await preparePublication({kind:'pr',cwd:${JSON.stringify(sourceCwd)},source:'nested/checkout'}); process.stdout.write(JSON.stringify(prepared));`)}`,
     });
-    expect(JSON.parse(relativeSource.stdout)).toMatchObject({
-      status: "ready",
-      plan: { root: repo },
-    });
+    const relativePrepared = JSON.parse(relativeSource.stdout);
+    expect(relativePrepared.status).toBe("ready");
+    expect(realpathSync(relativePrepared.plan.root)).toBe(realpathSync(repo));
   });
 
   test("creates an explicit Enterprise repository on its planned host", async () => {
@@ -463,7 +462,7 @@ describe("publication service", () => {
       root: repo,
       cwd: repo,
       responses: [privateRepositoryView],
-      invoke: `${setupRewrite(bare)} ${serviceInvoke(`const { rmSync } = await import('node:fs'); const prepared = await preparePublication({kind:'pr'}); rmSync(${JSON.stringify(repo)},{recursive:true,force:true}); const result = prepared.status === 'ready' ? await executePublication(prepared.plan,{title:'Feature',body:'Adds a feature.'}) : prepared; process.stdout.write(JSON.stringify(result));`)}`,
+      invoke: `${setupRewrite(bare)} ${serviceInvoke(`const { rmSync } = await import('node:fs'); const prepared = await preparePublication({kind:'pr'}); process.chdir(${JSON.stringify(rootOf(repo))}); rmSync(${JSON.stringify(repo)},{recursive:true,force:true}); const result = prepared.status === 'ready' ? await executePublication(prepared.plan,{title:'Feature',body:'Adds a feature.'}) : prepared; process.stdout.write(JSON.stringify(result));`)}`,
     });
     expect(JSON.parse(result.stdout)).toMatchObject({
       status: "failed",
@@ -631,7 +630,7 @@ describe("publication service", () => {
     const trace = join(bare, "push-order.log");
     writeFileSync(
       hook,
-      `#!/bin/sh\nwhile read old new ref; do echo "$ref" >> ${trace}; case "$ref" in refs/heads/feature) exit 1;; esac; done\n`,
+      `#!/bin/sh\nwhile read old new ref; do echo "$ref" >> '${trace.replace(/\\/g, "/").replace(/'/g, "'\\''")}'; case "$ref" in refs/heads/feature) exit 1;; esac; done\n`,
     );
     chmodSync(hook, 0o755);
     const invoke = `${setupRewrite(bare)} ${serviceInvoke(`const prepared = await preparePublication({kind:'pr'}); const result = prepared.status === 'ready' ? await executePublication(prepared.plan,{title:'Feature',body:'Adds a feature.'}) : prepared; process.stdout.write(JSON.stringify({prepared,result}));`)}`;
@@ -695,5 +694,5 @@ describe("publication service", () => {
 });
 
 function rootOf(path: string): string {
-  return path.slice(0, path.lastIndexOf("/"));
+  return dirname(path);
 }

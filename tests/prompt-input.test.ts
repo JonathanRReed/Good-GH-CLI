@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { stripVTControlCharacters } from "node:util";
 import { PassThrough, Writable } from "node:stream";
 import { BufferedLineInput } from "../src/utils/line-input.ts";
 
@@ -25,8 +26,8 @@ describe("BufferedLineInput", () => {
     ]);
     if (second === "timed out") input.destroy();
     expect(second).toBe("bravo");
-    expect(rendered).toContain("Header one\nFirst: ");
-    expect(rendered).toContain("Header two\nSecond: ");
+    expect(stripVTControlCharacters(rendered).replace(/\r/g, "")).toContain("Header one\nFirst: ");
+    expect(stripVTControlCharacters(rendered).replace(/\r/g, "")).toContain("Header two\nSecond: ");
     expect(input.listenerCount("keypress")).toBe(0);
     expect(input.readableFlowing).toBe(false);
 
@@ -114,7 +115,7 @@ describe("BufferedLineInput", () => {
     ]);
 
     expect(second).toBe("bravo");
-    expect(rendered).toContain("Second: ");
+    expect(stripVTControlCharacters(rendered).replace(/\r/g, "")).toContain("Second: ");
     expect(input.listenerCount("keypress")).toBe(0);
     expect(input.readableFlowing).toBe(false);
     input.destroy();

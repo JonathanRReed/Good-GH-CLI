@@ -185,7 +185,7 @@ describe("stack recovery", () => {
     const tips = setupStack();
     const amendedParent = git("rev-parse", "parent");
     const result = await cli("restack", "child", "--yes", "--json");
-    expect(result.exitCode).toBe(0);
+    expect(result.exitCode, `${result.stderr}\n${result.stdout}`).toBe(0);
     expect(git("merge-base", "--is-ancestor", amendedParent, "child")).toBe("");
     expect(git("log", "--format=%s", "parent..child")).toContain("child");
     expect(git("config", "branch.child.gh-merge-base")).toBe("parent");
@@ -205,7 +205,7 @@ describe("stack recovery", () => {
     writeFileSync(join(root, "shared.txt"), "resolved\n");
     git("add", "shared.txt");
     const continued = await cli("restack", "--continue", "--json");
-    expect(continued.exitCode).toBe(0);
+    expect(continued.exitCode, `${continued.stderr}\n${continued.stdout}`).toBe(0);
     expect(git("branch", "--show-current")).toBe("main");
     expect(git("merge-base", "--is-ancestor", "child", "grandchild")).toBe("");
     expect(git("show", "grandchild:grandchild.txt")).toBe("grandchild");
@@ -219,7 +219,7 @@ describe("stack recovery", () => {
     const first = await cli("restack", "child", "--yes", "--json");
     expect(first.exitCode).not.toBe(0);
     const aborted = await cli("restack", "--abort", "--json");
-    expect(aborted.exitCode).toBe(0);
+    expect(aborted.exitCode, `${aborted.stderr}\n${aborted.stdout}`).toBe(0);
     expect(originalTips()).toEqual(tips);
     expect(git("branch", "--show-current")).toBe("main");
     expect(git("config", "branch.child.gh-merge-base")).toBe("parent");
@@ -319,7 +319,7 @@ describe("remote stack view", () => {
   it("keeps ordinary JSON stack views offline", async () => {
     setupStack();
     const result = await cli("list", "--all", "--json");
-    expect(result.exitCode).toBe(0);
+    expect(result.exitCode, `${result.stderr}\n${result.stdout}`).toBe(0);
     expect(result.calls).toEqual([]);
     expect(JSON.parse(result.stdout).every((branch: { remote?: unknown }) => branch.remote === undefined)).toBe(true);
   });
@@ -339,7 +339,7 @@ describe("remote stack view", () => {
         { prefix: ["pr", "list", "--head", "side"], stdout: "[]" },
       ],
     });
-    expect(result.exitCode).toBe(0);
+    expect(result.exitCode, `${result.stderr}\n${result.stdout}`).toBe(0);
     const branches = JSON.parse(result.stdout) as RemoteViewBranch[];
     const byName = new Map(branches.map((branch) => [branch.branch, branch]));
     expect(byName.get("parent")?.parent).toBeNull();

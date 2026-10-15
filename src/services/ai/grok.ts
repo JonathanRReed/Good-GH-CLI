@@ -1,6 +1,7 @@
+import { privateTemporaryDirectory } from "../private-storage.ts";
 import { commandExists, run } from "../../utils/exec.ts";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { CliAIProvider } from "./base.ts";
 import type { AIProviderId } from "./provider.ts";
@@ -41,7 +42,7 @@ export class GrokProvider extends CliAIProvider {
   }
 
   protected async invoke(prompt: string, model: string, timeoutMs: number): Promise<string> {
-    const tmpDir = mkdtempSync(join(tmpdir(), "good-gh-grok-"));
+    const tmpDir = privateTemporaryDirectory("good-gh-grok-");
     const promptPath = join(tmpDir, "prompt.txt");
 
     try {

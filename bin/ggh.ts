@@ -2,7 +2,7 @@
 import { runCli } from "../src/index.ts";
 import { killAllChildren } from "../src/utils/exec.ts";
 import { restoreTerminal, finalizeJsonOutput } from "../src/utils/output.ts";
-import { recordCommandIssue } from "../src/services/runtime.ts";
+import { recordCommandIssue, setFlags } from "../src/services/runtime.ts";
 import { finishCommandOperation } from "../src/services/command-operations.ts";
 
 let interrupted = false;
@@ -19,7 +19,7 @@ async function onInterrupt(signal: NodeJS.Signals): Promise<void> {
   process.stderr.write("\n\x1b[31m✖\x1b[0m  Cancelled.\n");
   recordCommandIssue({ status: "cancelled", message: "Cancelled." });
   restoreTerminal();
-  killAllChildren();
+  await killAllChildren();
   process.exitCode = signal === "SIGTERM" ? 143 : 130;
   await finishCommandOperation();
   finalizeJsonOutput();
@@ -35,11 +35,23 @@ process.on("exit", restoreTerminal);
  * got what it wanted. ripgrep and fzf exit 0 here; dying of SIGPIPE would
  * punish `set -o pipefail` scripts for succeeding.
  */
-process.on("SIGPIPE", () => process.exit(0));
+let pipeClosed = false;
+process.on("SIGPIPE", () => {
+  if (pipeClosed) return;
+  pipeClosed = true;
+  void (async () => {
+    restoreTerminal();
+    await killAllChildren();
+    process.exitCode = 0;
+    setFlags({ json: false });
+    await finishCommandOperation();
+    process.exit(0);
+  })();
+});
 
 runCli(process.argv).catch(async (err) => {
   restoreTerminal();
-  killAllChildren();
+  await killAllChildren();
   console.error(err instanceof Error ? err.message : String(err));
   recordCommandIssue({ status: "failed", message: err instanceof Error ? err.message : String(err) });
   process.exitCode = 1;

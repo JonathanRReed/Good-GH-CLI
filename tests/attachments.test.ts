@@ -499,7 +499,7 @@ describe("GitHub attachments", () => {
       remaining: [],
       claimsResource: false,
     });
-    expect(readFileSync(uploadTrace, "utf8")).toContain(path);
+    expect(readFileSync(uploadTrace, "utf8").trim().split("\n").map(line => JSON.parse(line))).toContainEqual([path, "pr:42"]);
     expect(result.calls.at(-1)?.slice(0, 2)).toEqual(["pr", "edit"]);
   });
 

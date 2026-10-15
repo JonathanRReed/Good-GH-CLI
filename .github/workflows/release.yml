@@ -202,7 +202,7 @@ jobs:
           (cd previous; shasum -a 256 '${{ matrix.asset }}' > '${{ matrix.asset }}.sha256')
       - name: Verify checksum, clean install, PATH, upgrade, rollback and uninstall
         run: node scripts/smoke-artifact.cjs native/${{ matrix.asset }} ${{ needs.verify.outputs.version }} previous/${{ matrix.asset }} native-smoke.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: install-results-${{ matrix.asset }}

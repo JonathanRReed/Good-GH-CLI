@@ -229,14 +229,25 @@ export async function runCli(argv: string[]): Promise<void> {
     return;
   }
 
-  const program = await createProgram();
+  const agentRequested = args.slice(0, args.indexOf("--") < 0 ? args.length : args.indexOf("--")).includes("--agent");
+  if (agentRequested) {
+    beginCommandOutput();
+    setFlags({ agent: true, json: true, noInput: true });
+  }
+  let program: Command;
+  try { program = await createProgram(); }
+  catch (error) {
+    if (!agentRequested) throw error;
+    fail(error instanceof Error ? error.message : String(error), { code: "operation_failed" });
+    finalizeJsonOutput();
+    return;
+  }
   const parsingCommands = [program];
   for (const command of parsingCommands) {
     command.exitOverride();
     parsingCommands.push(...command.commands);
   }
 
-  const agentRequested = args.slice(0, args.indexOf("--") < 0 ? args.length : args.indexOf("--")).includes("--agent");
   const agentInformation: string[] = [];
   if (agentRequested) {
     for (const command of parsingCommands) command.configureOutput({ writeOut: value => { agentInformation.push(value); } });

@@ -1,6 +1,7 @@
+import { privateTemporaryDirectory } from "../private-storage.ts";
 import { commandExists, run } from "../../utils/exec.ts";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { existsSync, rmSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { CliAIProvider } from "./base.ts";
 import type { AIProviderId } from "./provider.ts";
@@ -31,7 +32,7 @@ export class ClaudeProvider extends CliAIProvider {
   }
 
   protected async invoke(prompt: string, model: string, timeoutMs: number): Promise<string> {
-    const cwd = mkdtempSync(join(tmpdir(), "good-gh-claude-"));
+    const cwd = privateTemporaryDirectory("good-gh-claude-");
     try {
       const { stdout } = await run(
         "claude",

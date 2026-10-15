@@ -1,3 +1,4 @@
+import { assertWindowsPrivateDirectory, PrivateStorageError } from "./private-storage.ts";
 import { chmodSync, closeSync, constants, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
@@ -6,6 +7,7 @@ import { join } from "node:path";
 const CACHE_VERSION = 2;
 const ENTRY_NAME = /^entry-v2-[a-f0-9]{64}\.json$/;
 const MAX_ENTRY_BYTES = 16 * 1024 * 1024;
+const privacyWarnings = new Set<string>();
 
 /** The intended location, even when caching is disabled by a filesystem error. */
 export function getCacheDir(): string {
@@ -16,13 +18,18 @@ export function getCacheDir(): string {
 function cacheDir(): string | null {
   const dir = getCacheDir();
   try {
+    assertWindowsPrivateDirectory(dir);
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 });
     const st = lstatSync(dir);
     if (!st.isDirectory() || st.isSymbolicLink()) return null;
     if (process.getuid && st.uid !== process.getuid()) return null;
     if (process.platform !== "win32") chmodSync(dir, 0o700);
     return dir;
-  } catch {
+  } catch (error) {
+    if (error instanceof PrivateStorageError && !privacyWarnings.has(dir)) {
+      privacyWarnings.add(dir);
+      console.error(`ggh: caching disabled. ${error.message}`);
+    }
     return null;
   }
 }

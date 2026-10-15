@@ -1,3 +1,4 @@
+import { assertWindowsPrivateDirectory } from "../services/private-storage.ts";
 import { Command } from "commander";
 import { getFlags } from "../services/runtime.ts";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
@@ -13,6 +14,7 @@ function getAliasesPath(): string {
 function readAliases(): Record<string, string> {
   const path = getAliasesPath();
   if (!existsSync(path)) return {};
+  assertWindowsPrivateDirectory(getConfigDir(), false);
   try {
     const raw = JSON.parse(readFileSync(path, "utf-8"));
     if (raw && typeof raw === "object" && !Array.isArray(raw)) return raw as Record<string, string>;
@@ -26,6 +28,7 @@ function readAliases(): Record<string, string> {
 
 function writeAliases(aliases: Record<string, string>): void {
   const dir = getConfigDir();
+  assertWindowsPrivateDirectory(dir);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   writeFileSync(getAliasesPath(), JSON.stringify(aliases, null, 2) + "\n", {
     encoding: "utf-8",

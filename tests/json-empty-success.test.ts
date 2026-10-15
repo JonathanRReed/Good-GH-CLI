@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, normalize } from "node:path";
 import { fixtureRoot, runFixture } from "./cli-fixture.ts";
 
 const root = fixtureRoot("ggh-json-empty-success-");
@@ -124,7 +124,9 @@ describe("JSON for successful actions and no-ops", () => {
 
     const removed = await runFixture(["worktree", "remove", "feature/json-result", "--yes", "--json"], { root, cwd: repo });
     expect(removed.exitCode).toBe(0);
-    expect(JSON.parse(removed.stdout)).toMatchObject({ action: "remove", path: addResult.path, forced: false });
+    const removeResult = JSON.parse(removed.stdout);
+    expect(removeResult).toMatchObject({ action: "remove", forced: false });
+    expect(normalize(removeResult.path)).toBe(normalize(addResult.path));
   });
 
   it("returns reasoned no-op results instead of empty stdout", async () => {
