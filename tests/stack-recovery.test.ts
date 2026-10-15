@@ -41,6 +41,7 @@ function setParent(child: string, parent: string, parentTip: string): void {
 
 function setupStack(conflict = false): { parentTip: string; childTip: string; grandTip: string; sideTip: string } {
   git("init", "-b", "main");
+  git("config", "core.autocrlf", "false");
   git("config", "user.name", "Stack tests");
   git("config", "user.email", "stack-tests@example.invalid");
   git("config", "commit.gpgsign", "false");

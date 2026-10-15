@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, statSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, test } from "bun:test";
@@ -84,6 +84,7 @@ describe("publication service", () => {
   test("infers the repository root and requires an explicit base when it is invalid", async () => {
     const { repo, bare } = makeRepository(tempRoot());
     const headBefore = git(["rev-parse", "HEAD"], repo);
+    const { dev, ino } = statSync(repo, { bigint: true });
     const result = await runFixture([], {
       root: repo,
       cwd: repo,
@@ -92,7 +93,7 @@ describe("publication service", () => {
     });
     const value = JSON.parse(result.stdout);
     expect(value.prepared.plan.kind).toBe("pr");
-    expect(realpathSync(value.prepared.plan.root)).toBe(realpathSync(repo));
+    expect(statSync(value.prepared.plan.root, { bigint: true })).toMatchObject({ dev, ino });
     expect(value.prepared.plan.head).toBe("feature");
     expect(value.prepared.plan.base).toBe("main");
     expect(value.invalid).toMatchObject({
@@ -112,7 +113,7 @@ describe("publication service", () => {
     });
     const relativePrepared = JSON.parse(relativeSource.stdout);
     expect(relativePrepared.status).toBe("ready");
-    expect(realpathSync(relativePrepared.plan.root)).toBe(realpathSync(repo));
+    expect(statSync(relativePrepared.plan.root, { bigint: true })).toMatchObject({ dev, ino });
   });
 
   test("creates an explicit Enterprise repository on its planned host", async () => {
