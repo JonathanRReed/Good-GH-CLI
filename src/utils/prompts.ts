@@ -4,13 +4,17 @@ import { Writable } from "node:stream";
 import pc from "picocolors";
 import { isNonInteractive, recordCommandIssue } from "../services/runtime.ts";
 import { BufferedLineInput } from "./line-input.ts";
-import { hideCursorTracked, log, showCursorTracked, stripAnsi } from "./output.ts";
+import { hideCursorTracked, log, showCursorTracked, stripAnsi, terminalText } from "./output.ts";
 
 /**
  * Interactive prompts. Everything reads from stdin and writes to stderr, so
  * stdout stays reserved for data. Every prompt fails loudly (exit 1) without
  * a TTY instead of guessing — see nonInteractiveNotice.
  */
+
+function writePrompt(text: string): void {
+  process.stderr.write(terminalText(text));
+}
 
 const p = { log };
 const promptInputLines = new BufferedLineInput(process.stdin);
@@ -59,8 +63,8 @@ export async function promptInput(options: {
     const promptStr = `${pc.dim("│")}  ${pc.cyan("›")} ${hint ? hint + " " : ""}`;
     const answer = await promptInputLines.readLine(
       process.stderr,
-      promptStr,
-      prefix,
+      terminalText(promptStr),
+      terminalText(prefix),
     );
     if (answer === null) {
       if (!process.exitCode) process.exitCode = 130;
@@ -71,11 +75,11 @@ export async function promptInput(options: {
     if (options.validate) {
       const err = options.validate(result);
       if (err) {
-        process.stderr.write(`${pc.yellow("└")}  ${pc.yellow(err)}\n`);
+        writePrompt(`${pc.yellow("└")}  ${pc.yellow(err)}\n`);
         return promptInput(options);
       }
     }
-    process.stderr.write(`${pc.dim("└")}\n`);
+    writePrompt(`${pc.dim("└")}\n`);
     return result;
   } catch {
     return null;
@@ -101,13 +105,13 @@ export async function readHiddenLine(options: {
 
   try {
     while (true) {
-      options.output.write(`\n${pc.cyan("◆")}  ${options.message}\n`);
+      options.output.write(terminalText(`\n${pc.cyan("◆")}  ${options.message}\n`));
       options.output.write(`${pc.dim("│")}  ${pc.cyan("›")} `);
       const answer = await rl.question("");
       const result = answer.trim();
       const error = options.validate?.(result);
       if (error) {
-        options.output.write(`\n${pc.yellow("└")}  ${pc.yellow(error)}\n`);
+        options.output.write(terminalText(`\n${pc.yellow("└")}  ${pc.yellow(error)}\n`));
         continue;
       }
       options.output.write(`\n${pc.dim("└")}\n`);
@@ -167,6 +171,7 @@ export function eraseFrame(linesDrawn: number): void {
 }
 
 function truncateLine(str: string, maxWidth: number): string {
+  str = terminalText(str);
   if (maxWidth <= 3) return "...";
   const plain = stripAnsi(str);
   if (plain.length <= maxWidth) return str;
@@ -278,7 +283,7 @@ export async function searchablePicker<T = string>(options: {
 
       // Erase previous frame cleanly
       eraseFrame(linesDrawn);
-      process.stderr.write(out);
+      writePrompt(out);
       linesDrawn = out.split("\n").length - 1;
     }
 
@@ -304,7 +309,7 @@ export async function searchablePicker<T = string>(options: {
       if (key.name === "escape" || (key.ctrl && key.name === "c")) {
         cleanup();
         eraseFrame(linesDrawn);
-        process.stderr.write(`${pc.red("✖")}  ${options.title}: Cancelled.\n\n`);
+        writePrompt(`${pc.red("✖")}  ${options.title}: Cancelled.\n\n`);
         resolve(null);
         return;
       }
@@ -339,7 +344,7 @@ export async function searchablePicker<T = string>(options: {
 
         cleanup();
         eraseFrame(linesDrawn);
-        process.stderr.write(`${pc.green("✔")}  ${options.title}: ${pc.cyan(chosen.label)}\n\n`);
+        writePrompt(`${pc.green("✔")}  ${options.title}: ${pc.cyan(chosen.label)}\n\n`);
         resolve(chosen.value);
         return;
       }
@@ -477,7 +482,7 @@ export async function selectMenu<T>(options: {
       out += truncateLine(`${pc.dim("└")}  ${pc.dim("↑/↓: navigate • Enter: select • Esc: cancel")}`, cols) + "\n";
 
       eraseFrame(linesDrawn);
-      process.stderr.write(out);
+      writePrompt(out);
       linesDrawn = out.split("\n").length - 1;
     }
 
@@ -487,7 +492,7 @@ export async function selectMenu<T>(options: {
       if (key.name === "escape" || (key.ctrl && key.name === "c")) {
         cleanup();
         eraseFrame(linesDrawn);
-        process.stderr.write(`${pc.red("✖")}  ${options.message} ${pc.dim("· Cancelled.")}\n\n`);
+        writePrompt(`${pc.red("✖")}  ${options.message} ${pc.dim("· Cancelled.")}\n\n`);
         resolve(null);
         return;
       }
@@ -502,7 +507,7 @@ export async function selectMenu<T>(options: {
           resolve(null);
           return;
         }
-        process.stderr.write(`${pc.green("✔")}  ${options.message} ${pc.dim("·")} ${pc.cyan(chosen.label)}\n\n`);
+        writePrompt(`${pc.green("✔")}  ${options.message} ${pc.dim("·")} ${pc.cyan(chosen.label)}\n\n`);
         resolve(chosen.value);
         return;
       }
@@ -642,7 +647,7 @@ export async function multiSelectMenu<T>(options: {
       ) + "\n";
 
       eraseFrame(linesDrawn);
-      process.stderr.write(out);
+      writePrompt(out);
       linesDrawn = out.split("\n").length - 1;
     }
 
@@ -652,7 +657,7 @@ export async function multiSelectMenu<T>(options: {
       if (key.name === "escape" || (key.ctrl && key.name === "c")) {
         cleanup();
         eraseFrame(linesDrawn);
-        process.stderr.write(`${pc.red("✖")}  ${options.message} ${pc.dim("· Cancelled.")}\n\n`);
+        writePrompt(`${pc.red("✖")}  ${options.message} ${pc.dim("· Cancelled.")}\n\n`);
         resolve(null);
         return;
       }
@@ -667,7 +672,7 @@ export async function multiSelectMenu<T>(options: {
         cleanup();
         eraseFrame(linesDrawn);
         const chosen = items.filter((it) => selectedSet.has(it.value)).map((it) => it.value);
-        process.stderr.write(`${pc.green("✔")}  ${options.message} ${pc.dim("·")} ${pc.cyan(`${chosen.length} selected`)}\n\n`);
+        writePrompt(`${pc.green("✔")}  ${options.message} ${pc.dim("·")} ${pc.cyan(`${chosen.length} selected`)}\n\n`);
         resolve(chosen);
         return;
       }
@@ -802,7 +807,7 @@ export async function confirmPrompt(options: {
       ) + "\n";
 
       eraseFrame(linesDrawn);
-      process.stderr.write(out);
+      writePrompt(out);
       linesDrawn = out.split("\n").length - 1;
     }
 
@@ -812,7 +817,7 @@ export async function confirmPrompt(options: {
       if (key.name === "escape" || (key.ctrl && key.name === "c")) {
         cleanup();
         eraseFrame(linesDrawn);
-        process.stderr.write(`${pc.red("✖")}  ${options.message} ${pc.dim("· Cancelled (No).")}\n\n`);
+        writePrompt(`${pc.red("✖")}  ${options.message} ${pc.dim("· Cancelled (No).")}\n\n`);
         resolve(false);
         return;
       }
@@ -821,7 +826,7 @@ export async function confirmPrompt(options: {
         cleanup();
         eraseFrame(linesDrawn);
         const answer = value ? pc.green("Yes") : pc.dim("No");
-        process.stderr.write(`${pc.green("✔")}  ${options.message} ${pc.dim("·")} ${answer}\n\n`);
+        writePrompt(`${pc.green("✔")}  ${options.message} ${pc.dim("·")} ${answer}\n\n`);
         resolve(value);
         return;
       }

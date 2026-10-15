@@ -53,7 +53,7 @@ $rule = [Security.AccessControl.FileSystemAccessRule]::new($sid, [Security.Acces
 $actual = [IO.Directory]::GetAccessControl($root)
 $rules = @($actual.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]))
 if (-not $actual.AreAccessRulesProtected -or $actual.GetOwner([Security.Principal.SecurityIdentifier]).Value -ne $sid.Value -or $rules.Count -ne 1 -or $rules[0].IdentityReference.Value -ne $sid.Value) { throw 'Fixture ACL verification failed' }
-[Console]::Out.Write((@{ ownerSID=$sid.Value; protectedDACL=$actual.AreAccessRulesProtected; allowSIDs=@($rules | ForEach-Object { $_.IdentityReference.Value }) } | ConvertTo-Json -Compress))
+[Console]::Out.Write('{"ownerSID":"' + $sid.Value + '","protectedDACL":true,"allowSIDs":["' + $sid.Value + '"]}')
 """
     started = time.monotonic()
     result = subprocess.run([str(executable), "-NoLogo", "-NoProfile", "-NonInteractive",

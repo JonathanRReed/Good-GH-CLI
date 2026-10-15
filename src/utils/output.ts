@@ -122,7 +122,7 @@ export function note(body: string, title = ""): void {
 }
 
 /** Keep styling, but discard terminal commands from managed human output. */
-function terminalText(text: string): string {
+export function terminalText(text: string): string {
   // String controls may be unterminated. Discard the remaining payload in that case.
   // eslint-disable-next-line no-control-regex
   return text.replace(/(?:\x1b\]|\x9d)[\s\S]*?(?:\x07|\x1b\\|\x9c|$)|(?:\x1b[P^_X]|[\x90\x98\x9e\x9f])[\s\S]*?(?:\x1b\\|\x9c|$)/g, "")

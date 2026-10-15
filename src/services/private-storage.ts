@@ -9,12 +9,15 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 // Paths travel over stdin, never through PowerShell source or command arguments.
 const WINDOWS_ACL = String.raw`
 $ErrorActionPreference = 'Stop'
-[Console]::InputEncoding = New-Object System.Text.UTF8Encoding($false)
-[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+[Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 $script:failure = 'inspection_failed'
+$json = $null
 function Reject([string]$code) { $script:failure = $code; throw 'Private storage rejected.' }
 try {
-  $request = [Console]::In.ReadToEnd() | ConvertFrom-Json
+  [void][Reflection.Assembly]::Load('System.Web.Extensions, Version=4.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35')
+  $json = [Web.Script.Serialization.JavaScriptSerializer]::new()
+  $request = $json.DeserializeObject([Console]::In.ReadToEnd())
   $root = [IO.Path]::GetFullPath([string]$request.path)
   $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
   $sid = $identity.User
@@ -26,7 +29,7 @@ try {
     $item = [IO.DirectoryInfo]::new($path)
     while ($null -ne $item) {
       if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { Reject 'reparse_point' }
-      $acl = Get-Acl -LiteralPath $item.FullName
+      $acl = [IO.Directory]::GetAccessControl($item.FullName)
       $descriptor = [Security.AccessControl.RawSecurityDescriptor]::new($acl.GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access))
       if ($null -eq $descriptor.DiscretionaryAcl) { Reject 'null_ancestor_dacl' }
       $owner = $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
@@ -45,7 +48,7 @@ try {
     while ($null -ne $ancestor -and -not $ancestor.Exists) { $ancestor = $ancestor.Parent }
     if ($null -eq $ancestor) { Reject 'missing_ancestor' }
     Check-Ancestors $ancestor.FullName
-    $security = New-Object Security.AccessControl.DirectorySecurity
+    $security = [Security.AccessControl.DirectorySecurity]::new()
     $security.SetOwner($sid)
     $security.SetAccessRuleProtection($true, $false)
     $inherit = [Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [Security.AccessControl.InheritanceFlags]::ObjectInherit
@@ -63,7 +66,7 @@ try {
     if ($count -gt 50000) { Reject 'audit_limit' }
     $attributes = [IO.File]::GetAttributes($path)
     if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or ($attributes -band [IO.FileAttributes]::Device) -ne 0) { Reject 'unsafe_type' }
-    $acl = Get-Acl -LiteralPath $path
+    $acl = if (($attributes -band [IO.FileAttributes]::Directory) -ne 0) { [IO.Directory]::GetAccessControl($path) } else { [IO.File]::GetAccessControl($path) }
     $owner = $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
     if ($owners -notcontains $owner) { Reject 'foreign_owner' }
     $descriptor = [Security.AccessControl.RawSecurityDescriptor]::new($acl.GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access))
@@ -77,7 +80,8 @@ try {
   }
   [Console]::Out.Write('{"ok":true}')
 } catch {
-  [Console]::Out.Write((@{ok=$false; reason=$script:failure; exception=$_.Exception.GetType().Name} | ConvertTo-Json -Compress))
+  if ($null -ne $json) { [Console]::Out.Write($json.Serialize(@{ok=$false; reason=$script:failure; exception=$_.Exception.GetType().Name})) }
+  else { [Console]::Out.Write('{"ok":false,"reason":"inspection_failed"}') }
   exit 1
 }
 `;
