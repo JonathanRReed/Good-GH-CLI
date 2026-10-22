@@ -211,6 +211,13 @@ export const reviewResultSchema = {
   },
 };
 export const coreResultSchemas = {
+  agentSkill: { commandPaths: [["agent", "skill"]], schema: { type: "object", required: ["schemaVersion"], properties: {
+    schemaVersion: { const: 1 }, skill: { type: "string", description: "Skill Markdown when printing." },
+    guidance: { type: "string", description: "T3 provider-directory instructions. No files are installed." },
+    target: { type: "string", description: "Absolute destination skill directory." },
+    files: stringArraySchema, writes: { ...stringArraySchema, description: "Files that would change during a dry run." },
+    unchanged: { const: true, description: "All bundled files already match; no writes performed." },
+  } } },
   tidy: { commandPaths: [["tidy"]], schema: tidyResultSchema },
   lost: { commandPaths: [["lost"]], schema: lostResultSchema },
   review: { commandPaths: [["review"]], schema: reviewResultSchema },

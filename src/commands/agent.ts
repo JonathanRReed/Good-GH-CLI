@@ -2,10 +2,12 @@ import { AGENT_CAPABLE } from "../utils/flags.ts";
 import type { Command } from "commander";
 import { envelopeSchema, coreResultSchemas } from "../services/agent-contract.ts";
 import { emitJson } from "../utils/output.ts";
+import { registerAgentSkillCommand } from "./agent-skill.ts";
 
 export function registerAgentCommand(program: Command): void {
-  program.command("agent").description("Discover the versioned automation contract")
-    .command("schema").description("Print the envelope schema and managed command paths")
+  const agent = program.command("agent").description("Discover the versioned automation contract and skill");
+  registerAgentSkillCommand(agent);
+  agent.command("schema").description("Print the envelope schema and managed command paths")
     .action(() => {
       const paths: string[][] = [];
       const inputs: Array<{
