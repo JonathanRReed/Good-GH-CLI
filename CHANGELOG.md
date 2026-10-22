@@ -7,6 +7,15 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add `ggh tidy` with per-action ancestry and publication proofs, stable action
+  IDs, digest-bound approval, fresh safety checks, per-clone locks, and operation
+  journals. Remote deletes require cached ownership and exact OID leases.
+- Add read-only `ggh lost` for unpublished branch and detached commits, stashes,
+  dirty host checkouts, and broken gitdirs, with JSON/agent result schemas.
+- Keep host-owned checkouts manual-only, protect ignored files and clone stashes,
+  and separate expired missing-worktree metadata from checkout removal.
+
+
 - Add `ggh review <pr>` with safe reusable checkouts, detached GUI editors,
   tuicr/delta terminal fallbacks, explicit private inspection marks, incremental
   review with rewritten-history detection, and versioned JSON/agent results.

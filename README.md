@@ -82,6 +82,87 @@ benchmark. Set `GGH_BENCH_REAL=1` to also measure `~/Downloads` and T3 worktrees
 The benchmark writes its index under a temporary directory and leaves repositories
 unchanged. Timings include discovery, index refresh, and local status.
 
+## Tidy and lost
+
+```bash
+ggh lost                           # All indexed projects, read-only
+ggh lost Good-GH-CLI --agent        # Versioned JSON and suggested commands
+ggh tidy --dry-run                 # Current clone, using existing tracking refs
+ggh tidy Good-GH-CLI --dry-run
+ggh tidy --all --dry-run --json     # One plan with a snapshotId
+ggh tidy --all                     # One preview, one confirmation
+ggh tidy --all --yes               # Approve the displayed snapshot without prompting
+```
+
+Tidy deletes a local branch only when its exact tip is an ancestor of a fetched
+remote default branch or a recorded PR merge commit, all its commits are reachable
+from remote-tracking refs, and no worktree has it checked out. A merged PR badge
+and a deleted upstream never prove that later commits are safe. Recorded merge
+commits can be supplied as local `refs/ggh/merged-prs/<branch>` refs. A record alone
+never bypasses ancestry or publication checks.
+
+An existing linked checkout must be clean, merged or a published detached HEAD,
+unlocked, and created by ggh. Tidy keeps the main checkout, the current checkout,
+clone-level stashes, nested repositories, submodules, hidden index flags, and
+symbolic local branches, and unknown or incomplete history. Ignored files such as `.env` protect a checkout.
+Unknown provenance also means keep. Overrides name one exact checkout path and
+require approval of a new snapshot:
+
+```bash
+ggh tidy --dry-run --allow-ignored /work/old-checkout
+ggh tidy --dry-run --allow-unknown /work/old-checkout
+```
+
+T3, Claude, Cursor, and Codex checkouts are always `host-manual`. Use the host's own
+cleanup. A clean, merged checkout can still belong to a live thread or queued
+turn. Neither override permits ggh to remove a host-owned checkout.
+
+Metadata pruning is separate from removing files. Tidy prunes only missing entries
+Git reports as prunable. It honors locks and `gc.worktreePruneExpire`, using three
+months when unset. An apparently unmounted volume, unpublished HEAD, stash, host
+claim, or unknown registry entry blocks the clone-wide prune. Stale repositories
+and GC hints are reports only. Tidy never deletes repositories or runs GC.
+
+The preview states when the clone last fetched. The default makes no network
+request. `--fetch` explicitly runs `git fetch --prune` before planning, including
+with `--dry-run`; it updates tracking refs but performs no cleanup in a dry run.
+`--remote-branches` includes only merged branches on your own origin when the
+saved active `gh` login matches the URL owner and the push remote is origin.
+Missing cached identity, environment tokens, a different push remote, or multiple/different push URLs
+mean keep. A remote delete checks the server tip immediately before pushing and
+uses an exact expected-OID lease against the pinned destination.
+
+Agents must approve the exact digest from a dry run. Use identical scope and
+options, and omit `--fetch` when applying a plan already fetched for preview:
+
+```bash
+ggh tidy --all --dry-run --agent
+ggh tidy --all --agent --approve-plan <snapshotId>
+```
+
+A changed snapshot is refused. Every action rechecks clone and checkout identities,
+refs, ancestry, publication, stashes, ownership, and relevant file state just before
+execution. Changed items are refused individually. Tidy never adds replacements
+to the approved batch. Its serializable action list has stable IDs for a separate
+future audit consumer; `--audit` is not implemented.
+
+Each attempted action has a private operation journal with `completed`, `skipped`,
+`refused`, `failed`, or `uncertain` state. Inspect the returned operation IDs with
+`ggh operation view`. Tidy serializes its own mutations per common Git directory.
+Ctrl-C stops before the next action; completed actions remain completed. A second
+interrupt exits immediately. Locks cannot stop unrelated Git commands or a host.
+An external writer can still race filesystem checks, so an uncertain result needs
+inspection before retrying.
+
+Lost lists local branches and detached HEADs with commits unreachable from all
+local remote-tracking refs, most commits first, then oldest unpublished work. It
+also lists stashes with dates and messages, dirty host checkouts as possible
+abandoned work, and broken `.git` pointers. It prints commands to push, create a
+rescue branch, or inspect a stash and never executes them. It cannot establish
+whether a host session is abandoned, or whether an unfetched remote or PR already
+has a commit. Coverage gaps and unavailable Git state remain explicit. Neither
+lost nor tidy's local preview refreshes the project index or status cache.
+
 ## Install
 
 Follow the [platform installation and repair guide](docs/INSTALL.md) for checksum, PATH, and dependency steps. See [dependency compatibility](docs/COMPATIBILITY.md) for the supported Git floor and tested GitHub CLI capabilities.
