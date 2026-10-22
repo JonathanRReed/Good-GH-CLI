@@ -5,6 +5,8 @@ import { getConfig } from "../src/services/config.ts";
 import { discoverProjects } from "../src/services/projects/discovery.ts";
 import { buildTidyPlan, volumeAvailable, type TidyPlan } from "../src/services/projects/tidy-plan.ts";
 import { executeTidyPlan, tidyLockPath } from "../src/services/projects/tidy-execute.ts";
+import { renderTidyPlan } from "../src/commands/tidy.ts";
+import { renderLost } from "../src/commands/lost.ts";
 import { findLost } from "../src/services/projects/lost.ts";
 import { listOperations } from "../src/services/operations.ts";
 import { acquireProcessLock } from "../src/services/process-lock.ts";
@@ -208,7 +210,7 @@ it("exposes one offline preview, lost JSON and agent schema, and rejects changed
   expect(changed.exitCode).toBe(1); expect(JSON.parse(changed.stdout)).toMatchObject({ status: "needs_input", error: { code: "confirmation_required" } });
   expect(await git("branch", "--list", "merged")).toBe("merged");
   const lost = await runFixture(["lost", "--agent"], { root, config: cfg }); expect(lost.exitCode, lost.stderr).toBe(0); expect(JSON.parse(lost.stdout)).toMatchObject({ result: { schemaVersion: 1, items: [], warnings: [] } }); expect(lost.calls).toEqual([]);
-  const human = await runFixture(["tidy", "--all", "--dry-run"], { root, config: cfg }); expect(human.stdout).toBe(""); expect(human.stderr.match(/Tidy plan /g)).toHaveLength(1); expect(human.stderr).toContain("proof:");
+  const human = await runFixture(["tidy", "--all", "--dry-run"], { root, config: cfg }); expect(human.stdout).toBe(""); expect(human.stderr.match(/Tidy plan /g)).toHaveLength(1); expect(human.stderr).not.toContain("proof:"); expect(human.stderr).toContain("⊂ origin/main");
   const noApproval = await runFixture(["tidy", "--all", "--agent", "--yes"], { root, config: cfg }); expect(noApproval.exitCode).toBe(1); expect(JSON.parse(noApproval.stdout).status).toBe("needs_input");
 });
 
@@ -326,4 +328,72 @@ it("orders equal commit risks by actual time across timezone offsets", async () 
   const older = await tree("older-zone"); const newer = await tree("newer-zone");
   for (const [cwd, date] of [[older, "2025-01-01T00:00:00+14:00"], [newer, "2024-12-31T20:00:00Z"]]) await run("git", ["commit", "--allow-empty", "-m", "local work"], { cwd, env: { GIT_COMMITTER_DATE: date, GIT_AUTHOR_DATE: date }, envAllowlist: ["GIT_COMMITTER_DATE", "GIT_AUTHOR_DATE"] });
   expect((await findLost(await clones(), config())).items.filter(item => item.kind === "unpublished").map(item => item.path)).toEqual([older, newer]);
+});
+
+it("deduplicates shared unpublished histories per clone and counts exclusive commits per ref", async () => {
+  await git("checkout", "-b", "shared");
+  await git("commit", "--allow-empty", "-m", "shared one");
+  await git("commit", "--allow-empty", "-m", "shared two");
+  await git("branch", "alias");
+  await git("checkout", "-b", "exclusive");
+  await git("commit", "--allow-empty", "-m", "exclusive");
+  const detached = await tree("same-head", join(root, "same-head"), true);
+  const result = await findLost(await clones(), config());
+  const expected = Number(await git("rev-list", "--count", "--branches", "HEAD", "--not", "--remotes"));
+  expect(result.clones[0]).toMatchObject({ uniqueCommits: expected, branches: 3, detachedHeads: 1 });
+  expect(result.items.filter(item => item.kind === "unpublished")).toEqual(expect.arrayContaining([
+    expect.objectContaining({ branch: "shared", commits: 2, uniqueCommits: 0, sharedCommits: 2 }),
+    expect.objectContaining({ branch: "alias", commits: 2, uniqueCommits: 0, sharedCommits: 2 }),
+    expect.objectContaining({ branch: "exclusive", commits: 3, uniqueCommits: 0, sharedCommits: 3 }),
+    expect.objectContaining({ branch: null, path: detached, commits: 3, uniqueCommits: 0, sharedCommits: 3 }),
+  ]));
+  await run("git", ["commit", "--allow-empty", "-m", "detached exclusive"], { cwd: detached });
+  const updated = await findLost(await clones(), config());
+  expect(updated.clones[0]?.uniqueCommits).toBe(expected + 1);
+  expect(updated.items[0]).toMatchObject({ kind: "unpublished", branch: null, uniqueCommits: 1, sharedCommits: 3 });
+});
+it("shows fetch age, uncertainty, and a fetch suggestion in lost and tidy", async () => {
+  await git("commit", "--allow-empty", "-m", "local only");
+  writeFileSync(join(repo, ".git", "FETCH_HEAD"), "");
+  const old = new Date(Date.now() - 3 * 86400000);
+  utimesSync(join(repo, ".git", "FETCH_HEAD"), old, old);
+  const lost = await findLost(await clones(), config());
+  expect(lost.clones[0]?.fetchedAt).toBe(old.toISOString());
+  const text = renderLost(lost, { wide: true }).join("\n");
+  expect(text).toContain("as of fetch 3d ago");
+  expect(text).toContain("may already exist on the remote");
+  expect(text).toContain("--fetch");
+  expect(renderTidyPlan(await plan(), { wide: true }).join("\n")).toContain("--fetch");
+});
+it("keeps a large tidy preview compact and bounded, with verbose details and full JSON proofs", async () => {
+  const snapshot = await plan();
+  const clone = snapshot.clones[0]!;
+  const proof = { commonDir: clone.commonDir, cloneIdentity: "identity", refs: [], remoteRefs: Array.from({ length: 100 }, (_, i) => ({ ref: `refs/remotes/origin/remote-${i}`, oid: "a".repeat(40) })), stash: "none" };
+  clone.actions = Array.from({ length: 20 }, (_, i) => ({ kind: "delete-local-branch", branch: `finish/branch-${i}`, tip: "b".repeat(40), integration: { ref: "refs/remotes/origin/main", oid: "a".repeat(40) }, id: String(i), proof }));
+  clone.hostManual = Array.from({ length: 40 }, (_, i) => ({ target: `/host/worktree-${i}`, host: "t3", reason: "Host-owned worktree" }));
+  const coverage = { roots: [repo], truncated: false, skipped: Array.from({ length: 14 }, (_, i) => ({ path: join(repo, ".claude", "worktrees", `broken-${i}`), reason: "Broken checkout: cannot resolve Git common directory" })) };
+  const options = { coverage, clones: await clones(), width: 100 };
+  const lines = renderTidyPlan(snapshot, options);
+  expect(lines.length).toBeLessThan(60);
+  expect(lines.every(line => Bun.stringWidth(line) <= 97)).toBe(true);
+  expect(lines.join("\n")).toContain("20 branches");
+  expect(lines.join("\n")).toContain("40 T3 worktrees");
+  expect(lines.join("\n")).toContain("14 broken checkout dirs");
+  expect(lines.join("\n")).not.toContain("remote-99");
+  expect(JSON.stringify(snapshot)).toContain("remote-99");
+  expect(renderTidyPlan(snapshot, { ...options, verbose: true }).length).toBeGreaterThan(lines.length);
+  expect(renderTidyPlan(snapshot, { ...options, width: 45 }).every(line => Bun.stringWidth(line) <= 42)).toBe(true);
+  expect(renderTidyPlan(snapshot, { ...options, wide: true }).some(line => Bun.stringWidth(line) > 97)).toBe(true);
+  expect(renderLost(await findLost(await clones(), config()), { width: 45 }).every(line => Bun.stringWidth(line) <= 42)).toBe(true);
+});
+it("lost --fetch refreshes stale tracking refs using a local bare remote", async () => {
+  await git("commit", "--allow-empty", "-m", "already on remote");
+  await git("push", remote, "main");
+  const cfg = { project_roots: [repo], host_worktree_dirs: {} };
+  const stale = await runFixture(["lost", "--json"], { root, config: cfg });
+  expect(JSON.parse(stale.stdout).clones[0].uniqueCommits).toBe(1);
+  const fresh = await runFixture(["lost", "--fetch", "--json"], { root, config: cfg });
+  expect(fresh.exitCode, fresh.stderr).toBe(0);
+  expect(JSON.parse(fresh.stdout).clones[0]).toMatchObject({ uniqueCommits: 0, fetchedAt: expect.any(String) });
+  expect(JSON.parse(fresh.stdout).items).toEqual([]);
 });

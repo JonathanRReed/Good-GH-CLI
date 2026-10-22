@@ -42,6 +42,9 @@ function fit(value: string, width: number): string {
   }
   return result + "…";
 }
+export function fitProjectLine(value: string, options: ProjectViewOptions = {}): string {
+  return fit(value, available({ ...options, width: options.width ?? process.stderr.columns ?? process.stdout.columns ?? 100 }));
+}
 function table(rows: string[][], options: ProjectViewOptions): string[] {
   const widths = rows[0]?.map((_, index) => Math.max(...rows.map(row => Bun.stringWidth(cell(row[index] ?? ""))))) ?? [];
   const limit = available(options);
