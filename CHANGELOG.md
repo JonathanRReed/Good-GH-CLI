@@ -22,6 +22,12 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add a ggh coding-agent skill with safe mutation recipes, native-tool guidance,
+  host PR registration, and a schema-generated reference with a freshness test.
+- Add `ggh agent skill` to print or install the pack for Claude Code, Codex, or
+  an explicit directory. Explain T3 provider paths, require installation approval,
+  protect differing files unless forced, and report dry-run and completed effects.
+
 - Add `ggh projects --remote` and bare `ggh --remote` with PR counts, review
   requests, archive and fork flags, remote age, and context-card PR lists and CI.
 - Deduplicate remote identities across clones, batch 25 repositories per GraphQL
