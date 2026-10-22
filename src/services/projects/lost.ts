@@ -2,12 +2,14 @@ import { existsSync, lstatSync } from "node:fs";
 import { getConfig } from "../config.ts";
 import { projectGit } from "./git.ts";
 import { fetchedAt, freshClone, hostClaims } from "./tidy-plan.ts";
+import { REFLOG_LIMIT, reflogWork } from "./reflog.ts";
 import { readCloneStatus } from "./status.ts";
 import type { CheckoutCreator, Clone } from "./types.ts";
 
 interface LostBase { commonDir: string; path: string | null; createdBy: CheckoutCreator; nextSteps: string[][] }
 export type LostItem = LostBase & (
   | { kind: "unpublished"; branch: string | null; head: string; commits: number; uniqueCommits: number; sharedCommits: number; newestSubject: string; newestDate: string; oldestDate: string }
+  | { kind: "reflog-only"; branch: string | null; commits: string[]; scannedEntries: number; truncated: boolean }
   | { kind: "stash"; count: number; stashes: { ref: string; oid: string; date: string; message: string }[]; oldestDate: string }
   | { kind: "dirty-host-checkout"; host: string; reason: string }
   | { kind: "broken-gitdir"; reason: string }
@@ -59,7 +61,21 @@ export async function findLost(clones: readonly Clone[], config = getConfig()): 
         item.sharedCommits = item.commits - item.uniqueCommits;
         result.items.push(item);
       }
-      result.clones.push({ commonDir, name: clone.displayName, fetchedAt: fetchedAt(commonDir), uniqueCommits: membership.size,
+      const reflogs = [
+        ...status.unpublished.value.filter(target => target.ref.startsWith("refs/heads/")).map(target => ({ branch: target.ref.slice(11) })),
+        ...clone.checkouts.filter(checkout => !checkout.bare).map(checkout => ({ checkout })),
+      ];
+      const heads = clone.checkouts.flatMap(checkout => checkout.head ? [checkout.head] : []);
+      const reflogOids = new Set<string>();
+      for (const target of reflogs) {
+        const work = await reflogWork(commonDir, target, true, heads);
+        if (work.truncated) result.warnings.push({ target: "branch" in target ? target.branch : target.checkout.path, reason: `Reflog scan limited to last ${REFLOG_LIMIT} entries; older unpublished work is unknown` });
+        if (!work.commits.length) continue;
+        for (const oid of work.commits) reflogOids.add(oid);
+        result.items.push({ ...base, kind: "reflog-only", branch: "branch" in target ? target.branch : target.checkout.branch, path: "checkout" in target ? target.checkout.path : null, commits: work.commits, scannedEntries: REFLOG_LIMIT, truncated: work.truncated,
+          nextSteps: work.commits.map(oid => ["git", "-C", commonDir, "branch", `rescue-${oid.slice(0, 12)}`, oid]) });
+      }
+      result.clones.push({ commonDir, name: clone.displayName, fetchedAt: fetchedAt(commonDir), uniqueCommits: new Set([...membership.keys(), ...reflogOids]).size,
         branches: unpublished.filter(({ item }) => item.branch !== null).length, detachedHeads: unpublished.filter(({ item }) => item.branch === null).length });
       const stashText = status.stashes.state === "ok" && status.stashes.value === 0 ? "" : (await projectGit(commonDir, ["reflog", "show", "--date=iso-strict", "--format=%gd%x00%H%x00%cI%x00%gs", "refs/stash"])).stdout;
       const stashes = stashText.split("\n").filter(Boolean).map((line, i) => {

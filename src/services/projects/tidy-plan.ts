@@ -1,11 +1,14 @@
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
-import { dirname, join, parse, resolve, sep } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { getConfig, type GoodGhConfig } from "../config.ts";
 import { worktreeList } from "../git/worktree.ts";
 import { run } from "../../utils/exec.ts";
 import { checkoutCreator, discoverProjects, projectPath, remoteIdentity } from "./discovery.ts";
 import { gitLine, inventoryGitOptions, projectGit } from "./git.ts";
+import { protectReflog } from "./reflog.ts";
+import { volumeAvailable } from "./volumes.ts";
+export { volumeAvailable } from "./volumes.ts";
 import type { TidyAudit } from "./tidy-audit.ts";
 import type { Checkout, Clone, HostClaim } from "./types.ts";
 
@@ -50,6 +53,26 @@ export function directoryIdentity(path: string): string {
 }
 export function fetchedAt(commonDir: string): string | null {
   try { return statSync(join(commonDir, "FETCH_HEAD")).mtime.toISOString(); } catch { return null; }
+}
+/** A recent fetch covers only the OIDs it recorded, not every remote in the clone. */
+async function requireFreshRemoteRefs(commonDir: string, refs: RefProof[], maxDays: number): Promise<void> {
+  const fetchDate = fetchedAt(commonDir);
+  const stale = (date: number) => Date.now() - date > maxDays * 86400000;
+  const oldReason = `remote refs older than ${maxDays} days; run with --fetch`;
+  if (fetchDate && stale(Date.parse(fetchDate))) throw new Error(oldReason);
+  let fetchedOids = new Set<string>();
+  try { fetchedOids = new Set(readFileSync(join(commonDir, "FETCH_HEAD"), "utf8").split("\n").map(line => line.split("\t")[0] ?? "")); } catch { /* Per-ref reflogs must prove age instead. */ }
+  if (!refs.length) throw new Error("remote refs fetch age unknown; run with --fetch");
+  for (const ref of refs) {
+    if (fetchDate && fetchedOids.has(ref.oid)) continue;
+    const symbolic = await run("git", ["symbolic-ref", "--quiet", ref.ref], { ...inventoryGitOptions, cwd: commonDir, reject: false });
+    if (symbolic.exitCode > 1) throw new Error("remote refs fetch age unknown; run with --fetch");
+    const name = symbolic.exitCode === 0 ? gitLine(symbolic.stdout) : ref.ref;
+    const result = await projectGit(commonDir, ["reflog", "show", "-n1", "--date=unix", "--format=%gd", name, "--"]);
+    const match = /@\{(\d+)\}/.exec(result.stdout);
+    if (!match?.[1]) throw new Error("remote refs fetch age unknown; run with --fetch");
+    if (stale(Number(match[1]) * 1000)) throw new Error(oldReason);
+  }
 }
 export async function freshClone(clone: Clone, config: GoodGhConfig = getConfig()): Promise<Clone> {
   const source = clone.checkouts.find(checkout => existsSync(join(checkout.path, ".git")) || checkout.bare)?.path;
@@ -114,12 +137,6 @@ function missingPath(path: string): boolean {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") return true;
     throw new Error("Cannot prove that checkout path is missing", { cause: error });
   }
-}
-export function volumeAvailable(path: string): boolean {
-  const root = parse(path).root;
-  const parts = path.slice(root.length).split(sep).filter(Boolean);
-  const depth = parts[0] === "Volumes" || parts[0] === "mnt" ? 2 : parts[0] === "run" && parts[1] === "media" ? 4 : parts[0] === "media" ? 3 : 1;
-  return parts.length >= depth && existsSync(join(root, ...parts.slice(0, depth)));
 }
 export async function hostClaims(checkout: Checkout, commonDir: string, config: GoodGhConfig): Promise<HostClaim[]> {
   const claims = [...checkout.hostClaims];
@@ -199,6 +216,8 @@ export async function classifyTidyClone(input: Clone, options: TidyOptions = {},
       for (const destination of [...defaults, ...recorded]) if (await ancestor(commonDir, tip, destination.oid)) return destination;
       return null;
     };
+    let publication: Promise<void> | undefined;
+    const freshPublication = () => publication ??= requireFreshRemoteRefs(commonDir, remoteRefs, config.tidy_max_fetch_age_days ?? 30);
     const proof = (specific: RefProof[]): TidyProof => ({ commonDir, cloneIdentity, refs: specific, remoteRefs, stash });
     for (const ref of refs.filter(ref => ref.ref.startsWith("refs/heads/"))) {
       const branch = ref.ref.slice(11);
@@ -208,6 +227,8 @@ export async function classifyTidyClone(input: Clone, options: TidyOptions = {},
         const integration = await integrationFor(ref.oid, branch);
         if (!integration) throw new Error("Exact tip is not proven merged by ancestry");
         if (await unpublishedCount(commonDir, ref.oid)) throw new Error("Commits unreachable from every remote ref");
+        await freshPublication();
+        await protectReflog(commonDir, { branch });
         if (defaults.some(target => target.ref.replace(/^refs\/remotes\/[^/]+\//, "") === branch)) throw new Error("Default branch");
         result.actions.push(action({ kind: "delete-local-branch", branch, tip: ref.oid, integration, proof: proof([ref, integration]) }));
       } catch (error) { result.kept.push({ target: branch, reason: reason(error) }); }
@@ -233,6 +254,9 @@ export async function classifyTidyClone(input: Clone, options: TidyOptions = {},
         if (await unpublishedCount(commonDir, checkout.head)) throw new Error("Unpublished commits in checkout HEAD");
         const integration = await integrationFor(checkout.head, checkout.branch);
         if (checkout.branch && !integration) throw new Error("Exact branch tip is not proven merged by ancestry");
+        await freshPublication();
+        await protectReflog(commonDir, { checkout });
+        if (checkout.branch) await protectReflog(commonDir, { branch: checkout.branch });
         const allowIgnored = (options.allowIgnored ?? []).map(projectPath).includes(checkout.path);
         const fileState = await checkoutFileState(checkout, allowIgnored);
         const actual = realpathSync(gitLine((await projectGit(checkout.path, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).stdout));
@@ -244,6 +268,7 @@ export async function classifyTidyClone(input: Clone, options: TidyOptions = {},
       const branch = ref.ref.slice(20);
       try {
         if (hasStash) throw new Error("Clone has stashes");
+        await freshPublication();
         if (defaults.some(target => target.ref === ref.ref)) throw new Error("Remote default branch");
         const integration = await integrationFor(ref.oid, branch);
         if (!integration) throw new Error("Remote tip is not proven merged by ancestry");
@@ -264,8 +289,11 @@ export async function classifyTidyClone(input: Clone, options: TidyOptions = {},
         for (const checkout of prunable) {
           if (!missingPath(checkout.path)) throw new Error(`Existing checkout: ${checkout.path}`);
           if (!checkout.head || await unpublishedCount(commonDir, checkout.head)) throw new Error(`Unpublished or unknown HEAD in missing checkout: ${checkout.path}`);
+          await freshPublication();
+          await protectReflog(commonDir, { checkout });
+          if (checkout.branch) await protectReflog(commonDir, { branch: checkout.branch });
           if (checkout.locked) throw new Error(`Locked entry: ${checkout.path}`);
-          if (!volumeAvailable(checkout.path)) throw new Error(`Volume looks unmounted: ${checkout.path}`);
+          if (!await volumeAvailable(checkout.path)) throw new Error(`Volume looks unmounted: ${checkout.path}`);
           if ((await hostClaims(checkout, commonDir, config)).length) throw new Error(`Host-owned metadata: ${checkout.path}`);
         }
         const expire = await configValue(commonDir, "gc.worktreePruneExpire") ?? "3.months.ago";

@@ -1,3 +1,4 @@
+import { getConfig } from "../config.ts";
 import { basename, dirname } from "node:path";
 import type { LostResult } from "./lost.ts";
 import type { TidyPlan } from "./tidy-plan.ts";
@@ -16,7 +17,7 @@ export function fetchAge(value: string | null): string {
   if (!Number.isFinite(seconds)) return "unknown";
   return seconds < 60 ? `${seconds}s ago` : seconds < 3600 ? `${Math.floor(seconds / 60)}m ago` : seconds < 86400 ? `${Math.floor(seconds / 3600)}h ago` : `${Math.floor(seconds / 86400)}d ago`;
 }
-function staleFetch(value: string | null): boolean { return !value || !Number.isFinite(Date.parse(value)) || Date.now() - Date.parse(value) > 86400000; }
+
 function counts(values: string[]): [string, number][] {
   const result = new Map<string, number>();
   for (const value of values) result.set(value, (result.get(value) ?? 0) + 1);
@@ -89,7 +90,7 @@ export function formatTidyPlan(plan: TidyPlan, options: CleanupViewOptions = {})
     lines.push(`${count} ${name} worktrees across ${clones} clones; clean up in ${host === "t3" ? "T3 Code" : host === "claude" ? "Claude Code" : name}`);
   }
   for (const [kind, count] of counts(plan.clones.flatMap(clone => clone.hints.map(hint => hint.kind)))) lines.push(`${kind}: ${count} clones; use --verbose for details`);
-  if (plan.clones.some(clone => staleFetch(clone.fetchedAt))) lines.push("Some fetch ages exceed 1d or are unknown; use --fetch to refresh remote-tracking refs.");
+  lines.push(`Publication proofs require remote refs fetched within ${getConfig().tidy_max_fetch_age_days ?? 30} days; unknown ages are kept. Use --fetch to refresh.`);
   lines.push(...renderCoverage(options));
   return lines.map(line => fitProjectLine(line, options));
 }
@@ -119,6 +120,7 @@ export function formatLost(result: LostResult, options: CleanupViewOptions = {})
     const top = unpublished[0];
     lines.push(`${clone.name} · ${clone.uniqueCommits.toLocaleString("en-US")} unique · ${clone.branches} branch${clone.branches === 1 ? "" : "es"}${clone.detachedHeads ? ` + ${clone.detachedHeads} HEAD` : ""} · ${stashes.length} stash${stashes.length === 1 ? "" : "es"} · fetch ${fetchAge(clone.fetchedAt)}${dirty.length ? ` · ${dirty.length} dirty host` : ""}${broken.length ? ` · ${broken.length} broken` : ""}${top ? ` · ${top.branch ?? `HEAD ${top.head.slice(0, 7)}`}` : ""}`);
     const detail: string[] = [];
+    for (const item of items.filter(item => item.kind === "reflog-only")) detail.push(`  REFLOG ${item.branch ?? shortPath(item.path ?? item.commonDir)}: ${item.commits.length} unpublished commits; last ${item.scannedEntries} entries scanned${item.truncated ? "; older history unknown" : ""}`);
     const shown = options.verbose ? unpublished : unpublished.slice(0, 3);
     for (const item of shown) {
       detail.push(`  ${item.branch ?? `HEAD ${item.head.slice(0, 7)}`}  ${item.commits} (${item.uniqueCommits} unique to it, ${item.sharedCommits} shared)  ${fetchAge(item.newestDate)}`);
