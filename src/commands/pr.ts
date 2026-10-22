@@ -16,6 +16,7 @@ import { detectDefaultBranch, fetchPullRequestBranch, requireGitRepo, worktreeAd
 import { registerPrCreateCommand } from "./pr-create.ts";
 import { registerPrLifecycleCommands } from "./pr-lifecycle.ts";
 import { registerPrReviewCommand } from "./pr-review.ts";
+import { registerPrThreadsCommand } from "./pr-threads.ts";
 import { type AIAttempt, type AIAttemptFailure, generatePrWithFallback } from "../services/ai/index.ts";
 import { dryRun } from "../utils/flags.ts";
 import { sanitizeDiffForAI } from "../utils/diff.ts";
@@ -195,6 +196,7 @@ export function registerPrCommand(program: Command): void {
   registerPrCreateCommand(pr);
   registerPrLifecycleCommands(pr);
   registerPrReviewCommand(pr);
+  registerPrThreadsCommand(pr);
 
   async function listPullRequestsInteractive(options?: {
     author?: string; label?: string; state?: string; search?: string; mine?: boolean; limit?: string;

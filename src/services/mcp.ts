@@ -5,6 +5,7 @@ export interface McpTool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  annotations?: { readOnlyHint: true };
   handler: (args: Record<string, unknown>) => Promise<unknown>;
 }
 
@@ -88,8 +89,8 @@ export async function serveMcp(
     }
     if (!ready) { await error(id, -32600, "Initialize and send notifications/initialized first"); return; }
     if (method === "tools/list") {
-      await result(id, { tools: tools.map(({ name, description, inputSchema }) =>
-        ({ name, description, inputSchema: { ...inputSchema, additionalProperties: false } })) });
+      await result(id, { tools: tools.map(({ name, description, inputSchema, annotations }) =>
+        ({ name, description, inputSchema: { ...inputSchema, additionalProperties: false }, ...(annotations ? { annotations } : {}) })) });
       return;
     }
     if (method !== "tools/call") { await error(id, -32601, "Method not found"); return; }

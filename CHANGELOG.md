@@ -3,6 +3,14 @@
 All notable changes to this project are documented here.
 This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Added
+
+- Add read-only `ggh pr threads` with full comment bodies, nested pagination,
+  resolution and outdated state, revision SHAs, edited-comment cursors, compact
+  agent output, a versioned result schema, and a read-only MCP tool.
+
 ## 0.5.0-beta.2 - 2026-10-15
 
 ### Workflow and release qualification

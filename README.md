@@ -66,6 +66,7 @@ ggh pr create --editor --no-ai # Edit a multiline draft in your Git editor
 ggh pr create --attach 'proof.png#Sign-in screen' # Attach media when supported
 ggh pr view 42
 ggh pr diff 42
+ggh pr threads 42 --agent    # Read unresolved review threads with full bodies
 ggh pr edit 42
 ggh pr review 42 --ai        # Review and submit selected findings
 ggh pr review --local        # Print a review without posting
@@ -79,6 +80,14 @@ ggh pr merge 42 --auto       # Merge when required checks pass
 ggh pr comment 42 -b "lgtm"
 ggh pr ready | close | reopen
 ```
+
+`pr threads` reads all threads by default; `--agent` defaults to unresolved threads.
+Use `--all` to include resolved threads, `--since <ISO|cursor>` for threads with
+new or edited comments, and `--max-body <n>` for explicitly flagged truncation.
+JSON includes head/base SHAs and fetched thread/comment counts before filtering.
+The cursor is the latest comment `updatedAt` read, including filtered threads.
+Pagination stops after 200 GraphQL requests. Reuse the cursor only when
+`pagination.complete` is true. Both JSON modes are compact; bodies stay verbatim.
 
 `--editor` opens your Git editor with a first-line title, a blank line, and the
 Markdown body. It honors `GIT_EDITOR`, Git's `core.editor`, `VISUAL`, and `EDITOR`.

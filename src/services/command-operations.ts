@@ -10,7 +10,7 @@ import { fail, jsonOut } from "../utils/ui.ts";
 import { getAIUsageReports } from "./ai/index.ts";
 
 const MANAGED_GIT_DOMAINS = new Set(["commit", "stack", "worktree", "stash", "discard", "undo", "resolve", "squash", "rename", "sync", "switch", "clone", "hook", "ignore", "draft", "operation"]);
-const READ_ACTIONS = new Set(["list", "view", "get", "doctor", "diff", "status", "log", "show", "inspect", "download"]);
+const READ_ACTIONS = new Set(["list", "view", "get", "doctor", "diff", "status", "log", "show", "inspect", "download", "threads"]);
 const LOCAL_MUTATIONS = new Set(["commit", "discard", "sync", "squash", "undo", "rename", "resolve", "switch", "clone"]);
 const READ_DOMAINS = new Set(["status", "log", "search", "browse", "checks", "mcp", "completion", "operation"]);
 

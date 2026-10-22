@@ -77,10 +77,45 @@ const operationResultSchema = { type: "object", additionalProperties: true, prop
   steps: { type: "array", items: { type: "object", properties: { name: { type: "string" }, state: { enum: ["pending", "completed", "failed", "unknown"] } } } },
   resources: stringArraySchema,
 } };
+const nullableIntegerSchema = { type: ["integer", "null"] };
+const reviewCommentSchema = {
+  type: "object", additionalProperties: false,
+  required: ["id", "databaseId", "author", "body", "createdAt", "updatedAt", "url", "outdated"],
+  properties: {
+    id: { type: "string" }, databaseId: nullableIntegerSchema,
+    author: { anyOf: [{ type: "null" }, { type: "object", additionalProperties: false, required: ["login"], properties: { login: { type: "string" } } }] },
+    body: { type: "string" }, createdAt: { type: "string", format: "date-time" }, updatedAt: { type: "string", format: "date-time" },
+    url: { type: "string" }, outdated: { type: "boolean" }, bodyTruncated: { const: true },
+  },
+};
+export const reviewThreadsResultSchema = {
+  type: "object", additionalProperties: false,
+  required: ["schemaVersion", "number", "headSha", "baseSha", "threads", "cursor", "pagination"],
+  properties: {
+    schemaVersion: { const: 1 }, number: { type: "integer", minimum: 1 }, headSha: { type: "string" }, baseSha: { type: "string" },
+    threads: { type: "array", items: {
+      type: "object", additionalProperties: false,
+      required: ["id", "isResolved", "isOutdated", "viewerCanResolve", "viewerCanUnresolve", "path", "line", "originalLine", "startLine", "diffSide", "comments"],
+      properties: {
+        id: { type: "string" }, isResolved: { type: "boolean" }, isOutdated: { type: "boolean" },
+        viewerCanResolve: { type: "boolean" }, viewerCanUnresolve: { type: "boolean" }, path: { type: "string" },
+        line: nullableIntegerSchema, originalLine: nullableIntegerSchema, startLine: nullableIntegerSchema,
+        diffSide: { enum: ["LEFT", "RIGHT"] }, comments: { type: "array", items: reviewCommentSchema },
+      },
+    } },
+    cursor: { type: ["string", "null"], description: "Maximum comment updatedAt read, including filtered threads. Reuse as --since only when pagination.complete is true." },
+    pagination: { type: "object", additionalProperties: false, required: ["complete", "threads", "comments"], properties: {
+      complete: { type: "boolean", description: "False when the 200-request cap or a repeated cursor stops pagination." },
+      threads: { type: "integer", minimum: 0, description: "Threads fetched before filters." },
+      comments: { type: "integer", minimum: 0, description: "Comments fetched before filters." },
+    } },
+  },
+};
 export const coreResultSchemas = {
   coverage: "Partial field schemas. Optional fields vary by outcome. Other command result payloads are not yet specified.",
   publication: { commandPaths: [["repo", "create"], ["pr", "create"], ["commit"]], schema: workflowResultSchema },
   stack: { commandPaths: [["stack"]], includesSubcommands: true, schema: { anyOf: [workflowResultSchema, { type: "array", items: { type: "object", additionalProperties: true, properties: { branch: { type: "string" }, parent: { type: ["string", "null"] }, ahead: { type: "number" }, behind: { type: "number" } } } }] } },
   operationList: { commandPaths: [["operation", "list"]], schema: { type: "array", items: operationResultSchema } },
   operationView: { commandPaths: [["operation", "view"]], schema: operationResultSchema },
+  reviewThreads: { commandPaths: [["pr", "threads"]], schema: reviewThreadsResultSchema },
 };
