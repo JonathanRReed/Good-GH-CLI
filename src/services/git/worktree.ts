@@ -230,7 +230,9 @@ export async function worktreeRemove(
     if (sameDirectory(target.path, currentRoot)) throw new Error("Refusing to remove the current worktree. Pass --force to override.");
     if (target === list[0]) throw new Error("Refusing to remove the main worktree. Pass --force to override.");
     if (target.locked) throw new Error(`Worktree is locked${target.lockReason ? `: ${target.lockReason}` : ""}. Pass --force to override.`);
-    const { stdout } = await run("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all"], { cwd: target.path });
+    const { stdout } = await run("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=matching"], { cwd: target.path });
+    const ignored = stdout.split("\0").filter(record => record.startsWith("!! ")).slice(0, 5).map(record => JSON.stringify(record.slice(3)));
+    if (ignored.length) throw new Error(`Worktree has ignored files: ${ignored.join(", ")}. Pass --force to override.`);
     if (stdout.length) throw new Error("Worktree has uncommitted or untracked changes. Pass --force to override.");
   }
   const args = ["worktree", "remove"];

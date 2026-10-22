@@ -1,12 +1,12 @@
 import { existsSync } from "node:fs";
 import { join, sep } from "node:path";
-import { ExecError, run, type RunOptions } from "../../utils/exec.ts";
+import { ExecError, run } from "../../utils/exec.ts";
 import { getConfig } from "../config.ts";
 import { NON_INTERACTIVE_ENV } from "../git/exec.ts";
 import { worktreeList, type WorktreeInfo } from "../git/worktree.ts";
 import { acquireProcessLock } from "../process-lock.ts";
 import { checkoutCreator, projectPath, redactRemoteUrl, within } from "./discovery.ts";
-import { gitLine } from "./git.ts";
+import { gitLine, projectLockPath, projectNetworkOptions, safeTrackingFetch } from "./git.ts";
 import type { IndexedClone } from "./types.ts";
 
 export type SyncOutcome =
@@ -43,10 +43,7 @@ export function cancelActiveSyncs(): boolean {
   return activeSyncs.size > 0;
 }
 
-const syncEnv: RunOptions = {
-  envAllowlist: ["SSH_AUTH_SOCK", "GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GH_HOST", "GH_CONFIG_DIR", "GH_PROMPT_DISABLED", "GIT_TERMINAL_PROMPT", "GIT_ASKPASS", "GCM_INTERACTIVE", "SSH_ASKPASS", "SSH_ASKPASS_REQUIRE", "GIT_SSH_COMMAND", "GIT_NO_LAZY_FETCH"],
-  env: { ...NON_INTERACTIVE_ENV, GH_PROMPT_DISABLED: "1", GIT_NO_LAZY_FETCH: "1", GIT_SSH_COMMAND: "ssh -oBatchMode=yes" },
-};
+const syncEnv = projectNetworkOptions;
 function remaining(deadline: number): number {
   const ms = deadline - Date.now();
   if (ms <= 0) throw new Error("Clone sync deadline exceeded");
@@ -133,7 +130,7 @@ async function syncClone(clone: IndexedClone, options: ProjectSyncOptions): Prom
     // Resolve against the common directory itself, never through a cached checkout.
     const identity = gitLine((await git(commonDir, ["rev-parse", "--path-format=absolute", "--git-common-dir"], deadline)).stdout);
     if (projectPath(identity) !== commonDir) throw new Error("Clone identity changed; refresh the project index");
-    release = await acquireProcessLock(join(commonDir, "ggh-sync.lock"), 0);
+    release = await acquireProcessLock(projectLockPath(commonDir), Math.min(30000, remaining(deadline)));
     const checkouts = await worktreeList(commonDir, { ...syncEnv, timeoutMs: remaining(deadline) });
     const remotes = (await git(commonDir, ["remote"], deadline)).stdout.split(/\r?\n/).filter(Boolean);
     if (options.forkUpstream && !options.signal?.aborted) {
@@ -153,8 +150,7 @@ async function syncClone(clone: IndexedClone, options: ProjectSyncOptions): Prom
     for (const remote of remotes) {
       if (options.signal?.aborted || options.dryRun) break;
       try {
-        // Limit pruning to tracking refs even when this clone has mirror refspecs.
-        await git(commonDir, ["fetch", "--prune", "--atomic", "--no-tags", "--no-prune-tags", "--refmap=", "--no-recurse-submodules", "--no-auto-maintenance", "--", remote, `+refs/heads/*:refs/remotes/${remote}/*`], deadline);
+        await safeTrackingFetch(commonDir, remote, deadline);
         result.fetches.push({ remote, outcome: "updated" });
       } catch (error) {
         const uncertain = error instanceof ExecError && /timed out|exceeded output limit/.test(error.message);
