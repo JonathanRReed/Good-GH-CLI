@@ -6,7 +6,7 @@ import { p, pc } from "./ui.ts";
 /** Commands that can emit structured data instead of a rendered view. */
 export const JSON_CAPABLE = new Set([
   "clone", "commit", "operation",
-  "status", "pr", "checks", "log", "stash", "worktree", "config",
+  "status", "pr", "checks", "ci", "log", "stash", "worktree", "config",
   "release", "issue", "run", "repo", "stack", "sync", "changelog", "api",
   "workflow", "label", "gist", "search", "secret", "variable", "notifications",
   "squash", "undo", "rename", "resolve", "discard", "switch", "triage",
@@ -27,7 +27,7 @@ export const DRY_RUN_CAPABLE = new Set([
 
 /** Commands that act on GitHub and can therefore target another repository. */
 export const REPO_SCOPED = new Set([
-  "pr", "checks", "release", "issue", "run", "repo", "api", "stack",
+  "pr", "checks", "ci", "release", "issue", "run", "repo", "api", "stack",
   "workflow", "label", "secret", "variable", "browse", "triage",
 ]);
 // Note: `triage` honors -R for issues; notifications are account-global and

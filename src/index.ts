@@ -9,6 +9,7 @@ import { registerCloneCommand } from "./commands/clone.ts";
 import { registerCommitCommand } from "./commands/commit.ts";
 import { registerWorktreeCommand } from "./commands/worktree.ts";
 import { registerConfigCommand } from "./commands/config.ts";
+import { registerCiCommand } from "./commands/ci.ts";
 import { registerChecksCommand } from "./commands/checks.ts";
 import { registerCompletionCommand } from "./commands/completion.ts";
 import { registerDiscardCommand } from "./commands/discard.ts";
@@ -79,6 +80,7 @@ export const HELP_GROUPS: Record<string, string> = {
   issue: "GitHub",
   run: "GitHub",
   checks: "GitHub",
+  ci: "GitHub",
   release: "GitHub",
   changelog: "GitHub",
   api: "GitHub",
@@ -147,6 +149,7 @@ export async function createProgram(): Promise<Command> {
   registerIssueCommand(program);
   registerRunCommand(program);
   registerChecksCommand(program);
+  registerCiCommand(program);
   registerReleaseCommand(program);
   registerChangelogCommand(program);
   registerApiCommand(program);
