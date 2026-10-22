@@ -29,7 +29,10 @@ function age(commit: CommitSummary | null): string {
 export interface ProjectViewOptions { width?: number; wide?: boolean; remote?: boolean; uncloned?: boolean; refresh?: boolean }
 type ProjectHistory = { recent: FieldState<CommitSummary[]>; unpublished: FieldState<CommitSummary[]> };
 function available(options: ProjectViewOptions): number {
-  return options.wide ? Infinity : Math.max(1, Math.floor(options.width ?? process.stdout.columns ?? 100) - 3);
+  const columns = Number(process.env.COLUMNS);
+  const fallback = Number.isInteger(columns) && columns > 0 ? columns : 100;
+  const terminal = process.stderr.isTTY ? process.stderr.columns : process.stdout.isTTY ? process.stdout.columns : undefined;
+  return options.wide ? Infinity : Math.max(1, Math.floor(options.width ?? terminal ?? fallback) - Bun.stringWidth("│  "));
 }
 function fit(value: string, width: number): string {
   value = cell(value);
@@ -43,7 +46,7 @@ function fit(value: string, width: number): string {
   return result + "…";
 }
 export function fitProjectLine(value: string, options: ProjectViewOptions = {}): string {
-  return fit(value, available({ ...options, width: options.width ?? process.stderr.columns ?? process.stdout.columns ?? 100 }));
+  return fit(value, available(options));
 }
 function table(rows: string[][], options: ProjectViewOptions, priority = -1): string[] {
   const widths = rows[0]?.map((_, index) => Math.max(...rows.map(row => Bun.stringWidth(cell(row[index] ?? ""))))) ?? [];

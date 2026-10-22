@@ -39,7 +39,7 @@ export function registerLostCommand(program: Command): void {
     .option("--all", "Inspect all indexed projects, the default for lost")
     .option("--fetch", "Fetch and prune remote-tracking refs once per clone before inspection")
     .option("--wide", "Show full line values")
-    .option("--verbose", "Show paths, commit subjects, and recovery commands")
+    .option("--verbose", "Show all branches, paths, commit subjects, and recovery commands")
     .action(async (names: string[], options: CleanupViewOptions & { all?: boolean; fetch?: boolean }) => {
       const controller = new AbortController();
       const interrupt = () => controller.abort();
@@ -54,7 +54,7 @@ export function registerLostCommand(program: Command): void {
           if (/Broken checkout/.test(gap.reason) && !result.items.some(item => item.path === gap.path)) result.items.push({ kind: "broken-gitdir", commonDir: "unknown", path: gap.path, createdBy: "unknown", reason: gap.reason, nextSteps: [["git", "-C", gap.path, "rev-parse", "--git-dir"]] });
         }
         if (jsonOut({ ...result, coverage })) return;
-        for (const line of formatLost(result, { ...options, coverage, clones })) p.log.message(line);
+        for (const line of formatLost(result, { ...options, verbose: options.verbose || (names.length === 1 && clones.length === 1), coverage, clones })) p.log.message(line);
       } catch (error) { fail(error instanceof Error ? error.message : "Lost inventory failed"); }
       finally { setCommandCancellation(undefined); process.off("SIGINT", interrupt); }
     });

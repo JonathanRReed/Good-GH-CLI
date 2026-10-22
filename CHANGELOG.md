@@ -23,6 +23,13 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Show only actionable clones in default `tidy` output. Aggregate keep reasons,
+  host worktrees and broken checkout directories; retain all clone details with
+  `--verbose`.
+- Keep every affected clone visible in `lost` with one summary line each. Expand
+  the top three branches of the highest-ranked clones within an 80-line budget.
+  Show full detail with `lost <project>` or `--verbose`. Preserve JSON and agent
+  inventories.
 - Compact `status --agent` changes into XY/path tuples, including rename sources
   and conflict codes. Preserve submodule markers separately. Add `--full` for raw
   porcelain-v2 records and publish both shapes through `ggh agent schema`.
@@ -31,6 +38,8 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Honor `COLUMNS` for piped project and cleanup output, default to 100 columns,
+  and include the log prefix in line widths.
 - Keep `tidy` previews compact with branch ancestry summaries, grouped keep reasons,
   host worktrees and broken directories. Add `--verbose` and `--wide`; retain full
   deletion proofs in JSON.
