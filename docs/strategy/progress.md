@@ -16,7 +16,7 @@ Branch `feat/v0.6-projects`. Loop started 2026-10-22 ("until the new version of 
 | 0 | P0 fixes: merge head pin + honest outcomes; safe checkout path (no .env copy); worktree removal recheck; `worktree list --porcelain -z` parser; env allowlist; agent envelope diet (status, run) | done (c0bec09 merged; verified on source CLI) |
 | 1 | (1D threads, 1B clone, 1C ci why merged; 1A projects in progress) Identity + discovery + index; `ggh` / `projects`; `clone` extensions (alias `get`); `go` + `init <shell>`. Parallel: `ci why` prototype + benchmark harness; lossless review-thread reads | pending |
 | 2 | `sync --all`; `tidy` with deletion proofs; `lost`; `tidy --audit`; `projects --remote` | pending |
-| 3 | Compact status; preflight fixtures; skill pack; `review --editor` + ledger | pending |
+| 3 | Compact status; preflight fixtures; skill pack; `review --editor` + ledger | 3A review + 3B status/preflight in progress; skill pack after Phase 2 |
 | 4 | Cuts; README rewrite around projects; release prep (no publication without approval) | pending |
 
 ## Log
