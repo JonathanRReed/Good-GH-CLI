@@ -153,7 +153,7 @@ export async function run(command: string, args: string[], options: RunOptions =
   const proc = Bun.spawn([command, ...args], {
     cwd: options.cwd,
     env,
-    stdin: inherit ? "inherit" : options.input !== undefined ? "pipe" : "ignore",
+    stdin: options.input !== undefined ? "pipe" : inherit ? "inherit" : "ignore",
     stdout: inherit ? "inherit" : "pipe",
     stderr: inherit ? "inherit" : "pipe",
     // Piped children get their own process group so a timeout or Ctrl-C can
