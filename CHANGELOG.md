@@ -22,6 +22,15 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add `ggh tidy --audit <provider>` with a 32 KB metadata prompt, strict JSON
+  recommendations, keep-by-default narrowing, disclosure and consent checks,
+  and explicit refusal after an audit failure. Reuse guarded execution after
+  one confirmation or `--yes`.
+- Bind audited approval snapshots to the narrowed actions and audit result.
+  Restore private approval records through `--agent --approve-plan` without
+  another model call. Support audited dry runs and explicit
+  `--proceed-without-audit` fallback.
+
 - Add `ggh projects --remote` and bare `ggh --remote` with PR counts, review
   requests, archive and fork flags, remote age, and context-card PR lists and CI.
 - Deduplicate remote identities across clones, batch 25 repositories per GraphQL
