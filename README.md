@@ -118,6 +118,19 @@ Inside a named local repository with commits and no remote, `ggh repo create` in
 
 `ggh pr create` can use the same setup plan when the local repository has no GitHub remote. It requires a valid base and head before remote changes, then creates the repository, pushes the base and head, and opens the PR in that order. `ggh commit --pr` runs the commit and PR workflow together. Noninteractive publication requires `--yes` or an exact `--approve-plan` snapshot. Configured fast mode also authorizes unambiguous repo creation.
 
+PR merges pin the head SHA read before confirmation. Use
+`ggh pr merge 42 --squash --match-head-commit <sha>` to require a specific reviewed
+commit. A changed head fails. After the request, ggh checks GitHub and reports
+`merged`, `queued`, `auto_merge_enabled`, or `unknown`. Branch cleanup runs only
+after a confirmed merge.
+
+`ggh pr 42 --worktree` creates a review checkout without copying local env files,
+initializing submodules, or recording shared branch-parent metadata.
+`ggh wt add feature` keeps development worktree setup; add `--copy-env` to copy
+`.env`, `.env.local`, and `.env.development` from the current checkout.
+Worktree removal rechecks local changes, locks, and current/main checkout
+identity. Overriding a refusal requires `--force`; `--yes` does not force removal.
+
 ## Issues and CI
 
 ```bash
@@ -237,7 +250,8 @@ These shared flags apply where the command advertises them:
 Data goes to stdout; progress and errors go to stderr. Without a terminal, a command that needs an answer cancels and exits nonzero. It does not select a menu item or accept a destructive operation for you.
 
 ```bash
-ggh status --json | jq '.ai.chain'
+ggh status --agent
+ggh status --json --remote --providers
 ggh pr --json | jq -r '.[] | "\(.number) \(.title)"'
 ggh stack list --json | jq '.[] | select(.behind > 0) | .branch'
 ggh discard --all --dry-run
@@ -247,9 +261,17 @@ ggh discard --all --dry-run
 `ggh.agent` envelope. With `--agent`, read `status`, `error.code`,
 `error.retryability`, `requiredInputs`, and `effects` before continuing. Detailed
 result schemas cover the core workflows; other `result` payloads remain
-command-specific. Legacy `--json` shapes are preserved. Native `git`, `gh`, and
+command-specific. Agent output is compact JSON. Native `git`, `gh`, and
 `--` escapes keep their native streams and exit codes. MCP and shell completion
 use their own protocols and reject `--agent`.
+
+`ggh status --json` and `--agent` read local Git state only. They report the
+checkout root, branch, upstream, ahead/behind counts, staged/unstaged/untracked
+and conflict counts, detached state, and operation in progress. Add `--remote`
+for GitHub authentication and PR checks, or `--providers` for AI provider checks.
+`ggh run <id> --json` and `--agent` return one `jobs` array alongside `run`,
+`log`, and `logStatus`. Failed logs are fetched before output; expired or
+inaccessible logs have `logStatus: "unavailable"`.
 
 For repo creation, PR creation, and publication recovery, `--dry-run` returns a
 `snapshotId` alongside the plan. Review that plan, then supply

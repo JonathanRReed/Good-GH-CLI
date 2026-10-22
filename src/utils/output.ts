@@ -31,7 +31,7 @@ export function finalizeJsonOutput(): void {
   if (getFlags().agent) {
     const result = getEmittedJson()?.value;
     takePendingJson();
-    process.stdout.write(`${JSON.stringify(agentEnvelope({ command: getCommandPath(), result, issue: issue ? { ...issue, message: stripAnsi(issue.message) } : undefined, operation: getFinishedOperation(), failed: Boolean(process.exitCode), dryRun: getFlags().dryRun, preview: getPreview() }), null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify(agentEnvelope({ command: getCommandPath(), result, issue: issue ? { ...issue, message: stripAnsi(issue.message) } : undefined, operation: getFinishedOperation(), failed: Boolean(process.exitCode), dryRun: getFlags().dryRun, preview: getPreview() }))}\n`);
     return;
   }
   if (!hasJsonOutput() && issue) {
