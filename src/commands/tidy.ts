@@ -1,37 +1,23 @@
 import type { Command } from "commander";
 import { getFlags, recordCommandIssue, setCommandCancellation } from "../services/runtime.ts";
-import { startOperation, updateOperation } from "../services/operations.ts";
-import { acquireProcessLock } from "../services/process-lock.ts";
-import { projectGit } from "../services/projects/git.ts";
-import { buildTidyPlan, type TidyPlan, type TidyOptions } from "../services/projects/tidy-plan.ts";
-import { assertTidyApproval, executeTidyPlan, tidyLockPath } from "../services/projects/tidy-execute.ts";
+import { buildTidyPlan, type TidyOptions } from "../services/projects/tidy-plan.ts";
+import { assertTidyApproval, executeTidyPlan } from "../services/projects/tidy-execute.ts";
 import { findLost } from "../services/projects/lost.ts";
 import { confirmOrAbort, fail, jsonOut, p } from "../utils/ui.ts";
-import { cleanupProjects, renderLost } from "./lost.ts";
+import { cleanupProjects } from "./lost.ts";
+import { fetchCleanupClones } from "../services/projects/cleanup-fetch.ts";
+import { formatTidyPlan, type CleanupViewOptions } from "../services/projects/cleanup-view.ts";
+import { fitProjectLine } from "../services/projects/view.ts";
 
-export function renderTidyPlan(plan: TidyPlan): string[] {
-  const lines = [`Tidy plan ${plan.snapshotId}`];
-  for (const clone of plan.clones) {
-    lines.push(`${clone.name}  ${clone.commonDir}`, `  Remote-tracking refs last fetched: ${clone.fetchedAt ? `${clone.fetchedAt} (${Math.max(0, Math.floor((Date.now() - Date.parse(clone.fetchedAt)) / 86400000))} days ago)` : "unknown"}. Remote state may have changed.`);
-    for (const action of clone.actions) {
-      const target = action.kind === "remove-checkout" ? action.checkout.path : action.kind === "prune-worktree-metadata" ? action.entries.map(entry => entry.path).join(", ") : action.branch;
-      lines.push(`  ${action.kind}  ${target}  [${action.id}]`, `    proof: ${JSON.stringify(action.proof)}`);
-      if (action.kind === "delete-remote-branch") lines.push(`    destination: ${action.destination}; expected-OID lease ${action.tip}; cached owner ${action.login}`);
-      if (action.kind === "remove-checkout") lines.push(`    checkout: ${action.checkoutIdentity}; clean files: ${action.fileState}; ignored override ${action.allowIgnored}; unknown-owner override ${action.allowUnknown}`);
-      if (action.kind === "prune-worktree-metadata") lines.push(`    Git prune preview: ${JSON.stringify(action.dryRun)}; default expiry retained`);
-    }
-    for (const kept of clone.kept) lines.push(`  KEEP ${kept.target}: ${kept.reason}`);
-    for (const host of clone.hostManual) lines.push(`  HOST-MANUAL ${host.target}: ${host.reason}`);
-    for (const hint of clone.hints) lines.push(`  ${hint.kind} ${hint.reason}`);
-  }
-  return lines;
-}
-interface TidyCommandOptions extends TidyOptions { all?: boolean; fetch?: boolean; yes?: boolean; approvePlan?: string }
+export { formatTidyPlan as renderTidyPlan } from "../services/projects/cleanup-view.ts";
+interface TidyCommandOptions extends TidyOptions, CleanupViewOptions { all?: boolean; fetch?: boolean; yes?: boolean; approvePlan?: string }
 export function registerTidyCommand(program: Command): void {
   const append = (value: string, previous: string[]) => [...previous, value];
   program.command("tidy [projects...]").description("Preview and approve guarded clone cleanup")
     .option("--all", "Plan cleanup across all indexed projects")
     .option("--fetch", "Fetch and prune remote-tracking refs once per clone before planning")
+    .option("--wide", "Show full line values")
+    .option("--verbose", "Expand kept targets, host worktrees, and hints")
     .option("--remote-branches", "Include proven merged branches on your own origin")
     .option("--allow-ignored <path>", "Approve ignored files for this exact checkout in a new plan", append, [])
     .option("--allow-unknown <path>", "Approve unknown provenance for this exact checkout in a new plan", append, [])
@@ -45,30 +31,17 @@ export function registerTidyCommand(program: Command): void {
       setCommandCancellation(interrupt);
       try {
         const { clones, coverage } = await cleanupProjects(names, Boolean(options.all));
-        if (options.fetch) for (const clone of clones) {
-          if (controller.signal.aborted) break;
-          const release = await acquireProcessLock(tidyLockPath(clone.commonDir), 30000);
-          try {
-            const operation = await startOperation({ command: "tidy fetch", steps: ["fetch"], cwd: clone.commonDir });
-            await updateOperation(operation.id, { steps: [{ name: "fetch", state: "uncertain" }] }, clone.commonDir);
-            try {
-              await projectGit(clone.commonDir, ["fetch", "--prune"], Date.now() + 30000);
-              await updateOperation(operation.id, { steps: [{ name: "fetch", state: "completed" }], status: { state: "succeeded" } }, clone.commonDir);
-            } catch (error) {
-              await updateOperation(operation.id, { steps: [{ name: "fetch", state: "uncertain" }], status: { state: "partially_completed" } }, clone.commonDir);
-              throw error;
-            }
-          } finally { await release(); }
-        }
+        if (options.fetch) await fetchCleanupClones(clones, "tidy", controller.signal);
         const plan = await buildTidyPlan(clones, { remoteBranches: options.remoteBranches, allowIgnored: options.allowIgnored, allowUnknown: options.allowUnknown, staleDays: options.staleDays });
         const lost = await findLost(clones);
         const payload = { schemaVersion: 1, plan, lost, coverage };
         const count = plan.clones.reduce((n, clone) => n + clone.actions.length, 0);
         if (!getFlags().json) {
-          for (const line of renderTidyPlan(plan)) p.log.message(line);
-          for (const line of renderLost(lost)) p.log.message(line);
-          for (const gap of coverage.skipped) p.log.warn(`${gap.path}: ${gap.reason}`);
-          if (coverage.truncated) p.log.warn("Discovery is incomplete: scan depth reached");
+          for (const line of formatTidyPlan(plan, { ...options, coverage, clones })) p.log.message(line);
+          const unpublished = lost.clones.reduce((sum, clone) => sum + clone.uniqueCommits, 0);
+          const stashes = lost.items.filter(item => item.kind === "stash").reduce((sum, item) => sum + item.count, 0);
+          p.log.message(fitProjectLine(`Unpublished: ${unpublished} unique commits; ${stashes} stashes. Inspect with ggh lost.`, options));
+          for (const warning of lost.warnings) p.log.message(fitProjectLine(`UNKNOWN ${warning.target}: ${warning.reason}`, options));
         }
         if (options.approvePlan !== undefined) {
           try { assertTidyApproval(options.approvePlan, plan); }
@@ -96,8 +69,8 @@ export function registerTidyCommand(program: Command): void {
         const status = controller.signal.aborted ? "cancelled" : remaining.length ? completed.length ? "partially_completed" : "failed" : "succeeded";
         if (remaining.length && !controller.signal.aborted) fail(`${remaining.length} tidy action(s) did not complete; inspect their journal records`, { code: uncertain.length ? "outcome_uncertain" : "operation_failed" });
         if (!jsonOut({ ...payload, status, outcomes, completed, remaining, uncertain })) {
-          for (const outcome of outcomes) p.log.message(`${outcome.state} ${outcome.kind} [${outcome.id}]: ${outcome.reason}  journal ${outcome.operationId}`);
-          p.log.message(`${completed.length} completed, ${outcomes.filter(item => item.state === "refused").length} refused, ${outcomes.filter(item => item.state === "skipped").length} skipped, ${outcomes.filter(item => item.state === "failed").length} failed, ${uncertain.length} uncertain`);
+          for (const outcome of outcomes) p.log.message(fitProjectLine(`${outcome.state} ${outcome.kind} [${outcome.id}]: ${outcome.reason}  journal ${outcome.operationId}`, options));
+          p.log.message(fitProjectLine(`${completed.length} completed, ${outcomes.filter(item => item.state === "refused").length} refused, ${outcomes.filter(item => item.state === "skipped").length} skipped, ${outcomes.filter(item => item.state === "failed").length} failed, ${uncertain.length} uncertain`, options));
         }
       } catch (error) { fail(error instanceof Error ? error.message : "Tidy failed"); }
       finally { setCommandCancellation(undefined); process.off("SIGINT", interrupt); }

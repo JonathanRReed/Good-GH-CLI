@@ -1,27 +1,28 @@
 import { existsSync, lstatSync } from "node:fs";
 import { getConfig } from "../config.ts";
 import { projectGit } from "./git.ts";
-import { freshClone, hostClaims } from "./tidy-plan.ts";
+import { fetchedAt, freshClone, hostClaims } from "./tidy-plan.ts";
 import { readCloneStatus } from "./status.ts";
 import type { CheckoutCreator, Clone } from "./types.ts";
 
 interface LostBase { commonDir: string; path: string | null; createdBy: CheckoutCreator; nextSteps: string[][] }
 export type LostItem = LostBase & (
-  | { kind: "unpublished"; branch: string | null; head: string; commits: number; newestSubject: string; newestDate: string; oldestDate: string }
+  | { kind: "unpublished"; branch: string | null; head: string; commits: number; uniqueCommits: number; sharedCommits: number; newestSubject: string; newestDate: string; oldestDate: string }
   | { kind: "stash"; count: number; stashes: { ref: string; oid: string; date: string; message: string }[]; oldestDate: string }
   | { kind: "dirty-host-checkout"; host: string; reason: string }
   | { kind: "broken-gitdir"; reason: string }
 );
-export interface LostResult { schemaVersion: 1; items: LostItem[]; warnings: { target: string; reason: string }[] }
+export interface LostClone { commonDir: string; name: string; fetchedAt: string | null; uniqueCommits: number; branches: number; detachedHeads: number }
+export interface LostResult { schemaVersion: 1; clones: LostClone[]; items: LostItem[]; warnings: { target: string; reason: string }[] }
 export function sortLost(items: LostItem[]): LostItem[] {
   return items.sort((a, b) => {
-    const commits = (item: LostItem) => item.kind === "unpublished" ? item.commits : 0;
+    const commits = (item: LostItem) => item.kind === "unpublished" ? item.uniqueCommits : 0;
     const date = (item: LostItem) => "oldestDate" in item ? Date.parse(item.oldestDate) : -Infinity;
     return commits(b) - commits(a) || date(a) - date(b) || a.commonDir.localeCompare(b.commonDir) || (a.path ?? "").localeCompare(b.path ?? "") || a.kind.localeCompare(b.kind);
   });
 }
 export async function findLost(clones: readonly Clone[], config = getConfig()): Promise<LostResult> {
-  const result: LostResult = { schemaVersion: 1, items: [], warnings: [] };
+  const result: LostResult = { schemaVersion: 1, clones: [], items: [], warnings: [] };
   for (const input of clones) {
     let clone: Clone;
     try { clone = await freshClone(input, config); }
@@ -35,19 +36,31 @@ export async function findLost(clones: readonly Clone[], config = getConfig()): 
     try {
       const status = await readCloneStatus(clone, { deadlineMs: 10000 });
       if (status.unpublished.state !== "ok") throw new Error("Unpublished commit inventory is unavailable");
+      const unpublished: { item: Extract<LostItem, { kind: "unpublished" }>; oids: string[] }[] = [];
+      const membership = new Map<string, number>();
       for (const target of status.unpublished.value.filter(ref => ref.commits > 0)) {
         const branch = target.ref.startsWith("refs/heads/") ? target.ref.slice(11) : null;
         const checkout = clone.checkouts.find(checkout => branch ? checkout.branch === branch : !checkout.branch && checkout.head === target.ref);
         const head = (await projectGit(commonDir, ["rev-parse", "--verify", `${target.ref}^{commit}`])).stdout.trim();
-        const commits = (await projectGit(commonDir, ["log", "--format=%cI%x00%s", head, "--not", "--remotes", "--"])).stdout.split("\n").filter(Boolean).map(line => { const n = line.indexOf("\0"); return { date: line.slice(0, n), subject: line.slice(n + 1) }; }).sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+        const commits = (await projectGit(commonDir, ["log", "--format=%H%x00%cI%x00%s", head, "--not", "--remotes", "--"])).stdout.split("\n").filter(Boolean).map(line => { const [oid = "", date = "", subject = ""] = line.split("\0"); return { oid, date, subject }; }).sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
         const newest = commits[0];
         const oldest = commits.at(-1);
         if (!newest || !oldest) throw new Error("Commit graph changed during lost inventory");
         const path = checkout?.path ?? null;
         const cwd = path && existsSync(path) ? path : commonDir;
-        result.items.push({ ...base, kind: "unpublished", path, createdBy: checkout?.createdBy ?? "unknown", branch, head, commits: target.commits, newestSubject: newest.subject, newestDate: newest.date, oldestDate: oldest.date,
-          nextSteps: branch ? [["git", "-C", cwd, "push", "origin", `refs/heads/${branch}:refs/heads/${branch}`]] : [["git", "-C", cwd, "branch", "rescue-work", head]] });
+        const item: Extract<LostItem, { kind: "unpublished" }> = { ...base, kind: "unpublished", path, createdBy: checkout?.createdBy ?? "unknown", branch, head, commits: commits.length, uniqueCommits: 0, sharedCommits: 0, newestSubject: newest.subject, newestDate: newest.date, oldestDate: oldest.date,
+          nextSteps: branch ? [["git", "-C", cwd, "push", "origin", `refs/heads/${branch}:refs/heads/${branch}`]] : [["git", "-C", cwd, "branch", "rescue-work", head]] };
+        const oids = commits.map(commit => commit.oid);
+        for (const oid of oids) membership.set(oid, (membership.get(oid) ?? 0) + 1);
+        unpublished.push({ item, oids });
       }
+      for (const { item, oids } of unpublished) {
+        item.uniqueCommits = oids.filter(oid => membership.get(oid) === 1).length;
+        item.sharedCommits = item.commits - item.uniqueCommits;
+        result.items.push(item);
+      }
+      result.clones.push({ commonDir, name: clone.displayName, fetchedAt: fetchedAt(commonDir), uniqueCommits: membership.size,
+        branches: unpublished.filter(({ item }) => item.branch !== null).length, detachedHeads: unpublished.filter(({ item }) => item.branch === null).length });
       const stashText = status.stashes.state === "ok" && status.stashes.value === 0 ? "" : (await projectGit(commonDir, ["reflog", "show", "--date=iso-strict", "--format=%gd%x00%H%x00%cI%x00%gs", "refs/stash"])).stdout;
       const stashes = stashText.split("\n").filter(Boolean).map((line, i) => {
         const [, oid = "", date = "", message = ""] = line.split("\0");

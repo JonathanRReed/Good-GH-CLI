@@ -15,6 +15,14 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Keep `tidy` previews compact with branch ancestry summaries, grouped keep reasons,
+  host worktrees and broken directories. Add `--verbose` and `--wide`; retain full
+  deletion proofs in JSON.
+- Count unpublished commits once per clone in `lost`, with exclusive and shared
+  counts per branch or detached HEAD. Show fetch age and remote-state uncertainty;
+  add `lost --fetch` using tidy's local lock, timeout and operation journal.
+- Resolve a non-bare main checkout to its working directory when discovery starts
+  from an external linked worktree, rather than displaying its `.git` directory.
 - Report completed review checkout, fetch, ref and ledger effects in agent output,
   including effects completed before a later failure. Report clone, project index
   and configuration writes, editor/T3 launches, and single-repository sync effects.

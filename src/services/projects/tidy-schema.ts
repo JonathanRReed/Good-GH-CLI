@@ -13,10 +13,13 @@ export const tidyActionSchema = { type: "object", required: ["id", "kind", "proo
   { required: ["checkout", "checkoutIdentity", "fileState", "allowIgnored", "allowUnknown", "integration"], properties: { kind: { const: "remove-checkout" }, checkout, checkoutIdentity: text, fileState: text, allowIgnored: { type: "boolean" }, allowUnknown: { type: "boolean" }, integration: { anyOf: [ref, { type: "null" }] } } },
   { required: ["entries", "registry", "expire", "dryRun"], properties: { kind: { const: "prune-worktree-metadata" }, entries: { type: "array", items: checkout }, registry: text, expire: text, dryRun: text } },
 ] };
-export const lostResultSchema = { type: "object", required: ["schemaVersion", "items", "warnings"], properties: {
-  schemaVersion: { const: 1 }, warnings: { type: "array", items: notice },
+export const lostResultSchema = { type: "object", required: ["schemaVersion", "clones", "items", "warnings"], properties: {
+  schemaVersion: { const: 1 },
+  clones: { type: "array", items: { type: "object", required: ["commonDir", "name", "fetchedAt", "uniqueCommits", "branches", "detachedHeads"], properties: {
+    commonDir: text, name: text, fetchedAt: nullableText, uniqueCommits: { type: "integer", minimum: 0 }, branches: { type: "integer", minimum: 0 }, detachedHeads: { type: "integer", minimum: 0 },
+  } } }, warnings: { type: "array", items: notice },
   items: { type: "array", items: { type: "object", required: ["kind", "commonDir", "path", "createdBy", "nextSteps"], properties: { commonDir: text, path: nullableText, createdBy: creator, nextSteps: { type: "array", items: paths } }, oneOf: [
-    { required: ["branch", "head", "commits", "newestSubject", "newestDate", "oldestDate"], properties: { kind: { const: "unpublished" }, branch: nullableText, head: text, commits: { type: "integer", minimum: 1 }, newestSubject: text, newestDate: text, oldestDate: text } },
+    { required: ["branch", "head", "commits", "uniqueCommits", "sharedCommits", "newestSubject", "newestDate", "oldestDate"], properties: { kind: { const: "unpublished" }, branch: nullableText, head: text, commits: { type: "integer", minimum: 1 }, uniqueCommits: { type: "integer", minimum: 0 }, sharedCommits: { type: "integer", minimum: 0 }, newestSubject: text, newestDate: text, oldestDate: text } },
     { required: ["count", "stashes", "oldestDate"], properties: { kind: { const: "stash" }, count: { type: "integer", minimum: 1 }, oldestDate: text, stashes: { type: "array", items: { type: "object", required: ["ref", "oid", "date", "message"], properties: { ref: text, oid: text, date: text, message: text } } } } },
     { required: ["reason", "host"], properties: { kind: { const: "dirty-host-checkout" }, reason: text, host: text } },
     { required: ["reason"], properties: { kind: { const: "broken-gitdir" }, reason: text } },

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_CONFIG, getConfig, saveConfig, validateConfigValue } from "../src/services/config.ts";
-import { checkoutCreator, discoverProjects, projectPath, redactRemoteUrl, remoteIdentity } from "../src/services/projects/discovery.ts";
+import { checkoutCreator, discoverProjects, mainWorktreePath, projectPath, redactRemoteUrl, remoteIdentity } from "../src/services/projects/discovery.ts";
 import { forgetProject, readProjectIndex, refreshProjectIndex, registerProject, updateProjectIndex } from "../src/services/projects/index-store.ts";
 import { parseCheckoutStatus, projectHistory, readCloneStatus, readProjectStatuses } from "../src/services/projects/status.ts";
 import { fixtureRoot } from "./cli-fixture.ts";
@@ -344,4 +344,23 @@ it("reads shared refs and stashes once for a clone with several linked checkouts
     expect(calls.filter(line => line.includes(" stash list "))).toHaveLength(1);
     expect(calls.filter(line => line.includes(" status "))).toHaveLength(4);
   } finally { process.env.PATH = previous; }
+});
+
+it("resolves the main checkout when only an external linked worktree is scanned", async () => {
+  const main = await repo("outside-main");
+  const host = join(root, "host");
+  const linked = join(host, "Project", "task");
+  await git(main, "worktree", "add", "-b", "task", linked);
+  const result = await discoverProjects({ config: { ...config(), project_roots: [], host_worktree_dirs: { t3: host } } });
+  expect(result.clones).toHaveLength(1);
+  expect(result.clones[0]?.checkouts[0]).toMatchObject({ path: main, gitDir: join(main, ".git"), bare: false, branch: "main" });
+  expect(result.clones[0]?.checkouts.map(checkout => checkout.path)).not.toContain(join(main, ".git"));
+});
+
+it("normalizes a .git main-worktree path without changing bare or separate git directories", () => {
+  const main = join(root, "main");
+  expect(mainWorktreePath(join(main, ".git"), { path: join(main, ".git"), isBare: false })).toBe(main);
+  expect(mainWorktreePath(join(main, ".git"), { path: join(main, ".git"), isBare: true })).toBe(join(main, ".git"));
+  expect(mainWorktreePath(join(root, "metadata"), { path: main, isBare: false })).toBe(main);
+  expect(mainWorktreePath(join(root, "metadata", ".git"), { path: main, isBare: false })).toBe(main);
 });
