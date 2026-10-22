@@ -25,9 +25,16 @@ export const lostResultSchema = { type: "object", required: ["schemaVersion", "c
     { required: ["reason"], properties: { kind: { const: "broken-gitdir" }, reason: text } },
   ] } },
 } };
+export const tidyAuditSchema = { type: "object", required: ["state", "originalSnapshotId", "provider", "model", "inputHash", "resultHash", "sentActions", "commitSubjects", "promptBytes", "omittedActions", "rejectedRecommendations", "decisions"], properties: {
+  state: { const: "completed" }, originalSnapshotId: text, provider: { enum: ["codex", "claude", "grok", "ollama"] }, model: text, inputHash: text, resultHash: text,
+  ...Object.fromEntries(["sentActions", "commitSubjects", "promptBytes", "omittedActions", "rejectedRecommendations"].map(key => [key, { type: "integer", minimum: 0 }])),
+  decisions: { type: "array", items: { type: "object", required: ["id", "verdict", "reason"], properties: { id: text, verdict: { enum: ["prune", "keep", "keep-unaudited"] }, reason: text } } },
+} };
 export const tidyResultSchema = { type: "object", required: ["schemaVersion", "plan", "lost", "status"], properties: {
+  audit: { anyOf: [tidyAuditSchema, { type: "object", required: ["state", "reason"], properties: { state: { const: "failed" }, reason: text } }] },
   schemaVersion: { const: 1 }, status: { enum: ["planned", "needs_input", "no_op", "succeeded", "failed", "partially_completed", "cancelled"] }, lost: lostResultSchema,
   plan: { type: "object", required: ["schemaVersion", "snapshotId", "options", "clones"], properties: {
+    audit: tidyAuditSchema,
     schemaVersion: { const: 1 }, snapshotId: { type: "string", pattern: "^[a-f0-9]{64}$" },
     options: { type: "object", properties: { remoteBranches: { type: "boolean" }, allowIgnored: paths, allowUnknown: paths, staleDays: { type: "integer", minimum: 1 } } },
     clones: { type: "array", items: { type: "object", required: ["commonDir", "name", "fetchedAt", "actions", "kept", "hostManual", "hints"], properties: {

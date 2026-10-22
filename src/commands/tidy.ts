@@ -2,6 +2,7 @@ import type { Command } from "commander";
 import { getFlags, recordCommandIssue, setCommandCancellation } from "../services/runtime.ts";
 import { buildTidyPlan, type TidyOptions } from "../services/projects/tidy-plan.ts";
 import { assertTidyApproval, executeTidyPlan } from "../services/projects/tidy-execute.ts";
+import { auditTidyPlan, renderTidyAudit } from "../services/projects/tidy-audit.ts";
 import { findLost } from "../services/projects/lost.ts";
 import { confirmOrAbort, fail, jsonOut, p } from "../utils/ui.ts";
 import { cleanupProjects } from "./lost.ts";
@@ -10,10 +11,12 @@ import { formatTidyPlan, type CleanupViewOptions } from "../services/projects/cl
 import { fitProjectLine } from "../services/projects/view.ts";
 
 export { formatTidyPlan as renderTidyPlan } from "../services/projects/cleanup-view.ts";
-interface TidyCommandOptions extends TidyOptions, CleanupViewOptions { all?: boolean; fetch?: boolean; yes?: boolean; approvePlan?: string }
+interface TidyCommandOptions extends TidyOptions, CleanupViewOptions { all?: boolean; fetch?: boolean; yes?: boolean; approvePlan?: string; audit?: string; proceedWithoutAudit?: boolean }
 export function registerTidyCommand(program: Command): void {
   const append = (value: string, previous: string[]) => [...previous, value];
   program.command("tidy [projects...]").description("Preview and approve guarded clone cleanup")
+    .option("--audit <provider>", "Audit metadata with codex, claude, grok, or ollama; requires AI permission")
+    .option("--proceed-without-audit", "Explicitly allow the original plan if the requested audit fails")
     .option("--all", "Plan cleanup across all indexed projects")
     .option("--fetch", "Fetch and prune remote-tracking refs once per clone before planning")
     .option("--wide", "Show full line values")
@@ -30,18 +33,26 @@ export function registerTidyCommand(program: Command): void {
       process.on("SIGINT", interrupt);
       setCommandCancellation(interrupt);
       try {
+        if (options.proceedWithoutAudit && !options.audit) throw new Error("--proceed-without-audit requires --audit");
         const { clones, coverage } = await cleanupProjects(names, Boolean(options.all));
         if (options.fetch) await fetchCleanupClones(clones, "tidy", controller.signal);
-        const plan = await buildTidyPlan(clones, { remoteBranches: options.remoteBranches, allowIgnored: options.allowIgnored, allowUnknown: options.allowUnknown, staleDays: options.staleDays });
+        const originalPlan = await buildTidyPlan(clones, { remoteBranches: options.remoteBranches, allowIgnored: options.allowIgnored, allowUnknown: options.allowUnknown, staleDays: options.staleDays });
+        const audited = options.audit ? await auditTidyPlan(originalPlan, { provider: options.audit, approvePlan: options.approvePlan }) : undefined;
+        const plan = audited?.plan ?? originalPlan;
         const lost = await findLost(clones);
-        const payload = { schemaVersion: 1, plan, lost, coverage };
+        const payload = { schemaVersion: 1, plan, lost, coverage, ...(audited ? { audit: audited.audit } : {}) };
         const count = plan.clones.reduce((n, clone) => n + clone.actions.length, 0);
         if (!getFlags().json) {
+          if (audited) for (const line of renderTidyAudit(originalPlan, audited.audit)) p.log.message(fitProjectLine(line, options));
           for (const line of formatTidyPlan(plan, { ...options, coverage, clones })) p.log.message(line);
           const unpublished = lost.clones.reduce((sum, clone) => sum + clone.uniqueCommits, 0);
           const stashes = lost.items.filter(item => item.kind === "stash").reduce((sum, item) => sum + item.count, 0);
           p.log.message(fitProjectLine(`Unpublished: ${unpublished} unique commits; ${stashes} stashes. Inspect with ggh lost.`, options));
           for (const warning of lost.warnings) p.log.message(fitProjectLine(`UNKNOWN ${warning.target}: ${warning.reason}`, options));
+        }
+        if (audited?.audit.state === "failed" && !options.proceedWithoutAudit) {
+          fail(`Audit failed: ${audited.audit.reason}. Cleanup refused; use --proceed-without-audit to approve the original plan`, { code: "operation_failed" });
+          jsonOut({ ...payload, status: "failed", outcomes: [] }); return;
         }
         if (options.approvePlan !== undefined) {
           try { assertTidyApproval(options.approvePlan, plan); }

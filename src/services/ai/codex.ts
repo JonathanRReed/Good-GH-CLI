@@ -41,7 +41,7 @@ export class CodexProvider extends CliAIProvider {
     }
   }
 
-  protected async invoke(prompt: string, model: string, timeoutMs: number): Promise<string> {
+  protected async invoke(prompt: string, model: string, timeoutMs: number, metadataOnly = false): Promise<string> {
     const tmpDir = privateTemporaryDirectory("good-gh-codex-");
     const outputPath = join(tmpDir, "output.txt");
 
@@ -56,6 +56,7 @@ export class CodexProvider extends CliAIProvider {
           // developer_instructions all slow this down and leak unrelated
           // instructions into commit messages. Auth still resolves via CODEX_HOME.
           "--ignore-user-config",
+          ...metadataOnly ? ["-c", "features.shell_tool=false", "-c", "features.view_image=false", "-c", "features.multi_agent=false", "-c", "features.multi_agent_v2=false", "-c", "web_search=\"disabled\""] : [],
           "--color",
           "never",
           "--json",

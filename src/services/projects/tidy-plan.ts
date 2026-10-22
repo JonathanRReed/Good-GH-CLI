@@ -6,6 +6,7 @@ import { worktreeList } from "../git/worktree.ts";
 import { run } from "../../utils/exec.ts";
 import { checkoutCreator, discoverProjects, projectPath, remoteIdentity } from "./discovery.ts";
 import { gitLine, inventoryGitOptions, projectGit } from "./git.ts";
+import type { TidyAudit } from "./tidy-audit.ts";
 import type { Checkout, Clone, HostClaim } from "./types.ts";
 
 export interface TidyOptions {
@@ -40,7 +41,7 @@ export interface TidyClonePlan {
   hostManual: (TidyNotice & { host: HostClaim["host"] })[];
   hints: (TidyNotice & { kind: "stale-repo" | "gc-hint" })[];
 }
-export interface TidyPlan { schemaVersion: 1; snapshotId: string; options: TidyOptions; clones: TidyClonePlan[] }
+export interface TidyPlan { schemaVersion: 1; snapshotId: string; options: TidyOptions; clones: TidyClonePlan[]; audit?: TidyAudit }
 export function tidyDigest(value: unknown): string { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
 export function directoryIdentity(path: string): string {
   const info = lstatSync(path, { bigint: true });
@@ -287,8 +288,8 @@ export async function classifyTidyClone(input: Clone, options: TidyOptions = {},
   } catch (error) { result.actions = []; result.kept.push({ target: input.commonDir, reason: reason(error) }); }
   return result;
 }
-export function tidySnapshot(plan: Pick<TidyPlan, "schemaVersion" | "options" | "clones">): string {
-  return tidyDigest({ schemaVersion: plan.schemaVersion, options: plan.options, clones: plan.clones });
+export function tidySnapshot(plan: Pick<TidyPlan, "schemaVersion" | "options" | "clones" | "audit">): string {
+  return tidyDigest({ schemaVersion: plan.schemaVersion, options: plan.options, clones: plan.clones, ...(plan.audit ? { audit: plan.audit } : {}) });
 }
 export async function buildTidyPlan(clones: readonly Clone[], options: TidyOptions = {}, config = getConfig()): Promise<TidyPlan> {
   const normalized: TidyOptions = { remoteBranches: options.remoteBranches ?? false, allowIgnored: [...new Set((options.allowIgnored ?? []).map(projectPath))].sort(), allowUnknown: [...new Set((options.allowUnknown ?? []).map(projectPath))].sort(), staleDays: options.staleDays ?? 120 };

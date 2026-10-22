@@ -46,3 +46,5 @@ Branch `feat/v0.6-projects`. Loop started 2026-10-22 ("until the new version of 
 
 - 2026-10-22: 3C skill pack + `ggh agent skill --install` merged. Bundle 791,604 B vs CI gate 600,000 B (CI would fail) → Phase 4: measure after cuts, then fit or justify. commit lacks --approve-plan (skill documents it).
 
+- 2026-10-22: 2B.2 (tidy/lost real-data UX, path fix, lost dedupe + fetch age) and 2D (tidy --audit) merged; tidy.ts conflict resolved keeping 2B.2 rendering + audit path. 903 pass. Real dry-run re-checked. Remaining polish: default tidy/lost output still long (348/555 lines on owner data) → cap per clone with --verbose. --audit not run live (would send metadata to a hosted provider without owner consent).
+

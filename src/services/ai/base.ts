@@ -58,7 +58,7 @@ export abstract class CliAIProvider implements AIProvider {
   abstract isAvailable(options?: { timeoutMs: number }): Promise<boolean>;
 
   /** Runs one prompt and returns the raw assistant text. */
-  protected abstract invoke(prompt: string, model: string, timeoutMs: number): Promise<string>;
+  protected abstract invoke(prompt: string, model: string, timeoutMs: number, metadataOnly?: boolean): Promise<string>;
 
   protected timeoutMs = DEFAULT_AI_TIMEOUT_MS;
   private lastUsage?: AIUsage;
@@ -100,12 +100,12 @@ export abstract class CliAIProvider implements AIProvider {
   }
 
   /** Wraps `invoke` so every failure surfaces as a classified AIGenerationError. */
-  protected async runPrompt(prompt: string, model: string): Promise<string> {
-    if (getFlags().aiDisabled || getFlags().dryRun) throw new Error("AI invocation is disabled for this operation.");
+  protected async runPrompt(prompt: string, model: string, metadataOnly = false): Promise<string> {
+    if (getFlags().aiDisabled || (getFlags().dryRun && !metadataOnly)) throw new Error("AI invocation is disabled for this operation.");
     this.resetLastUsage();
     let raw: string;
     try {
-      raw = await this.invoke(sanitizeForAI(prompt, 80_000).text, model, this.timeoutMs);
+      raw = await this.invoke(sanitizeForAI(prompt, 80_000).text, model, this.timeoutMs, metadataOnly);
     } catch (err) {
       if (err instanceof AIGenerationError) throw err;
       throw new AIGenerationError(this.id, model, classifyAIFailure(err), extractFailureDetail(err));
@@ -116,6 +116,10 @@ export abstract class CliAIProvider implements AIProvider {
       throw new AIGenerationError(this.id, model, "empty_response");
     }
     return trimmed;
+  }
+
+  async auditTidy(prompt: string, model = this.defaultModel): Promise<string> {
+    return this.runPrompt(prompt, model, true);
   }
 
   async generateCommit(

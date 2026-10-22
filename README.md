@@ -178,8 +178,63 @@ ggh tidy --all --agent --approve-plan <snapshotId>
 A changed snapshot is refused. Every action rechecks clone and checkout identities,
 refs, ancestry, publication, stashes, ownership, and relevant file state just before
 execution. Changed items are refused individually. Tidy never adds replacements
-to the approved batch. Its serializable action list has stable IDs for a separate
-future audit consumer; `--audit` is not implemented.
+to the approved batch.
+
+### Optional AI audit
+
+`--audit codex|claude|grok|ollama` asks your chosen provider to review the safe
+candidates before cleanup. AI permission is separate. Pass `--ai` or set
+`ai_enabled true`; `--no-ai` prevents an audit call.
+
+```bash
+ggh tidy --audit codex --ai --dry-run
+ggh tidy --audit ollama --ai
+ggh tidy --audit codex --ai --yes
+```
+
+The prompt contains at most 32 KB of action summaries, including instructions.
+Each summary contains an action ID and kind, clone display name, branch name,
+short OIDs, proof summaries, fetch age, checkout creator, and last commit subject
+and date when available. Names and subjects are quoted as untrusted data.
+Recognized secrets and URLs are removed. No code, diffs, files, environment
+values, transcripts, full filesystem paths, or remote URLs are included.
+
+Larger plans audit a subset, prioritizing checkout removal, remote branch
+removal, local branch removal, then missing-worktree metadata. The preview reports
+how many actions were omitted. Model recommendations can only narrow the original
+safe set. Invented or unsent IDs are rejected. `keep` overrides conflicting
+`prune` recommendations. Missing recommendations and omitted actions show
+`keep-unaudited` and stay out of the executable plan.
+
+Before sending metadata in an interactive run, ggh shows the provider, model,
+action count, commit-subject count, and disclosure scope. Hosted providers require
+`hosted_ai_consent true` or interactive consent. Non-interactive runs require prior
+consent in user config. Explicit provider selection stays with that provider,
+including model fallbacks. Ollama never falls through to hosted AI.
+
+An audited `--dry-run` calls the provider and saves a private approval record,
+but performs no cleanup. One cleanup confirmation, or `--yes`, applies the narrowed
+plan through the same per-action safety checks. Invalid JSON, provider failure,
+or denied consent leaves the original plan unchanged and blocks execution.
+`--yes` alone cannot bypass that failure. To review and approve the original plan
+instead, run with `--proceed-without-audit`, or omit `--audit` for a manual preview.
+
+A user-chosen external agent can run `ggh tidy --audit codex --ai --yes`, or apply
+an audited snapshot through the agent interface:
+
+```bash
+ggh tidy --audit codex --ai --dry-run --agent
+ggh tidy --audit codex --agent --approve-plan <snapshotId>
+```
+
+Use the same project scope and tidy options for both commands. Approval restores
+the reviewed audit without another provider call. The digest binds the original
+plan, narrowed actions, provider/model, input hash, and audit result hash, including
+verdicts and reasons. Changed plans or approval records are refused. Records live
+in `tidy-audits/<snapshotId>.json` under the user config directory with owner-only
+permissions. They contain hashes, IDs, counts, and recommendations, never prompts
+or commit subjects. Deleting a record requires a fresh audit before approval.
+The provider receives no ggh execution tools; ggh does not supervise external agents.
 
 Each attempted action has a private operation journal with `completed`, `skipped`,
 `refused`, `failed`, or `uncertain` state. Inspect the returned operation IDs with

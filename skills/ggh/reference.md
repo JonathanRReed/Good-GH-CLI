@@ -49,8 +49,8 @@ Every managed command accepts `--agent`. It wraps this payload in `result` and d
 | `ggh projects register` | `<path>` | --agent, --quiet, --no-input, --json | [projects](#projects) |
 | `ggh projects exclude` | `<path>` | --agent, --quiet, --no-input, --json | [projects](#projects) |
 | `ggh projects forget` | `<path>` | --agent, --quiet, --no-input, --json | [projects](#projects) |
-| `ggh tidy` | `[projects...]` | --all, --fetch, --remote-branches, --allow-ignored value, --allow-unknown value, --stale-days value, --yes, --approve-plan value, --agent, --quiet, --no-input, --json, --dry-run | [tidy](#tidy) |
-| `ggh lost` | `[projects...]` | --all, --agent, --quiet, --no-input, --json | [lost](#lost) |
+| `ggh tidy` | `[projects...]` | --audit value, --proceed-without-audit, --all, --fetch, --wide, --verbose, --remote-branches, --allow-ignored value, --allow-unknown value, --stale-days value, --yes, --approve-plan value, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run | [tidy](#tidy) |
+| `ggh lost` | `[projects...]` | --all, --fetch, --wide, --verbose, --agent, --quiet, --no-input, --json | [lost](#lost) |
 | `ggh go` | `<query>` | --wide, --print, --editor, --t3, --agent, --quiet, --no-input, --json | [go](#go) |
 | `ggh status` |  | --full, --remote, --providers, --watch, --interval value, --agent, --quiet, --no-input, --json, --dry-run | [status](#status) |
 | `ggh commit` |  | --message value, --all, --amend, --no-verify, --gpg-sign, --signoff, --issue value, --closes value, --yes, --review, --push, --force-with-lease, --pr, --branch value, --base value, --repo-name value, --no-ai, --provider value, --style value, --fixup value, --split, --agent, --quiet, --no-input, --ai, --json, --dry-run | [publication](#publication) |
@@ -233,10 +233,39 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | Field | Type / values | Required in parent | Default | Meaning |
 | --- | --- | --- | --- | --- |
 | `result` | object | no |  |  |
+| `result.audit` | varies | no |  |  |
+| `result.audit [anyOf 1]` | object | no |  |  |
+| `result.audit [anyOf 1].state` | `"completed"` | yes |  |  |
+| `result.audit [anyOf 1].originalSnapshotId` | string | yes |  |  |
+| `result.audit [anyOf 1].provider` | `["codex","claude","grok","ollama"]` | yes |  |  |
+| `result.audit [anyOf 1].model` | string | yes |  |  |
+| `result.audit [anyOf 1].inputHash` | string | yes |  |  |
+| `result.audit [anyOf 1].resultHash` | string | yes |  |  |
+| `result.audit [anyOf 1].sentActions` | integer | yes |  |  |
+| `result.audit [anyOf 1].commitSubjects` | integer | yes |  |  |
+| `result.audit [anyOf 1].promptBytes` | integer | yes |  |  |
+| `result.audit [anyOf 1].omittedActions` | integer | yes |  |  |
+| `result.audit [anyOf 1].rejectedRecommendations` | integer | yes |  |  |
+| `result.audit [anyOf 1].decisions` | array | yes |  |  |
+| `result.audit [anyOf 1].decisions[]` | object | no |  |  |
+| `result.audit [anyOf 1].decisions[].id` | string | yes |  |  |
+| `result.audit [anyOf 1].decisions[].verdict` | `["prune","keep","keep-unaudited"]` | yes |  |  |
+| `result.audit [anyOf 1].decisions[].reason` | string | yes |  |  |
+| `result.audit [anyOf 2]` | object | no |  |  |
+| `result.audit [anyOf 2].state` | `"failed"` | yes |  |  |
+| `result.audit [anyOf 2].reason` | string | yes |  |  |
 | `result.schemaVersion` | `1` | yes |  |  |
 | `result.status` | `["planned","needs_input","no_op","succeeded","failed","partially_completed","cancelled"]` | yes |  |  |
 | `result.lost` | object | yes |  |  |
 | `result.lost.schemaVersion` | `1` | yes |  |  |
+| `result.lost.clones` | array | yes |  |  |
+| `result.lost.clones[]` | object | no |  |  |
+| `result.lost.clones[].commonDir` | string | yes |  |  |
+| `result.lost.clones[].name` | string | yes |  |  |
+| `result.lost.clones[].fetchedAt` | string / null | yes |  |  |
+| `result.lost.clones[].uniqueCommits` | integer | yes |  |  |
+| `result.lost.clones[].branches` | integer | yes |  |  |
+| `result.lost.clones[].detachedHeads` | integer | yes |  |  |
 | `result.lost.warnings` | array | yes |  |  |
 | `result.lost.warnings[]` | object | no |  |  |
 | `result.lost.warnings[].target` | string | yes |  |  |
@@ -254,6 +283,8 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.lost.items[] [oneOf 1].branch` | string / null | yes |  |  |
 | `result.lost.items[] [oneOf 1].head` | string | yes |  |  |
 | `result.lost.items[] [oneOf 1].commits` | integer | yes |  |  |
+| `result.lost.items[] [oneOf 1].uniqueCommits` | integer | yes |  |  |
+| `result.lost.items[] [oneOf 1].sharedCommits` | integer | yes |  |  |
 | `result.lost.items[] [oneOf 1].newestSubject` | string | yes |  |  |
 | `result.lost.items[] [oneOf 1].newestDate` | string | yes |  |  |
 | `result.lost.items[] [oneOf 1].oldestDate` | string | yes |  |  |
@@ -275,6 +306,23 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.lost.items[] [oneOf 4].kind` | `"broken-gitdir"` | no |  |  |
 | `result.lost.items[] [oneOf 4].reason` | string | yes |  |  |
 | `result.plan` | object | yes |  |  |
+| `result.plan.audit` | object | no |  |  |
+| `result.plan.audit.state` | `"completed"` | yes |  |  |
+| `result.plan.audit.originalSnapshotId` | string | yes |  |  |
+| `result.plan.audit.provider` | `["codex","claude","grok","ollama"]` | yes |  |  |
+| `result.plan.audit.model` | string | yes |  |  |
+| `result.plan.audit.inputHash` | string | yes |  |  |
+| `result.plan.audit.resultHash` | string | yes |  |  |
+| `result.plan.audit.sentActions` | integer | yes |  |  |
+| `result.plan.audit.commitSubjects` | integer | yes |  |  |
+| `result.plan.audit.promptBytes` | integer | yes |  |  |
+| `result.plan.audit.omittedActions` | integer | yes |  |  |
+| `result.plan.audit.rejectedRecommendations` | integer | yes |  |  |
+| `result.plan.audit.decisions` | array | yes |  |  |
+| `result.plan.audit.decisions[]` | object | no |  |  |
+| `result.plan.audit.decisions[].id` | string | yes |  |  |
+| `result.plan.audit.decisions[].verdict` | `["prune","keep","keep-unaudited"]` | yes |  |  |
+| `result.plan.audit.decisions[].reason` | string | yes |  |  |
 | `result.plan.schemaVersion` | `1` | yes |  |  |
 | `result.plan.snapshotId` | string | yes |  |  |
 | `result.plan.options` | object | yes |  |  |
@@ -390,6 +438,14 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | --- | --- | --- | --- | --- |
 | `result` | object | no |  |  |
 | `result.schemaVersion` | `1` | yes |  |  |
+| `result.clones` | array | yes |  |  |
+| `result.clones[]` | object | no |  |  |
+| `result.clones[].commonDir` | string | yes |  |  |
+| `result.clones[].name` | string | yes |  |  |
+| `result.clones[].fetchedAt` | string / null | yes |  |  |
+| `result.clones[].uniqueCommits` | integer | yes |  |  |
+| `result.clones[].branches` | integer | yes |  |  |
+| `result.clones[].detachedHeads` | integer | yes |  |  |
 | `result.warnings` | array | yes |  |  |
 | `result.warnings[]` | object | no |  |  |
 | `result.warnings[].target` | string | yes |  |  |
@@ -407,6 +463,8 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.items[] [oneOf 1].branch` | string / null | yes |  |  |
 | `result.items[] [oneOf 1].head` | string | yes |  |  |
 | `result.items[] [oneOf 1].commits` | integer | yes |  |  |
+| `result.items[] [oneOf 1].uniqueCommits` | integer | yes |  |  |
+| `result.items[] [oneOf 1].sharedCommits` | integer | yes |  |  |
 | `result.items[] [oneOf 1].newestSubject` | string | yes |  |  |
 | `result.items[] [oneOf 1].newestDate` | string | yes |  |  |
 | `result.items[] [oneOf 1].oldestDate` | string | yes |  |  |

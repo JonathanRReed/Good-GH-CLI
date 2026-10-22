@@ -119,6 +119,47 @@ or PRs. Dirty host work means possible abandoned work, never a claim that the
 host session ended. Both commands report discovery gaps rather than interpreting
 missing evidence as permission to delete.
 
+### Tidy audit recommendations
+
+`tidy --audit` sends only a bounded metadata projection of the original safe plan.
+The 32 KB prompt includes instructions, quoted clone and branch names, short OIDs,
+fixed proof summaries, fetch age, creator, and commit subjects/dates when available.
+It excludes file contents, diffs, environment values, transcripts, full paths,
+and remote URLs. Recognized secrets and URLs in metadata text are removed.
+Names and subjects remain untrusted, even after redaction. The prompt tells the
+model to treat all JSON strings as data. Subjects never establish deletion proof.
+
+Strict JSON schema validation runs before recommendation IDs are considered.
+Invented IDs and IDs outside the sent safe subset are rejected. A `keep` verdict
+wins over any duplicate `prune`; missing or unsent IDs become `keep-unaudited`.
+Only explicit prune recommendations retain original actions. Output cannot add
+an action, alter its destination or proof, or authorize unsafe candidates.
+Reasons are redacted and quoted for display. Invalid output blocks cleanup,
+including with `--yes`, unless the user explicitly chooses
+`--proceed-without-audit` and approves the original plan.
+
+AI enablement, hosted consent, redaction and timeouts still apply. Interactive
+runs disclose the actual provider/model and exact metadata counts before sending,
+even with `--quiet`. Non-interactive hosted audits need prior user consent.
+An explicit provider stays within its own model chain. A local Ollama failure
+never contacts a hosted provider. Audited dry runs explicitly permit metadata
+inference and private approval-record writes, but perform no cleanup.
+
+The audit has no access to ggh's executor. Claude disables tools and MCP; Grok
+allows no built-in tools and denies tool execution for audits. Codex audits disable
+shell, image-reading, subagent and web tools, retain the read-only sandbox, and
+run in an empty private workspace with user config ignored. Ollama uses the
+existing verified loopback/local-weights adapter. Provider CLIs and their
+configured models remain trusted dependencies.
+
+Audited snapshots bind the original plan, narrowed actions, provider/model,
+input hash and normalized result hash. Private, atomic approval records store
+IDs, counts, hashes and recommendations, excluding prompts and subjects. Applying
+`--approve-plan` restores that result instead of rerunning a nondeterministic
+model. Changes to the original plan or stored result invalidate approval. All
+retained actions still pass the existing per-action checks and leases. An external
+agent uses the same CLI approval paths, without agent orchestration in ggh.
+
 ### Hosted AI disclosure
 
 Sanitization drops known sensitive files and redacts recognizable credentials.
