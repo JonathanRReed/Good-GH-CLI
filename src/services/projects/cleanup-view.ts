@@ -22,7 +22,7 @@ function counts(values: string[]): [string, number][] {
   for (const value of values) result.set(value, (result.get(value) ?? 0) + 1);
   return [...result];
 }
-export function renderCoverage(options: CleanupViewOptions): string[] {
+export function renderCoverage(options: CleanupViewOptions, examples = 1): string[] {
   const groups = new Map<string, { paths: string[]; label: string; broken: boolean }>();
   for (const gap of options.coverage?.skipped ?? []) {
     const broken = /Broken checkout/.test(gap.reason);
@@ -34,7 +34,8 @@ export function renderCoverage(options: CleanupViewOptions): string[] {
     group.paths.push(gap.path); groups.set(key, group);
   }
   const lines = [...groups.values()].flatMap(group => options.verbose ? group.paths.map(path => `${group.label}: ${group.broken ? "broken checkout " : ""}${shortPath(path)}`)
-    : [`${group.label}: ${group.paths.length}${group.broken ? " broken checkout dirs" : " paths"}; e.g. ${shortPath(group.paths[0] ?? "")}`]);
+    : examples === 1 ? [`${group.label}: ${group.paths.length}${group.broken ? " broken checkout dirs" : " paths"}; e.g. ${shortPath(group.paths[0] ?? "")}`]
+      : [`${group.label}: ${group.paths.length}${group.broken ? " broken checkout dirs" : " paths"}`, ...group.paths.slice(0, examples).map(path => `  ${shortPath(path)}`)]);
   if (options.coverage?.truncated) lines.push("Discovery incomplete: scan depth reached");
   return lines.map(line => fitProjectLine(line, options));
 }
@@ -56,15 +57,17 @@ export function formatTidyPlan(plan: TidyPlan, options: CleanupViewOptions = {})
   const lines = summaryLines([
     `${branches} branches to delete across ${plan.clones.filter(clone => clone.actions.some(action => action.kind === "delete-local-branch" || action.kind === "delete-remote-branch")).length} clones`,
     `${actions.filter(action => action.kind === "remove-checkout").length} checkouts`,
+    `${actions.filter(action => action.kind === "prune-worktree-metadata").length} metadata prunes`,
     `${plan.clones.reduce((n, clone) => n + clone.kept.length, 0)} kept`,
     `${plan.clones.reduce((n, clone) => n + clone.hostManual.length, 0)} agent worktrees left to their hosts`, `${broken} broken checkout dirs`,
   ], options);
   lines.push(`Tidy plan ${plan.snapshotId}`);
   for (const clone of [...plan.clones].sort((a, b) => b.actions.length - a.actions.length || b.hostManual.length - a.hostManual.length || a.name.localeCompare(b.name))) {
+    if (!clone.actions.length && !options.verbose) continue;
     const main = options.clones?.find(candidate => candidate.commonDir === clone.commonDir)?.checkouts.find(checkout => checkout.gitDir === clone.commonDir);
     const path = main?.path ?? (basename(clone.commonDir) === ".git" ? dirname(clone.commonDir) : clone.commonDir);
     lines.push(`${clone.name}  ${shortPath(path)}`);
-    if (clone.actions.length || options.verbose) lines.push(`  Refs fetched ${fetchAge(clone.fetchedAt)}; remote state may have changed`);
+    if (options.verbose) lines.push(`  Refs fetched ${fetchAge(clone.fetchedAt)}; remote state may have changed`);
     for (const action of clone.actions) {
       if (action.kind === "delete-local-branch" || action.kind === "delete-remote-branch") {
         lines.push(`  delete${action.kind === "delete-remote-branch" ? " remote" : ""}  ${action.branch}  ${action.tip.slice(0, 7)} ⊂ ${action.integration.ref.replace(/^refs\/(remotes|heads)\//, "")} ${action.integration.oid.slice(0, 7)} (fetched ${fetchAge(clone.fetchedAt)})`);
@@ -72,16 +75,18 @@ export function formatTidyPlan(plan: TidyPlan, options: CleanupViewOptions = {})
       } else if (action.kind === "remove-checkout") lines.push(`  remove checkout ${shortPath(action.checkout.path)}; ignored override ${action.allowIgnored}; unknown-owner override ${action.allowUnknown}`);
       else lines.push(`  prune metadata: ${action.entries.length} missing checkouts; expiry ${action.expire}`);
     }
-    for (const [reason, count] of counts(clone.kept.map(kept => kept.reason))) lines.push(`  KEEP ${count}: ${reason}`);
-    if (options.verbose) for (const kept of clone.kept) lines.push(`    ${kept.target}: ${kept.reason}`);
-    for (const [host, count] of counts(clone.hostManual.map(host => host.host))) {
-      const name = host === "t3" ? "T3" : host === "claude" ? "Claude" : host === "cursor" ? "Cursor" : "Codex";
-      lines.push(`  ${count} ${name} worktrees; clean up in ${host === "t3" ? "T3 Code" : host === "claude" ? "Claude Code" : name}`);
-    }
     if (options.verbose) {
+      for (const [reason, count] of counts(clone.kept.map(kept => kept.reason))) lines.push(`  KEEP ${count}: ${reason}`);
+      for (const kept of clone.kept) lines.push(`    ${kept.target}: ${kept.reason}`);
       for (const host of clone.hostManual) lines.push(`    ${shortPath(host.target)}: ${host.reason}`);
       for (const hint of clone.hints) lines.push(`  ${hint.kind}: ${hint.reason}`);
     }
+  }
+  for (const [reason, count] of counts(plan.clones.flatMap(clone => clone.kept.map(kept => kept.reason)))) lines.push(`KEEP ${count}: ${reason}`);
+  for (const [host, count] of counts(plan.clones.flatMap(clone => clone.hostManual.map(item => item.host)))) {
+    const name = host === "t3" ? "T3" : host === "claude" ? "Claude" : host === "cursor" ? "Cursor" : "Codex";
+    const clones = plan.clones.filter(clone => clone.hostManual.some(item => item.host === host)).length;
+    lines.push(`${count} ${name} worktrees across ${clones} clones; clean up in ${host === "t3" ? "T3 Code" : host === "claude" ? "Claude Code" : name}`);
   }
   for (const [kind, count] of counts(plan.clones.flatMap(clone => clone.hints.map(hint => hint.kind)))) lines.push(`${kind}: ${count} clones; use --verbose for details`);
   if (plan.clones.some(clone => staleFetch(clone.fetchedAt))) lines.push("Some fetch ages exceed 1d or are unknown; use --fetch to refresh remote-tracking refs.");
@@ -89,38 +94,63 @@ export function formatTidyPlan(plan: TidyPlan, options: CleanupViewOptions = {})
   return lines.map(line => fitProjectLine(line, options));
 }
 export function formatLost(result: LostResult, options: CleanupViewOptions = {}): string[] {
+  const groups = result.clones.map(clone => ({ clone, items: result.items.filter(item => item.commonDir === clone.commonDir) }))
+    .filter(({ items }) => items.length || options.verbose);
+  const newest = (items: LostResult["items"]) => Math.max(0, ...items.flatMap(item => item.kind === "unpublished" ? [Date.parse(item.newestDate)] : item.kind === "stash" ? item.stashes.map(stash => Date.parse(stash.date)) : []));
+  groups.sort((a, b) => b.clone.uniqueCommits - a.clone.uniqueCommits || newest(b.items) - newest(a.items) || a.clone.name.localeCompare(b.clone.name));
+  const tail: string[] = [];
+  for (const warning of result.warnings) tail.push(`UNKNOWN ${shortPath(warning.target)}: ${warning.reason}`);
+  tail.push(...renderCoverage(options, options.verbose ? 1 : 3));
+  const orphaned = result.items.filter(item => !result.clones.some(clone => clone.commonDir === item.commonDir) && !options.coverage?.skipped.some(gap => gap.path === item.path));
+  for (const [commonDir] of counts(orphaned.map(item => item.commonDir))) {
+    const items = orphaned.filter(item => item.commonDir === commonDir);
+    groups.push({ clone: { commonDir, name: options.clones?.find(clone => clone.commonDir === commonDir)?.displayName ?? shortPath(commonDir), uniqueCommits: 0, branches: 0, detachedHeads: 0, fetchedAt: null }, items });
+  }
+  if (!groups.length) return ["No unpublished work found in inspected checkouts.", ...tail].map(line => fitProjectLine(line, options));
   const lines: string[] = [];
-  const groups = result.clones.map(clone => ({ clone, items: result.items.filter(item => item.commonDir === clone.commonDir) }));
-  const oldest = (items: LostResult["items"]) => Math.min(...items.flatMap(item => "oldestDate" in item ? [Date.parse(item.oldestDate)] : []));
-  groups.sort((a, b) => b.clone.uniqueCommits - a.clone.uniqueCommits || oldest(a.items) - oldest(b.items) || a.clone.name.localeCompare(b.clone.name));
+  let remaining = 80 - groups.length - tail.length - 2;
+  let expanded = 0;
+  let expand = true;
   for (const { clone, items } of groups) {
-    if (!items.length && !options.verbose) continue;
-    lines.push(`${clone.name}: ${clone.uniqueCommits.toLocaleString("en-US")} unique commits on ${clone.branches} branch${clone.branches === 1 ? "" : "es"}${clone.detachedHeads ? ` + ${clone.detachedHeads} detached HEAD${clone.detachedHeads === 1 ? "" : "s"}` : ""}`,
-      `  as of fetch ${fetchAge(clone.fetchedAt)}; commits may already exist on the remote`);
-    for (const item of [...items.filter(item => item.kind === "unpublished"), ...items.filter(item => item.kind !== "unpublished")]) {
-      if (item.kind === "unpublished") {
-        lines.push(`  ${item.branch ?? `HEAD ${item.head.slice(0, 7)}`}  ${item.commits} (${item.uniqueCommits} unique to it, ${item.sharedCommits} shared)  ${fetchAge(item.oldestDate)}`);
-        if (options.verbose) lines.push(`    ${shortPath(item.path ?? item.commonDir)}  ${item.createdBy}`, `    ${item.newestDate}  ${item.newestSubject}`);
-      } else if (item.kind === "stash") {
-        lines.push(`  STASH ${item.count}`);
-        if (options.verbose) for (const stash of item.stashes) lines.push(`    ${stash.ref}  ${fetchAge(stash.date)}  ${stash.message}`);
-      } else if (item.kind === "dirty-host-checkout") lines.push(`  DIRTY HOST ${shortPath(item.path ?? item.commonDir)}; ${item.host}`);
-      if (options.verbose) for (const step of item.nextSteps) lines.push(`    next: ${step.map(arg => JSON.stringify(arg)).join(" ")}`);
+    const unpublished = items.filter(item => item.kind === "unpublished").sort((a, b) => b.uniqueCommits - a.uniqueCommits || Date.parse(b.newestDate) - Date.parse(a.newestDate) || (a.branch ?? a.head).localeCompare(b.branch ?? b.head));
+    const stashes = items.filter(item => item.kind === "stash").flatMap(item => item.stashes).sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+    const dirty = items.filter(item => item.kind === "dirty-host-checkout");
+    const broken = items.filter(item => item.kind === "broken-gitdir").filter(item => !options.coverage?.skipped.some(gap => gap.path === item.path));
+    const top = unpublished[0];
+    lines.push(`${clone.name} · ${clone.uniqueCommits.toLocaleString("en-US")} unique · ${clone.branches} branch${clone.branches === 1 ? "" : "es"}${clone.detachedHeads ? ` + ${clone.detachedHeads} HEAD` : ""} · ${stashes.length} stash${stashes.length === 1 ? "" : "es"} · fetch ${fetchAge(clone.fetchedAt)}${dirty.length ? ` · ${dirty.length} dirty host` : ""}${broken.length ? ` · ${broken.length} broken` : ""}${top ? ` · ${top.branch ?? `HEAD ${top.head.slice(0, 7)}`}` : ""}`);
+    const detail: string[] = [];
+    const shown = options.verbose ? unpublished : unpublished.slice(0, 3);
+    for (const item of shown) {
+      detail.push(`  ${item.branch ?? `HEAD ${item.head.slice(0, 7)}`}  ${item.commits} (${item.uniqueCommits} unique to it, ${item.sharedCommits} shared)  ${fetchAge(item.newestDate)}`);
+      if (options.verbose) detail.push(`    ${shortPath(item.path ?? item.commonDir)}  ${item.createdBy}`, `    ${item.newestDate}  ${item.newestSubject}`);
+    }
+    const omitted = unpublished.slice(shown.length);
+    const branches = omitted.filter(item => item.branch !== null);
+    if (branches.length) detail.push(`  … ${branches.length} more branches (${branches.filter(item => item.uniqueCommits === 0).length} with 0 unique commits)`);
+    const detached = omitted.length - branches.length;
+    if (detached) detail.push(`  … ${detached} more detached HEAD${detached === 1 ? "" : "s"}`);
+    if (stashes.length) {
+      detail.push(`  STASH ${stashes.length}`);
+      for (const stash of stashes.slice(0, options.verbose ? undefined : 3)) detail.push(`    ${stash.ref}  ${fetchAge(stash.date)}  ${stash.message}`);
+    }
+    if (dirty.length) {
+      detail.push(`  DIRTY HOST ${dirty.length}`);
+      for (const item of dirty.slice(0, options.verbose ? undefined : 3)) detail.push(`    ${shortPath(item.path ?? item.commonDir)}; ${item.host}`);
+    }
+    if (broken.length) {
+      detail.push(`  BROKEN ${broken.length}`);
+      for (const item of broken.slice(0, options.verbose ? undefined : 3)) detail.push(`    ${shortPath(item.path ?? item.commonDir)}; ${item.reason}`);
+    }
+    if (options.verbose) for (const item of items) for (const step of item.nextSteps) detail.push(`    next: ${step.map(arg => JSON.stringify(arg)).join(" ")}`);
+    if (!options.verbose && detail.length > remaining) expand = false;
+    if (options.verbose || expand) {
+      lines.push(...detail);
+      remaining -= detail.length;
+      expanded++;
     }
   }
-  for (const item of result.items.filter(item => !result.clones.some(clone => clone.commonDir === item.commonDir))) {
-    if (item.kind === "dirty-host-checkout") lines.push(`DIRTY HOST ${shortPath(item.path ?? item.commonDir)}; ${item.host}`);
-  }
-  const broken = result.items.filter(item => item.kind === "broken-gitdir" && !options.coverage?.skipped.some(gap => gap.path === item.path));
-  for (const [commonDir, count] of counts(broken.map(item => item.commonDir))) {
-    const clone = result.clones.find(clone => clone.commonDir === commonDir);
-    const example = broken.find(item => item.commonDir === commonDir);
-    lines.push(`${clone?.name ?? shortPath(commonDir)}: ${count} broken checkout dirs; e.g. ${shortPath(example?.path ?? commonDir)}`);
-  }
-  for (const warning of result.warnings) lines.push(`UNKNOWN ${shortPath(warning.target)}: ${warning.reason}`);
-  if (!lines.length) lines.push("No unpublished work found in inspected checkouts.");
-  if (groups.some(({ clone, items }) => items.length && staleFetch(clone.fetchedAt))) lines.push("Use --fetch to refresh remote-tracking refs; --verbose shows paths and recovery commands.");
-  else if (result.items.length) lines.push("Use --verbose for paths and recovery commands.");
-  lines.push(...renderCoverage(options));
+  lines.push(...tail);
+  lines.push("Commits may already exist on the remote; use --fetch to refresh remote-tracking refs.");
+  if (!options.verbose) lines.push(`Branch detail shown for ${expanded} of ${groups.length} clones; run ggh lost <name> or --verbose for the rest.`);
   return lines.map(line => fitProjectLine(line, options));
 }

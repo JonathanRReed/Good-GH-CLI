@@ -360,7 +360,7 @@ it("shows fetch age, uncertainty, and a fetch suggestion in lost and tidy", asyn
   const lost = await findLost(await clones(), config());
   expect(lost.clones[0]?.fetchedAt).toBe(old.toISOString());
   const text = renderLost(lost, { wide: true }).join("\n");
-  expect(text).toContain("as of fetch 3d ago");
+  expect(text).toContain("fetch 3d ago");
   expect(text).toContain("may already exist on the remote");
   expect(text).toContain("--fetch");
   expect(renderTidyPlan(await plan(), { wide: true }).join("\n")).toContain("--fetch");
@@ -396,4 +396,27 @@ it("lost --fetch refreshes stale tracking refs using a local bare remote", async
   expect(fresh.exitCode, fresh.stderr).toBe(0);
   expect(JSON.parse(fresh.stdout).clones[0]).toMatchObject({ uniqueCommits: 0, fetchedAt: expect.any(String) });
   expect(JSON.parse(fresh.stdout).items).toEqual([]);
+});
+it("shows full lost detail for a named clone and preserves JSON and agent inventories", async () => {
+  await git("commit", "--allow-empty", "-m", "local only");
+  for (let i = 0; i < 7; i++) await git("branch", `alias-${i}`);
+  const cfg = { project_roots: [repo], host_worktree_dirs: {} };
+  const compact = await runFixture(["lost"], { root, config: cfg });
+  const scoped = await runFixture(["lost", repo], { root, config: cfg });
+  const verbose = await runFixture(["lost", "--verbose"], { root, config: cfg });
+  for (const output of [compact, scoped, verbose]) expect(output.exitCode, output.stderr).toBe(0);
+  expect(compact.stderr).toContain("… 5 more branches (5 with 0 unique commits)");
+  expect(compact.stderr).not.toContain("next:");
+  const withoutAge = (text: string) => text.replace(/\b\d+[smhd] ago\b/g, "<age>");
+  expect(withoutAge(scoped.stderr)).toBe(withoutAge(verbose.stderr));
+  expect(scoped.stderr).toContain("alias-6");
+  expect(scoped.stderr).toContain('next: "git"');
+  const json = await runFixture(["lost", "--json"], { root, config: cfg });
+  const fullJson = await runFixture(["lost", "--verbose", "--json"], { root, config: cfg });
+  const agent = await runFixture(["lost", "--agent"], { root, config: cfg });
+  for (const output of [json, fullJson, agent]) expect(output.exitCode, output.stderr).toBe(0);
+  expect(JSON.parse(json.stdout)).toEqual(JSON.parse(fullJson.stdout));
+  const inventory = JSON.parse(json.stdout);
+  expect(JSON.parse(agent.stdout).result).toEqual(inventory);
+  expect(inventory.items.filter((item: { kind: string }) => item.kind === "unpublished")).toHaveLength(8);
 });
