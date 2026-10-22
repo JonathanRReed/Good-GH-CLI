@@ -36,6 +36,7 @@ import { registerVariableCommand } from "./commands/variable.ts";
 import { registerWorkflowCommand } from "./commands/workflow.ts";
 import { registerStackCommand } from "./commands/stack.ts";
 import { registerChangelogCommand } from "./commands/changelog.ts";
+import { registerReviewCommand } from "./commands/review.ts";
 import { registerPrCommand } from "./commands/pr.ts";
 import { registerReleaseCommand } from "./commands/release.ts";
 import { registerRenameCommand } from "./commands/rename.ts";
@@ -83,6 +84,7 @@ export const HELP_GROUPS: Record<string, string> = {
   clone: "GitHub",
   repo: "GitHub",
   pr: "GitHub",
+  review: "GitHub",
   issue: "GitHub",
   run: "GitHub",
   checks: "GitHub",
@@ -155,6 +157,7 @@ export async function createProgram(): Promise<Command> {
   registerCloneCommand(program);
   registerRepoCommand(program);
   registerPrCommand(program);
+  registerReviewCommand(program);
   registerIssueCommand(program);
   registerRunCommand(program);
   registerChecksCommand(program);

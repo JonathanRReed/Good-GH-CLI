@@ -94,9 +94,26 @@ export async function worktreeAdd(
 export async function checkoutForReview(
   branch: string,
   targetPath: string,
-  options: { cwd?: string; baseBranch?: string; submodules?: boolean } = {},
+  options: { cwd?: string; baseBranch?: string; submodules?: boolean; detached?: boolean; reuse?: boolean } = {},
 ): Promise<WorktreeAddResult> {
-  return createWorktree(branch, targetPath, options.baseBranch, options.cwd ?? process.cwd(), {
+  const cwd = options.cwd ?? process.cwd();
+  if (options.detached) {
+    const root = await getRepoRoot(cwd);
+    const target = resolve(root, targetPath);
+    if (existsSync(target)) {
+      const tree = (await worktreeList(root)).find(tree => sameDirectory(tree.path, target));
+      if (!options.reuse || !tree || !tree.detached || tree.locked) {
+        throw new Error(`Refusing to reuse '${target}': expected an unlocked, detached review worktree.`);
+      }
+      const status = await run("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all"], { cwd: target });
+      if (status.stdout) throw new Error(`Review checkout '${target}' is dirty. Commit, stash, or remove its changes before retrying.`);
+      await run("git", ["-c", "core.hooksPath=", "checkout", "--detach", branch], { cwd: target });
+    } else {
+      await run("git", ["-c", "core.hooksPath=", "worktree", "add", "--detach", "--", target, branch], { cwd: root });
+    }
+    return { copiedEnvFiles: [] };
+  }
+  return createWorktree(branch, targetPath, options.baseBranch, cwd, {
     development: false, copyEnv: false, submodules: options.submodules ?? false,
   });
 }

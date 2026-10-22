@@ -5,7 +5,7 @@ import { p, pc } from "./ui.ts";
 
 /** Commands that can emit structured data instead of a rendered view. */
 export const JSON_CAPABLE = new Set([
-  "projects", "go", "clone", "commit", "operation",
+  "projects", "go", "clone", "commit", "operation", "review",
   "status", "pr", "checks", "ci", "log", "stash", "worktree", "config",
   "release", "issue", "run", "repo", "stack", "sync", "changelog", "api",
   "workflow", "label", "gist", "search", "secret", "variable", "notifications",
@@ -17,7 +17,7 @@ export const AGENT_CAPABLE = new Set([...JSON_CAPABLE, "agent"]);
 
 /** Commands that change the repository or the remote and deserve a preview. */
 export const DRY_RUN_CAPABLE = new Set([
-  "operation",
+  "operation", "review",
   "commit", "discard", "sync", "squash", "undo", "worktree", "release",
   "rename", "stash", "pr", "issue", "stack", "repo", "changelog", "workflow",
   "label", "gist", "secret", "variable", "notifications",
@@ -113,7 +113,7 @@ export function applyGlobalFlags(program: Command): void {
       providerSource === "cli" ||
       (actionCommand.name() === "commit" && pick<boolean>("split") === true) ||
       (actionCommand.name() === "create" && parent?.name() === "issue" && pick<boolean>("fromDiff") === true) ||
-      actionCommand.name() === "triage" || actionCommand.name() === "review";
+      actionCommand.name() === "triage" || (actionCommand.name() === "review" && parent?.name() === "pr");
     const explicitNoAI = (aiSource === "cli" && aiOption === false) ||
       (actionCommand.name() === "commit" && pick<string>("message") !== undefined);
     const agent = getFlags().agent || pick<boolean>("agent") === true;

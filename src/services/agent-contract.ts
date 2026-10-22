@@ -151,7 +151,25 @@ export const ciEvidenceResultSchema = {
     } } },
   },
 };
+export const reviewResultSchema = {
+  type: "object", additionalProperties: false,
+  required: ["schemaVersion", "pr", "headSha", "baseSha", "checkoutPath", "surface"],
+  properties: {
+    schemaVersion: { const: 1 },
+    pr: { type: "object", additionalProperties: false, required: ["number", "url", "host", "owner", "repo"], properties: {
+      number: { type: "integer", minimum: 1 }, url: { type: "string" }, host: { type: "string" }, owner: { type: "string" }, repo: { type: "string" },
+    } },
+    headSha: { type: "string" }, baseSha: { type: "string" }, checkoutPath: { type: "string" },
+    surface: { enum: ["editor", "tuicr", "delta", "renderer", "data"] }, marked: { const: true },
+    since: { type: "object", additionalProperties: false, required: ["fromHead", "rewritten", "commits", "files", "threadsChanged"], properties: {
+      fromHead: { type: "string" }, rewritten: { type: "boolean" }, files: stringArraySchema,
+      commits: { type: "array", items: { type: "object", additionalProperties: false, required: ["sha", "subject"], properties: { sha: { type: "string" }, subject: { type: "string" } } } },
+      threadsChanged: reviewThreadsResultSchema, rangeDiff: { type: "string" }, ambiguity: { type: "string" },
+    } },
+  },
+};
 export const coreResultSchemas = {
+  review: { commandPaths: [["review"]], schema: reviewResultSchema },
   ciWhy: { commandPaths: [["ci", "why"]], schema: ciEvidenceResultSchema },
   projects: { commandPaths: [["projects"]], includesSubcommands: true, schema: projectsResultSchema },
   go: { commandPaths: [["go"]], schema: { type: "object", required: ["schemaVersion"], properties: { schemaVersion: { const: 1 }, path: { type: "string" }, target: { enum: ["cd", "editor", "t3"] }, query: { type: "string" }, candidates: { type: "array", items: { type: "object" } } }, anyOf: [{ required: ["path", "target"] }, { required: ["query", "candidates"] }] } },
