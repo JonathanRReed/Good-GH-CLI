@@ -42,7 +42,7 @@ export function finalizeJsonOutput(): void {
     emitJson({ status: "planned", steps: getPreview() });
   }
   const pending = takePendingJson();
-  if (pending) process.stdout.write(`${JSON.stringify(pending.value, null, ["pr threads", "projects", "go"].includes(getCommandPath().join(" ")) || getCommandPath()[0] === "projects" ? undefined : 2)}\n`);
+  if (pending) process.stdout.write(`${JSON.stringify(pending.value, null, ["pr threads", "projects", "go", "sync"].includes(getCommandPath().join(" ")) || getCommandPath()[0] === "projects" ? undefined : 2)}\n`);
 }
 
 function chromeSuppressed(): boolean {

@@ -32,3 +32,5 @@ Branch `feat/v0.6-projects`. Loop started 2026-10-22 ("until the new version of 
 - 2026-10-22: 1A.2 isolated lane fixes clone summary/detail widths, adds private atomic status snapshots and warm TTY replacement, batches unpublished walks, and gives checkouts independent deadlines. Gates: 698 pass, 1 skip; typecheck and lint pass. Five paired warm TTY runs: fixture first rows 2227 -> 50 ms median, Downloads 6112 -> 52 ms; fresh TTY completion 2230 -> 1731 ms and 6118 -> 2842 ms. Downloads had 73 clones / 141 checkouts during paired runs, 15 missing checkout paths and 14 discovery skips. Details: [projects-performance.md](projects-performance.md).
 - 2026-10-22: 1A.2 merged. Full suite 756 tests: 1 failure in 1 of 3 runs, unidentified (earlier lanes saw a stack-lock race) → Phase 4 flake hunt. Phase 2 lanes start: 2B tidy+lost (deletion proofs), 2C projects --remote.
 
+- 2026-10-22: 2A sync --all merged (Ran 773 tests, 0 fail). Not run against the owner's real repos (would fast-forward working copies without approval); covered by bare-remote tests.
+
