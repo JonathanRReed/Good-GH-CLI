@@ -102,7 +102,7 @@ export interface CloneStatus {
 
 ## Rules
 - Discovery: explicit roots (config `project_roots`, default none; owner sets `~/Downloads`) + clones ggh creates + every discovered clone's own worktree list + configured host prefixes + registered paths. Stop descending at `.git` (dir or file) except registered nested repos; bounded depth (default 4); `exclude` list; skip `node_modules`, `.git` internals; never follow symlinks outside a root; detect loops. Record unreadable paths in coverage.
-- Provenance: `createdBy` from path prefix rules (t3/claude/cursor/codex) and a ggh marker for clones ggh made; `hostClaims` are observations only.
+- Provenance: `createdBy` from path prefix rules (t3/claude/cursor/codex) and the local Git config marker `ggh.created=true` (with `ggh.createdAt`) that `ggh clone` writes into every clone it makes; `hostClaims` are observations only.
 - Index file: `<configDir>/projects.json` written atomically with private permissions; stores no credentials (redact `user:pass@` from remote URLs before storing).
 - Status: derived on read, never stored; bounded worker pool (default 8) and per-clone deadline (default 3 s); each field reports ok/unknown/error independently. Disk size is opt-in.
 - `unpublished` = commits reachable from any local branch or detached HEAD of any checkout but not from any `refs/remotes/*` ref. This is the input to `tidy` keep decisions and `ggh lost`.
