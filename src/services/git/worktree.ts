@@ -1,5 +1,6 @@
 import { recordCompletedEffect } from "../runtime.ts";
 import { getGitPath } from "./paths.ts";
+import { markGghCheckout } from "./provenance.ts";
 /**
  * Worktree management. Depends on exec/branch/stack only.
  */
@@ -115,6 +116,7 @@ export async function checkoutForReview(
     } else {
       await run("git", ["-c", "core.hooksPath=", "worktree", "add", "--detach", "--", target, branch], { cwd: root });
       recordCompletedEffect("review_checkout_created");
+      await markGghCheckout(target);
     }
     return { copiedEnvFiles: [] };
   }
@@ -175,6 +177,7 @@ async function createWorktree(
     : ["worktree", "add", "-b", branch, "--", resolvedPath, base];
 
   await execGitWithRetry(args, { cwd: repoRoot });
+  await markGghCheckout(resolvedPath);
 
   // Environment files are copied only for an explicit development checkout request.
   const copiedEnvFiles: string[] = [];

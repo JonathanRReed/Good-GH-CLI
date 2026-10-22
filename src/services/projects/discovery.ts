@@ -1,22 +1,15 @@
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { getConfig, type GoodGhConfig } from "../config.ts";
 import { worktreeList } from "../git/worktree.ts";
+import { isGghCheckout } from "../git/provenance.ts";
 import { parseGitHubRepositoryNameWithOwnerFromRemoteUrl } from "../github/client.ts";
 import { gitLine, inventoryGitOptions, projectGit, projectPool } from "./git.ts";
-import type { Checkout, CheckoutCreator, DiscoveryResult, DiscoverySource, IndexedClone, RemoteRepoId } from "./types.ts";
-
-export function projectPath(path: string): string {
-  const expanded = path === "~" ? homedir() : path.startsWith("~/") ? join(homedir(), path.slice(2)) : path;
-  const absolute = resolve(expanded);
-  try { return realpathSync(absolute); } catch { return absolute; }
-}
-
-export function within(root: string, path: string): boolean {
-  const rel = relative(root, path);
-  return rel === "" || (!isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${sep}`));
-}
+import type { Checkout, DiscoveryResult, DiscoverySource, IndexedClone, RemoteRepoId } from "./types.ts";
+import { checkoutCreator } from "./hosts.ts";
+import { projectPath, within } from "./paths.ts";
+export { checkoutCreator } from "./hosts.ts";
+export { projectPath, within } from "./paths.ts";
 
 export function projectExcluded(path: string, excluded: readonly string[], roots: readonly string[] = []): boolean {
   return excluded.some(pattern => {
@@ -43,17 +36,6 @@ export function remoteIdentity(url: string): RemoteRepoId | null {
   if (!parsed) return null;
   const [owner, name] = (typeof parsed === "string" ? parsed : parsed.nameWithOwner).split("/");
   return owner && name ? { host: typeof parsed === "string" ? "github.com" : parsed.host.toLowerCase(), owner, name } : null;
-}
-
-export function checkoutCreator(path: string, config: GoodGhConfig, created: boolean): CheckoutCreator {
-  for (const host of ["t3", "codex", "cursor", "claude"] as const) {
-    const prefix = config.host_worktree_dirs?.[host];
-    if (prefix && within(projectPath(prefix), path)) return host;
-  }
-  const portable = path.replaceAll(sep, "/");
-  if (/\/\.claude\/worktrees\//.test(portable)) return "claude";
-  if (/\/\.cursor\/worktrees[^/]*\//.test(portable)) return "cursor";
-  return created ? "ggh" : "unknown";
 }
 
 const SKIP = new Set([".git", "node_modules", "vendor", ".cache", ".npm", ".bun", "__pycache__", ".next", ".venv", "target", "dist", "build", ".Trash"]);
@@ -190,10 +172,11 @@ export async function discoverProjects(options: DiscoveryOptions = {}): Promise<
       for (const [index, tree] of trees.entries()) {
         const path = index === 0 ? mainWorktreePath(commonDir, tree) : projectPath(tree.path);
         if (projectExcluded(path, excluded, roots)) continue;
-        const createdBy = checkoutCreator(path, config, created);
         let gitDir: string;
         try { gitDir = checkoutGitDir(path, tree.isBare); }
         catch { gitDir = prunableGitDir(path, commonDir); }
+        const ownEvidence = (index === 0 || gitDir !== commonDir) && isGghCheckout(gitDir);
+        const createdBy = checkoutCreator(path, config, ownEvidence || (index === 0 && gitDir === commonDir && created));
         checkouts.push({
           path, gitDir, branch: tree.branch, head: /^0+$/.test(tree.head) || !tree.head ? null : tree.head,
           bare: tree.isBare, locked: tree.locked ? { reason: tree.lockReason ?? "" } : null,

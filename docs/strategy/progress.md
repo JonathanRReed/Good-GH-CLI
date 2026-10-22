@@ -74,3 +74,5 @@ Branch `feat/v0.6-projects`. Loop started 2026-10-22 ("until the new version of 
 
 - 2026-10-22: review fixes r1 merged (952 pass). GLM's reflog repro rerun against merged code: tidy keeps the checkout ('reflog holds 1 unpublished commits'), lost reports it, commit survives gc --prune=now. GLM #3 covered: network fetch allowlist keeps SSH agent/askpass/GH tokens.
 
+- 2026-10-22: review fixes r2 merged (960 pass, bench pass, smoke 10/10, bundle 676,372/714,271). GLM's Codex repro rerun: NOT REPRODUCED (codex worktree host-owned, no actions, still exists). Integration: two r1 tests built worktrees with raw git add; r2 correctly classifies them unknown, so fixtures now mark them ggh-created to keep exercising the reflog and ignored-file guards.
+

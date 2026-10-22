@@ -38,7 +38,7 @@ describe("project configuration", () => {
   it("validates roots, excludes, depth, host directories, and open target", () => {
     expect(DEFAULT_CONFIG.project_roots).toEqual([]);
     expect(DEFAULT_CONFIG.project_scan_depth).toBe(4);
-    expect(DEFAULT_CONFIG.host_worktree_dirs).toEqual({ t3: "~/.t3/worktrees" });
+    expect(DEFAULT_CONFIG.host_worktree_dirs).toEqual({ t3: "~/.t3/worktrees", codex: "~/.codex/worktrees", cursor: "~/.cursor/worktrees" });
     for (const value of [[repos, "~/Downloads"], JSON.stringify([repos])]) expect(validateConfigValue("project_roots", value).problem).toBeUndefined();
     for (const value of ["relative", ["relative"], [1], ["~someone/repos"], ["/path\0bad"]]) expect(validateConfigValue("project_roots", value).problem).toBeDefined();
     expect(validateConfigValue("project_exclude", '["**/old/**"]' ).value).toEqual(["**/old/**"]);

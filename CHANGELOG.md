@@ -98,6 +98,8 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Share agent-host detection across project discovery, sync, tidy, lost, and
+  project views, including Codex, global Cursor, and configured host directories.
 - Honor `COLUMNS` for piped project and cleanup output, default to 100 columns,
   and count the log prefix in line widths.
 - Honor `GGH_CONFIG_DIR` without hiding gh authentication. Drop the derived SSH
@@ -115,6 +117,9 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Security
 
+- Keep agent-host checkouts manual-only during tidy. Record ggh creation in each
+  checkout's private Git directory; foreign linked worktrees require exact-path
+  `--allow-unknown` approval even when ggh created the clone.
 - Pin merges to the reviewed head, reread GitHub state, and clean up only after
   confirmed merges. Report queued, auto-merge-enabled, and unknown outcomes.
 - Keep review checkouts separate from development setup. Copy environment files

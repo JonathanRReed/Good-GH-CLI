@@ -49,7 +49,7 @@ export const DEFAULT_CONFIG: Required<GoodGhConfig> = {
   project_exclude: [],
   project_scan_depth: 4,
   tidy_max_fetch_age_days: 30,
-  host_worktree_dirs: { t3: "~/.t3/worktrees" },
+  host_worktree_dirs: { t3: "~/.t3/worktrees", codex: "~/.codex/worktrees", cursor: "~/.cursor/worktrees" },
   go_default: "cd",
   repo_create_confirm: true,
   attachment_upload_command: "",

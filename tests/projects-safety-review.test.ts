@@ -10,6 +10,7 @@ import { syncProjects } from "../src/services/projects/sync.ts";
 import { findLost } from "../src/services/projects/lost.ts";
 import { worktreeRemove } from "../src/services/git/worktree.ts";
 import { deleteGoneBranch } from "../src/services/git/branch-safety.ts";
+import { markGghCheckout } from "../src/services/git/provenance.ts";
 import { acquireProcessLock } from "../src/services/process-lock.ts";
 import { run } from "../src/utils/exec.ts";
 import { runFixture } from "./cli-fixture.ts";
@@ -51,7 +52,7 @@ it("worktree remove protects ignored env files unless forced", async () => {
 });
 
 for (const missing of [false, true]) it(`tidy protects ${missing ? "missing metadata" : "checkout"} HEAD reflog and lost reports reflog-only work`, async () => {
-  const path = join(root, "checkout"); await git(repo, "worktree", "add", "--detach", path);
+  const path = join(root, "checkout"); await git(repo, "worktree", "add", "--detach", path); await markGghCheckout(path);
   await git(path, "commit", "--allow-empty", "-m", "reflog secret"); const orphan = await git(path, "rev-parse", "HEAD"); await git(path, "reset", "--hard", "main");
   if (missing) {
     const gitDir = await git(path, "rev-parse", "--absolute-git-dir"); rmSync(path, { recursive: true });
@@ -97,7 +98,7 @@ it("gone branch deletion rejects a tip moved at the deletion syscall", async () 
   expect(await git(repo, "rev-parse", "gone")).toBe(moved);
 });
 it("tidy rechecks ignored files immediately before worktree removal", async () => {
-  const path = join(root, "checkout"); await git(repo, "worktree", "add", "-b", "topic", path); const snapshot = await plan(); const inventory = await clones();
+  const path = join(root, "checkout"); await git(repo, "worktree", "add", "-b", "topic", path); await markGghCheckout(path); const snapshot = await plan(); const inventory = await clones();
   // The journal's uncertain write occurs after per-action classification.
   const spawn = Bun.spawn; let injected = false;
   Bun.spawn = ((...args: Parameters<typeof Bun.spawn>) => {

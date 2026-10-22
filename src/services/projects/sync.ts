@@ -1,11 +1,12 @@
 import { existsSync } from "node:fs";
-import { join, sep } from "node:path";
+import { join } from "node:path";
 import { ExecError, run } from "../../utils/exec.ts";
-import { getConfig } from "../config.ts";
+import { getConfig, type GoodGhConfig } from "../config.ts";
 import { NON_INTERACTIVE_ENV } from "../git/exec.ts";
 import { worktreeList, type WorktreeInfo } from "../git/worktree.ts";
 import { acquireProcessLock } from "../process-lock.ts";
-import { checkoutCreator, projectPath, redactRemoteUrl, within } from "./discovery.ts";
+import { projectPath, redactRemoteUrl, within } from "./discovery.ts";
+import { checkoutHost } from "./hosts.ts";
 import { gitLine, projectLockPath, projectNetworkOptions, safeTrackingFetch } from "./git.ts";
 import type { IndexedClone } from "./types.ts";
 
@@ -27,6 +28,7 @@ export interface ProjectSyncResult {
   clones: CloneSyncResult[];
 }
 export interface ProjectSyncOptions {
+  config?: GoodGhConfig;
   concurrency?: number;
   timeoutMs?: number;
   includeHostWorktrees?: boolean;
@@ -57,11 +59,10 @@ function message(error: unknown): string {
   return text.replace(/(?:[a-z][a-z0-9+.-]*:\/\/|[^\s/]+@)[^\s]+/gi, url => redactRemoteUrl(url)).slice(0, 4000);
 }
 function hostOwned(path: string, options: ProjectSyncOptions): boolean {
-  const config = getConfig();
+  const config = options.config ?? getConfig();
   const canonical = projectPath(path);
   return (options.hostWorktreeDirs ?? Object.values(config.host_worktree_dirs ?? {})).some(root => within(projectPath(root), canonical))
-    || checkoutCreator(canonical, config, false) !== "unknown"
-    || /\/\.(?:t3|codex|claude|cursor)\/worktrees[^/]*\//.test(canonical.replaceAll(sep, "/"));
+    || checkoutHost(canonical, config) !== null;
 }
 
 async function checkoutState(checkout: WorktreeInfo, commonDir: string, deadline: number): Promise<SyncOutcome | { outcome: "ready"; branch: string; old: string; new: string }> {

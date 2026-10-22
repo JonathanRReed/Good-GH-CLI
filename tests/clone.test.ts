@@ -42,6 +42,7 @@ describe("clone destinations", () => {
     const destination = join(root, "marked");
     expect(await clone(url, destination)).toEqual({ alreadyCloned: false, fallbackUsed: false, protocol: "file" });
     expect(Bun.spawnSync(["git", "-C", destination, "config", "--local", "ggh.created"]).stdout.toString().trim()).toBe("true");
+    expect(readFileSync(join(destination, ".git", "ggh-created"), "utf8")).toBe("ggh\n");
     const date = Bun.spawnSync(["git", "-C", destination, "config", "--local", "ggh.createdAt"]).stdout.toString().trim();
     expect(new Date(date).toISOString()).toBe(date);
     expect(readFileSync(join(destination, "README.md"), "utf8")).toBe("second commit\n");
