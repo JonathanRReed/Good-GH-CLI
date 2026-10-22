@@ -1,7 +1,7 @@
 import { assertWindowsPrivateDirectory } from "./private-storage.ts";
 import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, readdir, realpath, rename, stat, lstat, unlink } from "node:fs/promises";
-import { homedir } from "node:os";
+import { getConfigDir } from "./config.ts";
 import { isAbsolute, join, resolve } from "node:path";
 import type { AIUsageReport } from "./ai/index.ts";
 import { run } from "../utils/exec.ts";
@@ -233,7 +233,7 @@ async function operationsDirectory(cwd = process.cwd(), create = true): Promise<
   const common = git.exitCode === 0 ? git.stdout.trim() : "";
   const base = common
     ? resolve(cwd, common, "ggh-operations")
-    : join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "good-gh", "operations");
+    : join(getConfigDir(), "operations");
   assertWindowsPrivateDirectory(base, create);
   if (create) await mkdir(base, { recursive: true, mode: 0o700 });
   const info = await lstat(base).catch((error: NodeJS.ErrnoException) => error.code === "ENOENT" && !create ? undefined : Promise.reject(error));

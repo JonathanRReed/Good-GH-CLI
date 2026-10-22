@@ -83,6 +83,10 @@ configuration before launcher code starts unless the caller supplies the same
 flags. That is a development invocation, rather than the installed bootstrap.
 The artifact and package smoke checks include hostile dotenv/preload fixtures.
 
+Set `GGH_CONFIG_DIR=/path/to/ggh-config` to isolate ggh config, aliases, plugins,
+and project metadata without changing `XDG_CONFIG_HOME` or hiding gh authentication.
+The override names the directory itself, with no `good-gh` suffix added.
+
 ## Runtime behaviour packagers should know
 
 - **No network at runtime** except to github.com (via the `gh` CLI it shells
@@ -93,7 +97,8 @@ The artifact and package smoke checks include hostile dotenv/preload fixtures.
   `ggh status` says so with install instructions. No AI CLI → AI features
   explain themselves and every value has a `-m`/`--no-ai`/manual fallback.
 - **XDG conformant.** Config, aliases, and plugins live under
-  `$XDG_CONFIG_HOME/good-gh` (default `~/.config/good-gh`); cache under
+  `$GGH_CONFIG_DIR` when set, otherwise `$XDG_CONFIG_HOME/good-gh`
+  (default `~/.config/good-gh`); cache under
   `$XDG_CACHE_HOME`. A repo-local `.ggh.json` may set only commit style.
 - **Exit codes are a contract.** Zero on success, non-zero on failure;
   `--json` output stays parseable; prompts never guess without a TTY.

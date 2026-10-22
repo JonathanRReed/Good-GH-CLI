@@ -42,7 +42,8 @@ function parseRemote(input: string): URL | null {
 function rewriteProtocol(url: URL, protocol: "ssh" | "https"): string {
   // Construct rather than mutate URL.protocol: file and non-special SSH URLs
   // cannot reliably be switched to HTTPS with the URL setter.
-  return `${protocol}://${protocol === "ssh" ? "git@" : ""}${url.host}${url.pathname}`;
+  const host = url.protocol === "ssh:" && protocol === "https" ? url.hostname : url.host;
+  return `${protocol}://${protocol === "ssh" ? "git@" : ""}${host}${url.pathname}`;
 }
 
 export function cloneTransport(input: string, preferred: "ssh" | "https" = "https", requested?: "ssh" | "https", host = "github.com"): CloneTransport {

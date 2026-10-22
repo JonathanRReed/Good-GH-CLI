@@ -182,6 +182,7 @@ export function sanitizeConfig(raw: unknown): { config: Partial<GoodGhConfig>; p
 }
 
 export function getConfigDir(): string {
+  if (process.env.GGH_CONFIG_DIR) return process.env.GGH_CONFIG_DIR;
   const baseDir =
     process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
   return join(baseDir, "good-gh");

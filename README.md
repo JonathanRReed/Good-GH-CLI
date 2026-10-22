@@ -676,6 +676,10 @@ Typos get command suggestions unless the word is a Git command or one of your Gi
 
 ## Configuration
 
+Set `GGH_CONFIG_DIR=/path/to/ggh-config` to isolate ggh settings and project metadata
+while leaving gh authentication under its usual XDG directory. Otherwise ggh uses
+`$XDG_CONFIG_HOME/good-gh`, defaulting to `~/.config/good-gh`.
+
 ```bash
 ggh config
 ggh config list
