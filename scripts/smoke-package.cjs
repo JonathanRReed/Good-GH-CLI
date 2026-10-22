@@ -31,6 +31,7 @@ assert.equal(installedPackage.data.version, version, 'installed tarball package 
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ggh-package smoke-é-'));
 const profile = path.join(root, 'simulated profile-é');
+const repository = path.join(root, 'repository');
 const results = {
   probe: 'installed-package-clean-install',
   timestamp: new Date().toISOString(),
@@ -55,6 +56,7 @@ const stage = (name, action) => {
 
 try {
   fs.mkdirSync(profile, { recursive: true });
+  fs.mkdirSync(repository);
   const env = {
     ...process.env,
     HOME: profile,
@@ -72,7 +74,7 @@ try {
     NO_COLOR: '1',
   };
   const run = (command, args) => execFileSync(command, args, {
-    cwd: root, env, encoding: 'utf8', timeout: 30000, stdio: ['pipe', 'pipe', 'pipe'],
+    cwd: repository, env, encoding: 'utf8', timeout: 30000, stdio: ['pipe', 'pipe', 'pipe'],
   }).trim();
   stage('installed-package-provenance', () => {
     assert.equal(createHash('sha256').update(fs.readFileSync(launcher)).digest('hex'), launcherSha256);
@@ -88,7 +90,7 @@ try {
       assert.match(run(runtime, [launcher, '--help']), /Usage:/);
       const schema = JSON.parse(run(runtime, [launcher, 'agent', 'schema']));
       assert.equal(schema.envelope.properties.contract.const, 'ggh.agent');
-      fs.writeFileSync(path.join(root, 'file.txt'), runtime + '\n');
+      fs.writeFileSync(path.join(repository, 'file.txt'), runtime + '\n');
       const subject = `test: ${runtime} installed package`;
       const report = JSON.parse(run(runtime, [launcher, 'commit', '-a', '-m', subject, '--agent']));
       assert.equal(report.contract, 'ggh.agent');
