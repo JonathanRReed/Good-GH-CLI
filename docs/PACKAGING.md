@@ -78,6 +78,50 @@ installer into a temporary prefix, and writes a SHA-256 file. Set
 and Gatekeeper-check the same artifact. The Makefile uses ad-hoc signing only
 for local developer builds.
 
+## Bundle budget for v0.6
+
+Phase 4A measured `dist/ggh.js` at 791,604 bytes before cuts, 739,130 after cuts,
+and 649,337 after packing the agent reference and sharing CI/review response
+validators. Measurements use `bun run build`, with Bun 1.4.4-canary.1 on macOS
+arm64. CI remains pinned to Bun 1.4.0; the headroom covers toolchain variation.
+The CI limit is **714,271 bytes**, the final measurement plus 10%, rounded up.
+
+The 600,000-byte limit predates the v0.6 additions. Removing another 49,337 bytes
+would require a larger rewrite or cuts to retained features. Keep the single-file
+lean bundle and standalone executable. A split-build experiment after command
+cuts produced a 539,408-byte entry but 766,082 bytes across 13 files, larger than
+the 739,130-byte unsplit build. That changes packaging and passes an entry-only
+budget without reducing the full download.
+
+Reproduce the attribution with:
+
+```bash
+bun build bin/ggh.ts --target=bun --outdir=/tmp/ggh-size --minify --metafile=/tmp/ggh-size.json
+```
+
+Bun's `outputs["./ggh.js"].inputs[*].bytesInOutput` attributes the following
+current bytes to v0.6 subsystems. These are their full retained implementations,
+not a claim that every byte was added in v0.6. Groups do not overlap and exclude
+shared transport, UI, and publication code.
+
+| Subsystem | Minified attributed bytes |
+| --- | ---: |
+| Projects, bulk sync, tidy/lost, go and shell init | 106,821 |
+| Agent contract and skill pack | 41,746 |
+| Clone and repository discovery | 11,653 |
+| Review workspaces and ledger | 11,651 |
+| CI failure evidence | 8,005 |
+| Review threads | 7,801 |
+| Exact-scope commit service | 2,392 |
+
+The largest individual modules are Commander `command.js` at 27,809 bytes,
+stack commands at 25,720, publication at 20,840, commit at 17,957, agent contract
+at 17,424, and issues at 16,920. The readable agent reference originally embedded
+104,168 bytes. Its generated gzip/base64 module now contributes 14,390 bytes and
+expands only during skill installation. `bun run skill:reference --check` compares
+the unpacked content with the generated Markdown; compression output need not be
+identical across platforms. Regenerate both with `bun run skill:reference`.
+
 ## Repository runtime configuration
 
 Native builds disable Bun's automatic dotenv and bunfig loading. Installed Node

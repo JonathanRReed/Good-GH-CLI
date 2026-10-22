@@ -1,3 +1,4 @@
+import { responseValidators } from "./response.ts";
 import { gh, ghApi, classifyGitHubError } from "./client.ts";
 import { extractEvidence, needsFullJobLog, type EvidenceLine, type Truncation } from "../ci-evidence.ts";
 
@@ -20,22 +21,7 @@ export interface CiEvidence {
   unavailable: Array<{ source: string; reason: string; runId?: number; job?: string }>;
 }
 
-function object(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid GitHub object.");
-  return value as Record<string, unknown>;
-}
-function array(value: unknown): unknown[] {
-  if (!Array.isArray(value)) throw new Error("Invalid GitHub array.");
-  return value;
-}
-function string(value: unknown): string {
-  if (typeof value !== "string") throw new Error("Invalid GitHub string.");
-  return value;
-}
-function integer(value: unknown): number {
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) throw new Error("Invalid GitHub integer.");
-  return value;
-}
+const { object, array, string, integer } = responseValidators({ label: "GitHub" });
 function parseRun(value: unknown): Run {
   const r = object(value);
   return {

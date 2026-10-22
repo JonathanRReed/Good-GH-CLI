@@ -3,12 +3,12 @@ import { homedir } from "node:os";
 import { resolve, join } from "node:path";
 import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import skill from "../../skills/ggh/SKILL.md" with { type: "text" };
-import reference from "../../skills/ggh/reference.md" with { type: "text" };
+import packedReference from "../generated/skill-reference.ts";
+import { gunzipSync } from "node:zlib";
 import { dryRun } from "../utils/flags.ts";
 import { recordCompletedEffect } from "../services/runtime.ts";
 import { confirmOrAbort, data, fail, jsonOut } from "../utils/ui.ts";
 
-const files = { "SKILL.md": skill, "reference.md": reference };
 const providerGuidance = "T3 Code uses the selected provider's skills directory. Use --install claude or --install codex, or --install /absolute/path/to/skills/ggh for another provider.";
 
 function stat(path: string) {
@@ -42,6 +42,7 @@ export function registerAgentSkillCommand(agent: Command): void {
       const target = options.install === "claude" ? join(homedir(), ".claude", "skills", "ggh")
         : options.install === "codex" ? join(homedir(), ".agents", "skills", "ggh")
           : resolve(options.install === "~" ? homedir() : options.install.startsWith("~/") ? join(homedir(), options.install.slice(2)) : options.install);
+      const files = { "SKILL.md": skill, "reference.md": gunzipSync(Buffer.from(packedReference, "base64")).toString("utf8") };
       const paths = Object.keys(files).map(name => join(target, name));
       const payload = { schemaVersion: 1, target, files: paths };
       try {

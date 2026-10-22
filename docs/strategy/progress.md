@@ -46,3 +46,19 @@ Branch `feat/v0.6-projects`. Loop started 2026-10-22 ("until the new version of 
 
 - 2026-10-22: 3C skill pack + `ggh agent skill --install` merged. Bundle 791,604 B vs CI gate 600,000 B (CI would fail) → Phase 4: measure after cuts, then fit or justify. commit lacks --approve-plan (skill documents it).
 
+
+- 2026-10-22: Phase 4A cuts lane removes label, secret, variable, gist, search, browse,
+  team, triage, workflow, release and changelog. The shipping scripts do not call
+  the removed release/changelog commands. Draft restore/list moves into stash;
+  legacy tagged stashes still restore. Notifications keeps non-interactive list
+  and mark-read operations. `GGH_CONFIG_DIR` isolates ggh without hiding gh auth;
+  derived SSH clone fallback drops the SSH port. Bundle: 791,604 -> 649,337 bytes,
+  with packed skill reference and shared response validators. CI budget: 714,271
+  bytes with 10% headroom. Attribution and split-build tradeoff: [PACKAGING](../PACKAGING.md).
+  Gates: typecheck, lint, build, man/skill-reference freshness, and bench:agent pass.
+  Full suite: 884 pass, 1 skip, 0 fail across 79 files. Two shared-validator tests
+  added after full-suite discovery pass separately; the final focused cut/validator
+  run passes all 25 tests. Bundle and ad-hoc-signed local native executable install
+  the exact embedded skill files. Benchmark evidence recall is 100% across eight
+  offline replay cases. No live GitHub or cross-platform release qualification was
+  performed. Protected tidy/lost source files are unchanged.
