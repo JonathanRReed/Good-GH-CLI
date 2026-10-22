@@ -65,3 +65,5 @@ Branch `feat/v0.6-projects`. Loop started 2026-10-22 ("until the new version of 
   performed. Protected tidy/lost source files are unchanged.
 - 2026-10-22: 4A merged (921 pass). Removed label, secret, variable, gist, search, browse, team, triage, workflow, release, changelog, draft (gh equivalents printed); notifications kept as list/mark-read inbox; draft restore via stash. GGH_CONFIG_DIR added; SSH port no longer carried into HTTPS fallback. Bundle 791,604 → 649,337 (4A) → 667,901 after tidy/audit merge; CI budget raised to 714,271 with justification in PACKAGING.md.
 
+- 2026-10-22: flake fixed (clone cancel-cleanup test race with real git; test-only; 8/8 suites incl. concurrent pairs). Startup on compiled binary vs Oct 15 release: --version 64→72 ms, status --agent 65→79 ms (binary 71→90 MB); budget increase accepted. 4B (README, changelog, 0.6.0-beta.1 version, release readiness, installed smoke) started.
+
