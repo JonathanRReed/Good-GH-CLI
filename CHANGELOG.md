@@ -7,6 +7,10 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add `ggh review <pr>` with safe reusable checkouts, detached GUI editors,
+  tuicr/delta terminal fallbacks, explicit private inspection marks, incremental
+  review with rewritten-history detection, and versioned JSON/agent results.
+
 - Extend `ggh clone` with alias `get`, `clone_root`, `--to`, `--ask`, paginated
   account, organization, and star discovery, and versioned agent results.
 - Verify origin identity before reusing a clone and write local provenance

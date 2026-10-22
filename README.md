@@ -177,6 +177,51 @@ initializing submodules, or recording shared branch-parent metadata.
 Worktree removal rechecks local changes, locks, and current/main checkout
 identity. Overriding a refusal requires `--force`; `--yes` does not force removal.
 
+## Review
+
+```bash
+ggh review 42                 # Open a detected GUI editor, otherwise use the terminal
+ggh review 42 --editor
+ggh review 42 --pager
+ggh review 42 --mark           # Explicitly record a local inspection
+ggh review 42 --since last     # Changes since your last local mark
+ggh review 42 --since <sha>    # Compare against a full commit SHA
+ggh review 42 --since last --agent
+```
+
+Review fetches the PR's head and base into `.worktrees/review-42`. It reuses a
+clean, detached checkout and refuses tracked or untracked changes. It never
+copies local `.env` files, initializes submodules, or writes branch-parent
+metadata. Run it from a clone with a remote matching the PR's repository.
+
+Editor detection checks `GGH_REVIEW_EDITOR`, then GUI-capable `VISUAL` and
+`EDITOR`, then `code`, `cursor`, `zed`, and `idea` on PATH. VS Code and Cursor
+open the checkout folder and suggest the GitHub Pull Requests extension when
+it is missing. With `--since`, they also open each changed file pair. Zed opens
+all changed file pairs in one invocation. Other GUI editors use
+`git difftool -y --dir-diff` with your configured `diff.tool` and
+`difftool.<tool>.cmd`. IDEA defaults to its `diff` command. GUI launches detach
+so ggh returns without waiting for the editor to close.
+
+`--pager` uses `tuicr pr 42`, then delta, then ggh's diff renderer. Incremental
+reviews use delta or ggh's renderer to preserve the requested revision range.
+External tools retain their own controls for submitting GitHub reviews.
+
+`--mark` stores an inspection record under your config directory's private
+`reviews/` folder, keyed by host, owner, repository, and PR. Opening an editor
+never creates a mark. A local mark is never a GitHub approval and sends nothing
+to GitHub. Mark only after inspecting the changes. `--since last` requires a
+prior mark and lists added commits, changed files, and review threads with new
+or edited comments since that mark. Rewritten history includes a range-diff
+and a warning that patch matching is heuristic. An explicit SHA has no review
+time, so its thread list includes all threads.
+
+`--json` and `--agent` return revision SHAs, checkout path, and incremental
+review data without launching editors or pagers. They still fetch Git objects
+and prepare the checkout. `--mark` remains explicit in both modes. Editor diff
+snapshots stay in a private temporary directory so detached editors can read
+them after ggh exits. They may be removed after closing the editor.
+
 ## Issues and CI
 
 ```bash
