@@ -29,7 +29,7 @@ jobs:
       - name: Install exact locked dependencies
         run: bun install --frozen-lockfile
       - name: Replay evidence gate without network access
-        run: sudo unshare --net -- "$(command -v bun)" run bench:agent
+        run: sudo unshare --net -- "$(command -v bun)" bench/agent/benchmark.ts
 
   verify:
     name: verify (${{ matrix.os }})

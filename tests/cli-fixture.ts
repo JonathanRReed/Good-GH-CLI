@@ -89,7 +89,10 @@ export async function runFixture(
     }
   `;
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(GH_|GITHUB_|GGH_|GIT_)/.test(key)));
-  const child = Bun.spawn([process.execPath, "-e", script], {
+  // Linux caps a single argv string at 128 KiB, so large fixtures run from a file.
+  const scriptPath = join(runRoot, "fixture-entry.ts");
+  writeFileSync(scriptPath, script);
+  const child = Bun.spawn([process.execPath, scriptPath], {
     cwd: options.cwd ?? options.root,
     detached: process.platform !== "win32",
     env: { ...env, HOME: runRoot, XDG_CONFIG_HOME: runRoot, GGH_NO_PLUGINS: "1", GIT_CONFIG_NOSYSTEM: "1", NO_COLOR: "1" },

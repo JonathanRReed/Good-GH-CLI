@@ -398,8 +398,11 @@ it("keeps a large tidy preview compact and bounded, with verbose details and ful
   expect(renderLost(await findLost(await clones(), config()), { width: 45 }).every(line => Bun.stringWidth(line) <= 42)).toBe(true);
 });
 it("lost --fetch refreshes stale tracking refs using a local bare remote", async () => {
+  const tracked = await git("rev-parse", "refs/remotes/origin/main");
   await git("commit", "--allow-empty", "-m", "already on remote");
   await git("push", remote, "main");
+  // Newer Git can update the tracking ref when pushing to a matching URL; pin it stale.
+  await git("update-ref", "refs/remotes/origin/main", tracked);
   const cfg = { project_roots: [repo], host_worktree_dirs: {} };
   const stale = await runFixture(["lost", "--json"], { root, config: cfg });
   expect(JSON.parse(stale.stdout).clones[0].uniqueCommits).toBe(1);
