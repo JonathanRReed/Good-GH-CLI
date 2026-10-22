@@ -186,6 +186,7 @@ describe("review CLI", () => {
   test("JSON and agent modes fetch and reuse checkout, never launch presentation processes or infer a mark", async () => {
     const fixture = await repository();
     const head = await commit(fixture.repo, "head\n");
+    let first = true;
     for (const args of [["--agent", "--editor"], ["--agent", "--pager"], ["--json"]]) {
       const output = await review({ ...fixture, head }, args);
       expect(output.exitCode).toBe(0);
@@ -193,6 +194,10 @@ describe("review CLI", () => {
       const payload = document.result ?? document;
       expect(payload).toMatchObject({ schemaVersion: 1, headSha: head, baseSha: fixture.base, surface: "data", checkoutPath: join(fixture.repo, ".worktrees", "review-42") });
       expect(payload.marked).toBeUndefined();
+      if (args.includes("--agent")) {
+        expect(document.effects.completed).toEqual(first ? ["review_objects_fetched", "review_checkout_created"] : ["review_objects_fetched"]);
+      }
+      first = false;
       expect(output.providerCalls).toEqual([]);
       expect(output.calls.every(call => ["pr", "auth"].includes(call[0]!))).toBe(true);
     }
@@ -202,10 +207,13 @@ describe("review CLI", () => {
   test("marks then compares a fast-forward and returns only new or edited threads", async () => {
     const fixture = await repository();
     const first = await commit(fixture.repo, "first\n", "first change");
-    expect((await review({ ...fixture, head: first }, ["--agent", "--mark"])).exitCode).toBe(0);
+    const marked = await review({ ...fixture, head: first }, ["--agent", "--mark"]);
+    expect(marked.exitCode).toBe(0);
+    expect(JSON.parse(marked.stdout).effects.completed).toEqual(["review_objects_fetched", "review_checkout_created", "review_refs_updated", "review_ledger_marked"]);
     const head = await commit(fixture.repo, "second\n", "second change");
     const output = await review({ ...fixture, head }, ["--agent", "--since", "last", "--editor"]);
     expect(output.exitCode).toBe(0);
+    expect(JSON.parse(output.stdout).effects.completed).toEqual(["review_objects_fetched", "review_checkout_updated"]);
     expect(JSON.parse(output.stdout).result.since).toMatchObject({ fromHead: first, rewritten: false, commits: [{ sha: head, subject: "second change" }], files: ["file.ts"], threadsChanged: { threads: [{ id: "edited" }, { id: "new" }] } });
     expect((await git(join(fixture.repo, ".worktrees", "review-42"), ["rev-parse", "HEAD"])).stdout.trim()).toBe(head);
   });
@@ -228,6 +236,17 @@ describe("review CLI", () => {
     expect(output.exitCode).toBe(1);
     expect(JSON.parse(output.stdout).error.message).toContain("No local review mark");
     expect(existsSync(join(fixture.repo, ".worktrees", "review-42"))).toBe(false);
+  });
+
+  test("retains checkout and ref effects when the ledger write fails", async () => {
+    const fixture = await repository();
+    const reviews = join(fixture.parent, "good-gh", "reviews");
+    mkdirSync(join(fixture.parent, "good-gh"), { recursive: true });
+    writeFileSync(reviews, "blocks ledger directory");
+    const output = await review({ ...fixture, head: fixture.base }, ["--agent", "--mark"]);
+    expect(output.exitCode).toBe(1);
+    expect(JSON.parse(output.stdout).effects.completed).toEqual(["review_objects_fetched", "review_checkout_created", "review_refs_updated"]);
+    expect(existsSync(join(fixture.repo, ".worktrees", "review-42"))).toBe(true);
   });
 
   test("accepts an explicit SHA without a mark", async () => {

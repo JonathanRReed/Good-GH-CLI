@@ -25,7 +25,7 @@ test("clean agent status retains full identity within 1.5 times porcelain", asyn
   expect(out.calls).toEqual([]); expect(out.providerCalls).toEqual([]);
 });
 
-test("agent status retains exact porcelain records, root from a subdirectory, and operation", async () => {
+test("agent status retains compact state, exact paths, root from a subdirectory, and operation", async () => {
   const path = " leading\n-dash "; writeFileSync(join(repo, path), "new\n"); git("add", "--", path);
   writeFileSync(join(repo, path), "unstaged\n"); mkdirSync(join(repo, "sub"));
   writeFileSync(join(repo, ".git", "CHERRY_PICK_HEAD"), git("rev-parse", "HEAD") + "\n");
@@ -33,7 +33,10 @@ test("agent status retains exact porcelain records, root from a subdirectory, an
   expect(out.exitCode).toBe(0);
   const result = JSON.parse(out.stdout).result;
   expect(result).toMatchObject({ root: repo, operation: "cherry-pick", staged: 1, unstaged: 1 });
-  expect(result.changes).toEqual(git("status", "--porcelain=v2", "-z", "-uall").split("\0").filter(Boolean));
+  expect(result.changes).toEqual([["AM", path]]);
+  expect(result.rawChanges).toBeUndefined();
+  const full = await runFixture(["status", "--agent", "--full"], { root, cwd: repo });
+  expect(JSON.parse(full.stdout).result.rawChanges).toEqual(git("status", "--porcelain=v2", "-z", "-uall").split("\0").filter(Boolean));
 });
 
 test("agent schema defines every compact default", async () => {
@@ -42,10 +45,12 @@ test("agent schema defines every compact default", async () => {
   expect(schema.coreResultSchemas.status.schema.properties.head.type).toEqual(["string", "null"]);
   expect(schema.coreResultSchemas.status.schema.properties.operation.default).toBeNull();
   expect(schema.coreResultSchemas.status.schema.properties.conflicts.default).toBe(0);
+  expect(schema.inputs.find((input: { path: string[] }) => input.path.join(" ") === "status").options).toContainEqual(expect.objectContaining({ long: "--full" }));
+  expect(schema.coreResultSchemas.status.schema.properties.rawChanges.items.type).toBe("string");
   expect(schema.envelope.required).not.toContain("effects");
 });
 
-test("conflict status retains all index stages and the merge operation", async () => {
+test("conflict status flags the path and retains all index stages with --full", async () => {
   git("checkout", "-b", "other"); writeFileSync(join(repo, "file"), "other\n"); git("commit", "-am", "other");
   git("checkout", "main"); writeFileSync(join(repo, "file"), "main\n"); git("commit", "-am", "main");
   try { git("merge", "other"); } catch { /* Expected content conflict. */ }
@@ -53,7 +58,9 @@ test("conflict status retains all index stages and the merge operation", async (
   expect(result.exitCode).toBe(0);
   const payload = JSON.parse(result.stdout).result;
   expect(payload).toMatchObject({ branch: "main", conflicts: 1, operation: "merge" });
-  expect(payload.changes).toEqual(git("status", "--porcelain=v2", "-z", "-uall").split("\0").filter(Boolean));
+  expect(payload.changes).toEqual([["UU", "file"]]);
+  const full = await runFixture(["status", "--agent", "--full"], { root, cwd: repo });
+  expect(JSON.parse(full.stdout).result.rawChanges).toEqual(git("status", "--porcelain=v2", "-z", "-uall").split("\0").filter(Boolean));
 });
 
 test("status separates base, upstream, push remote and local fetch timestamp", async () => {
@@ -71,4 +78,30 @@ test("unborn and detached HEAD identities remain explicit", async () => {
   git("switch", "--orphan", "unborn");
   result = await runFixture(["status", "--agent"], { root, cwd: repo });
   expect(JSON.parse(result.stdout).result).toMatchObject({ branch: "unborn", head: null });
+});
+
+test("compact status preserves rename source, index/worktree states and untracked paths", async () => {
+  const path = " renamed\nfile ";
+  git("mv", "file", path);
+  writeFileSync(join(repo, path), "changed\n");
+  writeFileSync(join(repo, "? untracked\n"), "new\n");
+  const out = await runFixture(["status", "--agent"], { root, cwd: repo });
+  expect(out.exitCode).toBe(0);
+  expect(JSON.parse(out.stdout).result).toMatchObject({ staged: 1, unstaged: 1, untracked: 1,
+    changes: [["RM", path, "file"], ["??", "? untracked\n"]] });
+  const full = await runFixture(["status", "--agent", "--full"], { root, cwd: repo });
+  expect(JSON.parse(full.stdout).result.rawChanges).toEqual(git("status", "--porcelain=v2", "-z", "-uall").split("\0").filter(Boolean));
+});
+
+test("compact status retains submodule commit, tracked and untracked markers", async () => {
+  const dependency = join(root, "dependency"); mkdirSync(dependency);
+  execFileSync("git", ["init", "-b", "main", dependency], { stdio: "pipe" });
+  execFileSync("git", ["-C", dependency, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "base"], { stdio: "pipe" });
+  git("-c", "protocol.file.allow=always", "submodule", "add", dependency, "module"); git("commit", "-am", "module");
+  const subgit = (...args: string[]) => execFileSync("git", ["-C", join(repo, "module"), "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", ...args], { stdio: "pipe" });
+  writeFileSync(join(repo, "module", "tracked"), "base\n"); subgit("add", "."); subgit("commit", "-m", "next");
+  writeFileSync(join(repo, "module", "tracked"), "dirty\n"); writeFileSync(join(repo, "module", "untracked"), "new\n");
+  const out = await runFixture(["status", "--agent"], { root, cwd: repo });
+  expect(out.exitCode).toBe(0);
+  expect(JSON.parse(out.stdout).result).toMatchObject({ changes: [[".M", "module"]], submodules: [["module", "SCMU"]], unstaged: 1 });
 });

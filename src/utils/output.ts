@@ -1,5 +1,5 @@
 import { agentEnvelope } from "../services/agent-contract.ts";
-import { getCommandPath, getEmittedJson, getFinishedOperation } from "../services/runtime.ts";
+import { getCommandPath, getCompletedEffects, getEmittedJson, getFinishedOperation, getUncertainEffects } from "../services/runtime.ts";
 import pc from "picocolors";
 import { getFlags, getCommandIssue, getPreview, hasJsonOutput, recordCommandIssue, stageJson, takePendingJson } from "../services/runtime.ts";
 
@@ -31,7 +31,7 @@ export function finalizeJsonOutput(): void {
   if (getFlags().agent) {
     const result = getEmittedJson()?.value;
     takePendingJson();
-    process.stdout.write(`${JSON.stringify(agentEnvelope({ command: getCommandPath(), result, issue: issue ? { ...issue, message: stripAnsi(issue.message) } : undefined, operation: getFinishedOperation(), failed: Boolean(process.exitCode), dryRun: getFlags().dryRun, preview: getPreview() }))}\n`);
+    process.stdout.write(`${JSON.stringify(agentEnvelope({ command: getCommandPath(), result, issue: issue ? { ...issue, message: stripAnsi(issue.message) } : undefined, operation: getFinishedOperation(), failed: Boolean(process.exitCode), dryRun: getFlags().dryRun, preview: getPreview(), completedEffects: getCompletedEffects(), uncertainEffects: getUncertainEffects() }))}\n`);
     return;
   }
   if (!hasJsonOutput() && issue) {

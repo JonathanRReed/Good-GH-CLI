@@ -4,7 +4,7 @@ import { getRepoRoot, getRemotes } from "./git/branch.ts";
 import { checkoutForReview } from "./git/worktree.ts";
 import { gh, parseGitHubRepositoryNameWithOwnerFromRemoteUrl, parseRepoFlag } from "./github/client.ts";
 import { getReviewThreads } from "./github/review-threads.ts";
-import { setFlags } from "./runtime.ts";
+import { recordCompletedEffect, setFlags } from "./runtime.ts";
 import { reviewChanges, type ReviewSince } from "./review/changes.ts";
 import { isReviewSha, markReview, readReviewMark } from "./review/ledger.ts";
 
@@ -61,6 +61,7 @@ export async function prepareReview(input: {
   if (!source) throw new Error("The PR repository must match a local Git remote. Run review from its clone.");
   // Fetch immutable revisions, without moving a user branch or writing FETCH_HEAD.
   await run("git", ["fetch", "--quiet", "--no-tags", "--no-write-fetch-head", source, headSha, baseSha], { cwd, env: { GIT_TERMINAL_PROMPT: "0" } });
+  recordCompletedEffect("review_objects_fetched");
   if (fromHead && !isReviewSha(fromHead)) throw new Error("--since must be last or a full commit SHA.");
   if (fromHead) {
     const exists = await run("git", ["cat-file", "-e", `${fromHead}^{commit}`], { cwd, reject: false });
@@ -80,8 +81,10 @@ export async function prepareReview(input: {
   if (input.mark) {
     // Keep marked commits reachable even after a force push and Git garbage collection.
     await run("git", ["update-ref", `refs/ggh/reviews/${pr.number}/${headSha}`, headSha], { cwd });
+    recordCompletedEffect("review_refs_updated");
     await run("git", ["update-ref", `refs/ggh/reviews/${pr.number}/${mergeBase}`, mergeBase], { cwd });
     markReview(key, { reviewedHead: headSha, reviewedBase: baseSha, mergeBase, at, scope: "inspected" });
+    recordCompletedEffect("review_ledger_marked");
     result.marked = true;
   }
   return { result, from, files };

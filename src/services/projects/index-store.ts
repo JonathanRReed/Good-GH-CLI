@@ -4,6 +4,7 @@ import { open, rename, unlink } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { getConfig, getConfigDir, type GoodGhConfig } from "../config.ts";
 import { assertWindowsPrivateDirectory } from "../private-storage.ts";
+import { recordCompletedEffect } from "../runtime.ts";
 import { acquireProcessLock } from "../process-lock.ts";
 import { discoverProjects, projectExcluded, projectPath, redactRemoteUrl } from "./discovery.ts";
 import type { Checkout, DiscoveryCoverage, IndexedClone, ProjectIndexFile, RemoteRepoId } from "./types.ts";
@@ -88,6 +89,7 @@ export async function updateProjectIndex(update: (current: ProjectIndexFile) => 
     const handle = await open(temporary, "wx", 0o600);
     try { await handle.writeFile(`${JSON.stringify(next)}\n`, "utf8"); await handle.sync(); } finally { await handle.close(); }
     await rename(temporary, projectIndexPath(configDir));
+    recordCompletedEffect("projects_index_updated");
     return next;
   } finally {
     try { await unlink(temporary).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; }); }

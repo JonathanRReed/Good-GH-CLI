@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { getFlags, recordCommandIssue } from "../services/runtime.ts";
+import { getFlags, recordCommandIssue, recordCompletedEffect, recordUncertainEffect } from "../services/runtime.ts";
 import {
   countUniqueCommits,
   detectDefaultBranch,
@@ -88,9 +88,13 @@ export function registerSyncCommand(program: Command): void {
       s.start("Fetching latest remote refs and pruning deleted tracking branches...");
 
       try {
-        await fetchPrune();
+        if (!dryRun("fetch and prune remote refs")) {
+          await fetchPrune();
+          recordCompletedEffect("refs_fetched_pruned");
+        }
         s.stop(pc.green("Remote refs updated and pruned!"));
       } catch {
+        recordUncertainEffect("refs_fetched_pruned");
         s.stop(pc.yellow("Fetch/prune completed with warnings."));
       }
 
@@ -229,6 +233,7 @@ export function registerSyncCommand(program: Command): void {
         try {
           // Safe branches use `git branch -d` (rejects unmerged); --force opts into `-D`.
           await deleteGoneBranch(branch, defaultBranch, Boolean(options?.force), process.cwd(), proofs.get(branch));
+          recordCompletedEffect(`branch_deleted:${branch}`);
           deleted.push(branch);
         } catch {
           failed.push(branch);

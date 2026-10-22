@@ -1,7 +1,7 @@
 import type { Command } from "commander";
 import { existsSync, statSync } from "node:fs";
 import { getConfig, saveConfig } from "../services/config.ts";
-import { isNonInteractive, getFlags } from "../services/runtime.ts";
+import { isNonInteractive, getFlags, recordCompletedEffect } from "../services/runtime.ts";
 import { discoverProjects, projectPath } from "../services/projects/discovery.ts";
 import { forgetProject, readProjectIndex, refreshProjectIndex, registerProject } from "../services/projects/index-store.ts";
 import { resolveProjects } from "../services/projects/query.ts";
@@ -124,6 +124,7 @@ export function registerProjectsCommand(program: Command): void {
     const paths = (getConfig().project_roots ?? []).map(projectPath);
     const next = action === "add" ? [...new Set([...paths, canonical])] : paths.filter(value => value !== canonical);
     saveConfig({ project_roots: next });
+    recordCompletedEffect("projects_roots_updated");
     if (!jsonOut({ schemaVersion: 1, roots: next })) for (const path of next) p.log.message(shortPath(path));
   });
   projects.command("register <path>").description("Include a nested repository explicitly").action(async (path: string) => {
@@ -136,7 +137,10 @@ export function registerProjectsCommand(program: Command): void {
   for (const action of ["exclude", "forget"] as const) projects.command(`${action} <path>`).description(`${action === "exclude" ? "Exclude" : "Forget"} a path without deleting its files`).action(async (path: string) => {
     const canonical = projectPath(path);
     await forgetProject(canonical);
-    if (action === "exclude") saveConfig({ project_exclude: [...new Set([...getConfig().project_exclude ?? [], canonical])] });
+    if (action === "exclude") {
+      saveConfig({ project_exclude: [...new Set([...getConfig().project_exclude ?? [], canonical])] });
+      recordCompletedEffect("projects_exclusions_updated");
+    }
     if (!jsonOut({ schemaVersion: 1, excluded: canonical })) p.log.success(`Excluded ${shortPath(canonical)}`);
   });
 }

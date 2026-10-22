@@ -32,7 +32,7 @@ export interface AgentEnvelope {
   resources?: string[];
 }
 
-export function agentEnvelope(input: { command: string[]; result?: unknown; issue?: CommandIssue; operation?: OperationRecord; failed: boolean; dryRun: boolean; preview: readonly string[] }): AgentEnvelope {
+export function agentEnvelope(input: { command: string[]; result?: unknown; issue?: CommandIssue; operation?: OperationRecord; failed: boolean; dryRun: boolean; preview: readonly string[]; completedEffects?: readonly string[]; uncertainEffects?: readonly string[] }): AgentEnvelope {
   const { operation, issue } = input;
   const path = input.command.join(" ");
   const result = typeof input.result === "object" && input.result !== null && !Array.isArray(input.result) ? input.result : undefined;
@@ -51,6 +51,8 @@ export function agentEnvelope(input: { command: string[]; result?: unknown; issu
     pending: operation?.steps.filter(step => step.state === "pending").map(step => step.name) ?? (workflow && result && "remaining" in result ? strings(result.remaining) : input.preview.length ? ["command_effects"] : []),
     uncertain: operation?.steps.filter(step => step.state === "unknown" || step.state === "failed").map(step => step.name) ?? [],
   };
+  effects.completed = [...new Set([...effects.completed, ...input.completedEffects ?? []])];
+  effects.uncertain = [...new Set([...effects.uncertain, ...input.uncertainEffects ?? []])];
   if (bulkSync) {
     for (const clone of bulkSync.clones) {
       for (const fetch of clone.fetches) {
@@ -69,7 +71,7 @@ export function agentEnvelope(input: { command: string[]; result?: unknown; issu
   }
   if (operation && !operation.steps.length && status === "succeeded") {
     if (input.command[0] === "api") effects.uncertain.push("command_effects");
-    else effects.completed.push("command");
+    else if (!effects.completed.length && !effects.uncertain.length) effects.completed.push("command");
   }
   const code = status === "partially_completed" ? "partial_completion" : issue?.code ?? (status === "cancelled" ? "cancelled" : status === "needs_input" ? "missing_input" : "operation_failed");
   const failed = ["failed", "partially_completed", "cancelled", "needs_input"].includes(status);
@@ -112,7 +114,7 @@ export const envelopeSchema = {
     result: { description: "Command-specific payload. Detailed result schemas are not yet guaranteed." },
     error: { type: "object", required: ["code", "message", "retryability"], properties: { code: { enum: ["invalid_arguments", "missing_input", "confirmation_required", "authentication_required", "provider_unavailable", "cancelled", "partial_completion", "operation_failed", "outcome_uncertain"] }, message: { type: "string" }, retryability: { enum: ["after_input", "after_inspection", "never"] } } },
     requiredInputs: { type: "array", items: { type: "object", required: ["name", "description"], properties: { name: { type: "string" }, description: { type: "string" }, alternatives: { type: "array", items: { type: "string" } } } } },
-    effects: { description: "Omitted only for read-only status when all arrays are empty; defaults to completed: [], pending: [], uncertain: [].", type: "object", required: ["completed", "pending", "uncertain"], properties: Object.fromEntries(["completed", "pending", "uncertain"].map(key => [key, { type: "array", items: { type: "string" } }])) },
+    effects: { description: "Completed effects include explicit local mutations and launches, even when a later step fails. Review uses review_checkout_created/updated, review_objects_fetched, review_refs_updated and review_ledger_marked. Clone uses repository_cloned. Projects use projects_index_updated and projects_roots_updated/projects_exclusions_updated. Go launches use editor_opened/t3_opened. Single-repo sync uses refs_fetched_pruned and branch_deleted:<name>. Omitted only for read-only status when all arrays are empty; defaults to completed: [], pending: [], uncertain: [].", type: "object", required: ["completed", "pending", "uncertain"], properties: Object.fromEntries(["completed", "pending", "uncertain"].map(key => [key, { type: "array", items: { type: "string" } }])) },
     operationId: { type: "string" }, resources: { type: "array", items: { type: "string" } },
   },
 };
@@ -225,7 +227,9 @@ export const coreResultSchemas = {
     upstream: { type: ["string", "null"], default: null },
     ...Object.fromEntries(["ahead", "behind", "staged", "unstaged", "untracked", "conflicts"].map(key => [key, { type: "integer", minimum: 0, default: 0 }])),
     operation: { enum: [null, "rebase", "merge", "cherry-pick", "revert", "sequencer", "bisect"], default: null },
-    changes: { type: "array", items: { type: "string" }, default: [], description: "Lossless porcelain-v2 -z records without headers or trailing NUL. Rename source is the next element; unmerged records retain all conflict stages. No path quoting." },
+    changes: { type: "array", items: { type: "array", items: { type: "string" }, minItems: 2, maxItems: 3 }, default: [], description: "[xy, path], or [xy, path, origPath] for renames/copies. XY uses porcelain-v2 index/worktree codes, dots mean unchanged, ?? means untracked. Unmerged codes DD/AU/UD/UA/DU/AA/UU flag conflicts. Paths are unquoted and relative to root." },
+    submodules: { type: "array", items: { type: "array", items: { type: "string" }, minItems: 2, maxItems: 2 }, default: [], description: "[path, S<c><m><u>] for changed submodules. C means changed commit, M tracked modifications, U untracked content; dots mean unchanged." },
+    rawChanges: { type: "array", items: { type: "string" }, description: "Only with --full: lossless porcelain-v2 -z records without headers or trailing NUL. Rename source is the next element. Includes modes, object IDs and conflict stages." },
     base: { type: ["string", "null"], default: null, description: "Explicit gh-merge-base, or null when none is recorded." },
     push: { type: ["string", "null"], description: "Publish target. Omitted when equal to upstream; null means no destination." },
     fetchedAt: { type: ["string", "null"], default: null, description: "Local FETCH_HEAD mtime in ISO 8601; not proof of remote freshness. No network probe." },

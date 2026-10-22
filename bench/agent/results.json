@@ -292,5 +292,227 @@
         "stderr": ""
       }
     }
+  ],
+  "dirtyResults": [
+    {
+      "case": "dirty-status-5",
+      "question": "Which paths need index, worktree, rename, untracked or conflict actions?",
+      "expectedEvidence": [
+        {
+          "label": "branch main and upstream origin/main",
+          "pattern": "# branch\\.head main[\\s\\S]*# branch\\.upstream origin/main|^## main\\.\\.\\.origin/main$|\"branch\":\"main\",\"head\":\"[a-f0-9]+\",\"upstream\":\"origin/main\""
+        },
+        {
+          "label": "zero ahead and behind",
+          "pattern": "# branch\\.ab \\+0 -0|^## main\\.\\.\\.origin/main$|^\\{\"contract\":\"ggh.agent\",(?!.*\"(?:ahead|behind)\":)[^\\n]+\\}\\n?$"
+        },
+        {
+          "label": "unmerged UU conflict.txt",
+          "pattern": "u UU [^\\n]* conflict\\.txt|^UU conflict\\.txt$|\\[\"UU\",\"conflict.txt\"\\]"
+        },
+        {
+          "label": "index rename with old and new paths",
+          "pattern": "2 R\\. [^\\n]* rename-new\\.txt\\trename-old\\.txt|^R  rename-old\\.txt -> rename-new\\.txt$|\\[\"R\\.\",\"rename-new.txt\",\"rename-old.txt\"\\]"
+        },
+        {
+          "label": "untracked untracked.txt",
+          "pattern": "^\\?\\?? untracked\\.txt$|\\[\"\\?\\?\",\"untracked.txt\"\\]"
+        },
+        {
+          "label": "MM file-1.txt index/worktree state",
+          "pattern": "1 MM [^\\n]* file-1\\.txt$|^MM file-1\\.txt$|\\[\"MM\",\"file-1\\.txt\"\\]"
+        },
+        {
+          "label": "M. file-2.txt index/worktree state",
+          "pattern": "1 M\\. [^\\n]* file-2\\.txt$|^M  file-2\\.txt$|\\[\"M\\.\",\"file-2\\.txt\"\\]"
+        }
+      ],
+      "nativeCommands": [
+        "git status --porcelain=v2 --branch"
+      ],
+      "nativeV1Commands": [
+        "git status --porcelain=v1 -b"
+      ],
+      "gghCommand": "ggh status --agent",
+      "native": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 707,
+        "tokens": 176.75,
+        "toolCalls": 1
+      },
+      "nativeV1": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 119,
+        "tokens": 29.75,
+        "toolCalls": 1
+      },
+      "previousRawFormat": {
+        "bytes": 843,
+        "measurement": "Previous raw-record shape reconstructed from the same porcelain response and envelope, not an older binary."
+      },
+      "ggh": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 371,
+        "tokens": 92.75,
+        "toolCalls": 1,
+        "subprocessCalls": 5,
+        "exitCode": 0,
+        "unexpected": [],
+        "stderr": ""
+      }
+    },
+    {
+      "case": "dirty-status-25",
+      "question": "Which paths need index, worktree, rename, untracked or conflict actions?",
+      "expectedEvidence": [
+        {
+          "label": "branch main and upstream origin/main",
+          "pattern": "# branch\\.head main[\\s\\S]*# branch\\.upstream origin/main|^## main\\.\\.\\.origin/main$|\"branch\":\"main\",\"head\":\"[a-f0-9]+\",\"upstream\":\"origin/main\""
+        },
+        {
+          "label": "zero ahead and behind",
+          "pattern": "# branch\\.ab \\+0 -0|^## main\\.\\.\\.origin/main$|^\\{\"contract\":\"ggh.agent\",(?!.*\"(?:ahead|behind)\":)[^\\n]+\\}\\n?$"
+        },
+        {
+          "label": "unmerged UU conflict.txt",
+          "pattern": "u UU [^\\n]* conflict\\.txt|^UU conflict\\.txt$|\\[\"UU\",\"conflict.txt\"\\]"
+        },
+        {
+          "label": "index rename with old and new paths",
+          "pattern": "2 R\\. [^\\n]* rename-new\\.txt\\trename-old\\.txt|^R  rename-old\\.txt -> rename-new\\.txt$|\\[\"R\\.\",\"rename-new.txt\",\"rename-old.txt\"\\]"
+        },
+        {
+          "label": "untracked untracked.txt",
+          "pattern": "^\\?\\?? untracked\\.txt$|\\[\"\\?\\?\",\"untracked.txt\"\\]"
+        },
+        {
+          "label": "MM file-1.txt index/worktree state",
+          "pattern": "1 MM [^\\n]* file-1\\.txt$|^MM file-1\\.txt$|\\[\"MM\",\"file-1\\.txt\"\\]"
+        },
+        {
+          "label": "M. file-2.txt index/worktree state",
+          "pattern": "1 M\\. [^\\n]* file-2\\.txt$|^M  file-2\\.txt$|\\[\"M\\.\",\"file-2\\.txt\"\\]"
+        },
+        {
+          "label": ".M file-3.txt index/worktree state",
+          "pattern": "1 \\.M [^\\n]* file-3\\.txt$|^ M file-3\\.txt$|\\[\"\\.M\",\"file-3\\.txt\"\\]"
+        },
+        {
+          "label": "MM file-4.txt index/worktree state",
+          "pattern": "1 MM [^\\n]* file-4\\.txt$|^MM file-4\\.txt$|\\[\"MM\",\"file-4\\.txt\"\\]"
+        },
+        {
+          "label": "M. file-5.txt index/worktree state",
+          "pattern": "1 M\\. [^\\n]* file-5\\.txt$|^M  file-5\\.txt$|\\[\"M\\.\",\"file-5\\.txt\"\\]"
+        },
+        {
+          "label": ".M file-6.txt index/worktree state",
+          "pattern": "1 \\.M [^\\n]* file-6\\.txt$|^ M file-6\\.txt$|\\[\"\\.M\",\"file-6\\.txt\"\\]"
+        },
+        {
+          "label": "MM file-7.txt index/worktree state",
+          "pattern": "1 MM [^\\n]* file-7\\.txt$|^MM file-7\\.txt$|\\[\"MM\",\"file-7\\.txt\"\\]"
+        },
+        {
+          "label": "M. file-8.txt index/worktree state",
+          "pattern": "1 M\\. [^\\n]* file-8\\.txt$|^M  file-8\\.txt$|\\[\"M\\.\",\"file-8\\.txt\"\\]"
+        },
+        {
+          "label": ".M file-9.txt index/worktree state",
+          "pattern": "1 \\.M [^\\n]* file-9\\.txt$|^ M file-9\\.txt$|\\[\"\\.M\",\"file-9\\.txt\"\\]"
+        },
+        {
+          "label": "MM file-10.txt index/worktree state",
+          "pattern": "1 MM [^\\n]* file-10\\.txt$|^MM file-10\\.txt$|\\[\"MM\",\"file-10\\.txt\"\\]"
+        },
+        {
+          "label": "M. file-11.txt index/worktree state",
+          "pattern": "1 M\\. [^\\n]* file-11\\.txt$|^M  file-11\\.txt$|\\[\"M\\.\",\"file-11\\.txt\"\\]"
+        },
+        {
+          "label": ".M file-12.txt index/worktree state",
+          "pattern": "1 \\.M [^\\n]* file-12\\.txt$|^ M file-12\\.txt$|\\[\"\\.M\",\"file-12\\.txt\"\\]"
+        },
+        {
+          "label": "MM file-13.txt index/worktree state",
+          "pattern": "1 MM [^\\n]* file-13\\.txt$|^MM file-13\\.txt$|\\[\"MM\",\"file-13\\.txt\"\\]"
+        },
+        {
+          "label": "M. file-14.txt index/worktree state",
+          "pattern": "1 M\\. [^\\n]* file-14\\.txt$|^M  file-14\\.txt$|\\[\"M\\.\",\"file-14\\.txt\"\\]"
+        },
+        {
+          "label": ".M file-15.txt index/worktree state",
+          "pattern": "1 \\.M [^\\n]* file-15\\.txt$|^ M file-15\\.txt$|\\[\"\\.M\",\"file-15\\.txt\"\\]"
+        },
+        {
+          "label": "MM file-16.txt index/worktree state",
+          "pattern": "1 MM [^\\n]* file-16\\.txt$|^MM file-16\\.txt$|\\[\"MM\",\"file-16\\.txt\"\\]"
+        },
+        {
+          "label": "M. file-17.txt index/worktree state",
+          "pattern": "1 M\\. [^\\n]* file-17\\.txt$|^M  file-17\\.txt$|\\[\"M\\.\",\"file-17\\.txt\"\\]"
+        },
+        {
+          "label": ".M file-18.txt index/worktree state",
+          "pattern": "1 \\.M [^\\n]* file-18\\.txt$|^ M file-18\\.txt$|\\[\"\\.M\",\"file-18\\.txt\"\\]"
+        },
+        {
+          "label": "MM file-19.txt index/worktree state",
+          "pattern": "1 MM [^\\n]* file-19\\.txt$|^MM file-19\\.txt$|\\[\"MM\",\"file-19\\.txt\"\\]"
+        },
+        {
+          "label": "M. file-20.txt index/worktree state",
+          "pattern": "1 M\\. [^\\n]* file-20\\.txt$|^M  file-20\\.txt$|\\[\"M\\.\",\"file-20\\.txt\"\\]"
+        },
+        {
+          "label": ".M file-21.txt index/worktree state",
+          "pattern": "1 \\.M [^\\n]* file-21\\.txt$|^ M file-21\\.txt$|\\[\"\\.M\",\"file-21\\.txt\"\\]"
+        },
+        {
+          "label": "MM file-22.txt index/worktree state",
+          "pattern": "1 MM [^\\n]* file-22\\.txt$|^MM file-22\\.txt$|\\[\"MM\",\"file-22\\.txt\"\\]"
+        }
+      ],
+      "nativeCommands": [
+        "git status --porcelain=v2 --branch"
+      ],
+      "nativeV1Commands": [
+        "git status --porcelain=v1 -b"
+      ],
+      "gghCommand": "ggh status --agent",
+      "native": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 3200,
+        "tokens": 800,
+        "toolCalls": 1
+      },
+      "nativeV1": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 412,
+        "tokens": 103,
+        "toolCalls": 1
+      },
+      "previousRawFormat": {
+        "bytes": 3378,
+        "measurement": "Previous raw-record shape reconstructed from the same porcelain response and envelope, not an older binary."
+      },
+      "ggh": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 786,
+        "tokens": 196.5,
+        "toolCalls": 1,
+        "subprocessCalls": 5,
+        "exitCode": 0,
+        "unexpected": [],
+        "stderr": ""
+      }
+    }
   ]
 }

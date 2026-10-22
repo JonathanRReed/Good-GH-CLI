@@ -16,11 +16,12 @@ export function registerStatusCommand(program: Command): void {
     .command("status")
     .alias("st")
     .description("Repository, GitHub, and AI provider status in one place")
+    .option("--full", "Include raw porcelain-v2 records in agent output")
     .option("--remote", "Include GitHub authentication and pull request probes")
     .option("--providers", "Include AI provider probes")
     .option("--watch", "Refresh the status display every N seconds (default 5)")
     .option("--interval <seconds>", "Refresh interval in seconds (default 5)", "5")
-    .action(async (options?: { watch?: boolean; interval?: string; remote?: boolean; providers?: boolean }) => {
+    .action(async (options?: { watch?: boolean; interval?: string; remote?: boolean; providers?: boolean; full?: boolean }) => {
       if (options?.watch) {
         const parsed = Number.parseInt(options.interval ?? "5", 10);
         const intervalSec = Number.isFinite(parsed) ? Math.min(Math.max(2, parsed), 300) : 5;
@@ -35,7 +36,7 @@ export function registerStatusCommand(program: Command): void {
     });
 }
 
-async function renderStatus(options?: { remote?: boolean; providers?: boolean }): Promise<void> {
+async function renderStatus(options?: { remote?: boolean; providers?: boolean; full?: boolean }): Promise<void> {
   if (getFlags().json) {
     await renderMachineStatus(options);
     return;
@@ -180,7 +181,7 @@ async function renderStatus(options?: { remote?: boolean; providers?: boolean })
   }
 }
 
-async function renderMachineStatus(options?: { remote?: boolean; providers?: boolean }): Promise<void> {
+async function renderMachineStatus(options?: { remote?: boolean; providers?: boolean; full?: boolean }): Promise<void> {
   const agent = getFlags().agent;
   const [gitStatus, root, branchInfo, gitDir] = await Promise.all([
     agent ? Promise.resolve(null) : getStatus(), getRepoRoot().catch(() => ""),
@@ -190,25 +191,44 @@ async function renderMachineStatus(options?: { remote?: boolean; providers?: boo
   if (root && branchInfo.exitCode !== 0) throw new Error(branchInfo.stderr || "Cannot read Git status.");
   let branch: string | null = null;
   let head: string | null = null;
-  const changes: string[] = [];
+  const rawChanges: string[] = [];
+  const changes: Array<[xy: string, path: string] | [xy: string, path: string, origPath: string]> = [];
+  const submodules: Array<[path: string, marker: string]> = [];
   const counts = { staged: 0, unstaged: 0, untracked: 0, conflicts: 0 };
-  let renameSource = false;
+  let rename: [xy: string, path: string] | undefined;
   let upstream: string | null = null;
   let ahead = 0;
   let behind = 0;
   for (const field of branchInfo.stdout.split("\0")) {
     if (!field) continue;
-    if (renameSource) { changes.push(field); renameSource = false; continue; }
+    if (rename) { rawChanges.push(field); changes.push([...rename, field]); rename = undefined; continue; }
     if (field.startsWith("# branch.head ")) branch = field.slice(14) === "(detached)" ? null : field.slice(14);
     if (field.startsWith("# branch.oid ")) head = field.slice(13) === "(initial)" ? null : field.slice(13);
     if (!field.startsWith("# ")) {
-      changes.push(field);
-      if (field.startsWith("? ")) counts.untracked++;
-      else if (field.startsWith("u ")) counts.conflicts++;
-      else if (/^[12] /.test(field)) {
-        if (field[2] !== ".") counts.staged++;
-        if (field[3] !== ".") counts.unstaged++;
-        renameSource = field.startsWith("2 ");
+      rawChanges.push(field);
+      if (field.startsWith("? ") || field.startsWith("! ")) {
+        changes.push([field.startsWith("? ") ? "??" : "!!", field.slice(2)]);
+        if (field.startsWith("? ")) counts.untracked++;
+      } else {
+        // Split only the fixed metadata prefix. Paths may contain spaces and newlines.
+        const match = /^(1|2) (\S{2}) (\S{4}) (?:\S+ ){5}([\s\S]*)$/.exec(field);
+        const unmerged = /^u (\S{2}) (\S{4}) (?:\S+ ){7}([\s\S]*)$/.exec(field);
+        const xy = unmerged?.[1] ?? match?.[2];
+        const marker = unmerged?.[2] ?? match?.[3];
+        let path = unmerged?.[3] ?? match?.[4];
+        if (!xy || !marker || path === undefined) throw new Error("Invalid porcelain-v2 change record.");
+        if (field.startsWith("2 ")) {
+          const separator = path.indexOf(" ");
+          if (separator < 0) throw new Error("Invalid porcelain-v2 rename record.");
+          path = path.slice(separator + 1);
+          rename = [xy, path];
+        } else changes.push([xy, path]);
+        if (marker !== "N...") submodules.push([path, marker]);
+        if (unmerged) counts.conflicts++;
+        else {
+          if (xy[0] !== ".") counts.staged++;
+          if (xy[1] !== ".") counts.unstaged++;
+        }
       }
     }
     if (field.startsWith("# branch.upstream ")) upstream = field.slice(18);
@@ -239,6 +259,7 @@ async function renderMachineStatus(options?: { remote?: boolean; providers?: boo
       ...(upstream ? { upstream } : {}), ...(ahead ? { ahead } : {}), ...(behind ? { behind } : {}),
       ...Object.fromEntries(Object.entries(counts).filter(([, count]) => count !== 0)),
       ...(operation ? { operation } : {}), ...(changes.length ? { changes } : {}),
+      ...(submodules.length ? { submodules } : {}), ...(options?.full ? { rawChanges } : {}),
       ...(base ? { base } : {}), ...(destination !== upstream ? { push: destination } : {}),
       ...(existsSync(fetchPath) ? { fetchedAt: statSync(fetchPath).mtime.toISOString() } : {}), ...probes,
     });
