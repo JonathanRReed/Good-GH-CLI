@@ -1,6 +1,6 @@
 import type { Command } from "commander";
 import { getConfig } from "../services/config.ts";
-import { discoverProjects } from "../services/projects/discovery.ts";
+import { discoverProjects, projectPath } from "../services/projects/discovery.ts";
 import { readProjectIndex } from "../services/projects/index-store.ts";
 import { findLost } from "../services/projects/lost.ts";
 import { resolveProjects } from "../services/projects/query.ts";
@@ -19,7 +19,7 @@ export async function cleanupProjects(names: string[], all: boolean, defaultAll 
   const available = [...discovered.clones, ...index.clones.filter(clone => !discovered.clones.some(current => current.commonDir === clone.commonDir))];
   if (all || (!names.length && defaultAll)) return { clones: available, coverage: discovered.coverage };
   if (!names.length) {
-    const current = (await projectGit(process.cwd(), ["rev-parse", "--path-format=absolute", "--git-common-dir"])).stdout.trim();
+    const current = projectPath((await projectGit(process.cwd(), ["rev-parse", "--path-format=absolute", "--git-common-dir"])).stdout.trim());
     let clone = available.find(clone => clone.commonDir === current);
     if (!clone) clone = (await discoverProjects({ config: { ...getConfig(), project_roots: [] }, registered: [process.cwd()] })).clones.find(clone => clone.commonDir === current);
     if (!clone) throw new Error("Current clone is unavailable; name a project or use --all");

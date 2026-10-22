@@ -17,8 +17,9 @@ function git(args: string[]): string {
   return result.stdout.toString().trim();
 }
 git(["init", "-b", "main", seed]);
+writeFileSync(join(seed, ".gitattributes"), "README.md -text\n");
 writeFileSync(join(seed, "README.md"), "local clone fixture\n");
-git(["-C", seed, "add", "README.md"]);
+git(["-C", seed, "add", ".gitattributes", "README.md"]);
 git(["-C", seed, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "commit", "-m", "initial"]);
 writeFileSync(join(seed, "README.md"), "second commit\n");
 git(["-C", seed, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "commit", "-am", "second"]);

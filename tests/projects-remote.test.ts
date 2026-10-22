@@ -207,7 +207,9 @@ describe("projects remote batches", () => {
   });
   it("bounds in-flight requests and remaining batches by the overall deadline", async () => {
     const started = performance.now();
-    const receipt = await service(clones(21), 'const result = await readProjectRemotes(clones, {deadlineMs:80,timeoutMs:1000});', 'stall = true;');
+    // Warm Windows ACL inspection before measuring the in-flight request deadline.
+    const receipt = await service(clones(21), 'const result = await readProjectRemotes(clones, {deadlineMs:80,timeoutMs:1000});',
+      `stall = true; const {assertWindowsPrivateDirectory} = await import(${JSON.stringify(new URL("../src/services/private-storage.ts", import.meta.url).href)}); assertWindowsPrivateDirectory(process.env.XDG_CONFIG_HOME);`);
     expect(performance.now() - started).toBeLessThan(2000);
     expect(receipt.result.requests).toBe(1);
     expect(receipt.result.repositories).toHaveLength(21);

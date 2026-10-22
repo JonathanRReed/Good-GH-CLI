@@ -1,4 +1,4 @@
-import { existsSync, lstatSync } from "node:fs";
+import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { getConfig } from "../config.ts";
 import { projectGit } from "./git.ts";
 import { fetchedAt, freshClone, hostClaims } from "./tidy-plan.ts";
@@ -90,7 +90,7 @@ export async function findLost(clones: readonly Clone[], config = getConfig()): 
       try {
         if (lstatSync(checkout.path).isSymbolicLink()) throw new Error("Checkout path was replaced by a symlink");
         const actual = (await projectGit(checkout.path, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).stdout.trim();
-        if (actual !== commonDir) throw new Error("Checkout common directory changed");
+        if (realpathSync.native(actual) !== commonDir) throw new Error("Checkout common directory changed");
       } catch {
         result.items.push({ ...base, kind: "broken-gitdir", reason: "Checkout .git gitdir is broken or points to another clone", nextSteps: [["git", "-C", checkout.path, "rev-parse", "--git-dir"]] });
         continue;
