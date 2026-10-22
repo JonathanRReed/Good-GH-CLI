@@ -1,14 +1,14 @@
 import { homedir } from "node:os";
 import { relative } from "node:path";
 import { p } from "../../utils/ui.ts";
-import { stripAnsi, terminalText } from "../../utils/output.ts";
+import { safeHumanText } from "../../utils/output.ts";
 import { within } from "./discovery.ts";
 import type { RemoteField, RemoteRepository, UnclonedResult } from "./remote-types.ts";
 import type { CloneStatus, CommitSummary, FieldState, IndexedClone } from "./types.ts";
 
 export interface ProjectRow { clone: IndexedClone; status: CloneStatus; stale?: boolean; remote?: RemoteRepository[] }
 export function shortPath(path: string): string { return within(homedir(), path) ? `~${path === homedir() ? "" : `/${relative(homedir(), path)}`}` : path; }
-function cell(value: string): string { return stripAnsi(terminalText(value)).replace(/[\r\n\t]/g, " "); }
+function cell(value: string): string { return safeHumanText(value).replace(/[\r\n\t]/g, " "); }
 function show<T>(field: FieldState<T>, render: (value: T) => string): string {
   return field.state === "ok" ? render(field.value) : field.state === "error" ? "error" : "?";
 }

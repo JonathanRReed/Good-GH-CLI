@@ -132,6 +132,11 @@ export function terminalText(text: string): string {
     .replace(/\x1b(?!\[[0-9;]*m)[ -/]*[0-~]?|[\x00-\x08\x0b-\x1a\x1c-\x1f\x7f-\x9f]/g, "");
 }
 
+/** Repository and provider text has no authority to style or control the terminal. */
+export function safeHumanText(text: string): string {
+  return stripAnsi(terminalText(text)).replace(/\p{Cf}|\r/gu, "");
+}
+
 export function stripAnsi(str: string): string {
   // eslint-disable-next-line no-control-regex
   return str.replace(/\x1b\[[0-9;]*m/g, "");
