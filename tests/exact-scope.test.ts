@@ -48,7 +48,8 @@ test("06 binary staged blobs remain exact with different worktree bytes", async 
   const bytes = contents("binary"); await exactCommit(); expect(contents("binary")).toEqual(bytes);
 });
 for (const [id, path] of [["07", "with spaces"], ["08", "with\nnewline"], ["09", "--leading-dash"]]) {
-  test(`${id} literal path ${JSON.stringify(path)} commits exactly`, async () => {
+  // Windows filenames cannot contain newlines.
+  test.skipIf(process.platform === "win32" && path!.includes("\n"))(`${id} literal path ${JSON.stringify(path)} commits exactly`, async () => {
     stage(path!); f.save(path!, "unstaged\n"); await exactCommit(); expect(contents(path!).toString()).toBe("unstaged\n");
   });
 }

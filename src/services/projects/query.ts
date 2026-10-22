@@ -1,3 +1,4 @@
+import { samePath } from "./paths.ts";
 import { projectPath } from "./discovery.ts";
 import type { IndexedClone } from "./types.ts";
 
@@ -5,7 +6,7 @@ export function resolveProjects(clones: readonly IndexedClone[], query: string):
   if (!query) return [];
   const available = clones.filter(clone => !clone.missing);
   const path = projectPath(query);
-  const paths = available.filter(clone => clone.commonDir === path || clone.checkouts.some(checkout => checkout.path === path));
+  const paths = available.filter(clone => samePath(clone.commonDir, path) || clone.checkouts.some(checkout => samePath(checkout.path, path)));
   if (paths.length) return paths;
   const term = query.toLowerCase();
   const exact = available.filter(clone => clone.displayName.toLowerCase() === term || (clone.primary && `${clone.primary.owner}/${clone.primary.name}`.toLowerCase() === term));

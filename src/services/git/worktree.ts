@@ -42,7 +42,7 @@ function sameDirectory(left: string, right: string): boolean {
 
 
 function isStrictDescendant(directory: string, candidate: string): boolean {
-  let current = realpathSync(candidate);
+  let current = realpathSync.native(candidate);
   let movedToParent = false;
 
   while (true) {

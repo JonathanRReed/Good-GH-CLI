@@ -1,3 +1,4 @@
+import { samePath } from "../services/projects/paths.ts";
 import { Command } from "commander";
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -255,7 +256,7 @@ async function renderMachineStatus(options?: { remote?: boolean; providers?: boo
     const base = branch ? settings.get(`branch.${branch}.gh-merge-base`) : undefined;
     const fetchPath = join(directory, "FETCH_HEAD");
     jsonOut({
-      ...(root !== process.cwd() ? { root } : {}), branch, head,
+      ...(!samePath(root, process.cwd()) ? { root } : {}), branch, head,
       ...(upstream ? { upstream } : {}), ...(ahead ? { ahead } : {}), ...(behind ? { behind } : {}),
       ...Object.fromEntries(Object.entries(counts).filter(([, count]) => count !== 0)),
       ...(operation ? { operation } : {}), ...(changes.length ? { changes } : {}),

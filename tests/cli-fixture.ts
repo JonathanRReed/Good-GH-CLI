@@ -129,5 +129,5 @@ export async function runFixture(
 }
 
 export function fixtureRoot(prefix: string): string {
-  return realpathSync(mkdtempSync(join(tmpdir(), prefix)));
+  return realpathSync.native(mkdtempSync(join(tmpdir(), prefix)));
 }

@@ -27,7 +27,7 @@ export async function volumeAvailable(path: string): Promise<boolean> {
     }
     if (ancestor === parse(canonical).root) return false;
     // A symlink must not turn an unmounted prefix into an apparently local path.
-    if (realpathSync(ancestor) !== ancestor) return false;
+    if (realpathSync.native(ancestor) !== ancestor) return false;
     if (process.platform === "win32") return ancestor !== parse(canonical).root;
     const mounts = parseMounts((await run("mount", [], { timeoutMs: 3000 })).stdout);
     if (!mounts.some(mount => mount.path === "/")) return false;

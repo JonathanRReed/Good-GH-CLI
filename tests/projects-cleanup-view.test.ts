@@ -112,8 +112,8 @@ describe("compact cleanup views", () => {
     }
     const root = fixtureRoot("ggh-cleanup-width-");
     try {
-      const cleanupView = new URL("../src/services/projects/cleanup-view.ts", import.meta.url).pathname;
-      const ui = new URL("../src/utils/ui.ts", import.meta.url).pathname;
+      const cleanupView = new URL("../src/services/projects/cleanup-view.ts", import.meta.url).href;
+      const ui = new URL("../src/utils/ui.ts", import.meta.url).href;
       const output = await runFixture([], { root, invoke: `process.env.COLUMNS = '${width}'; const { formatLost, formatTidyPlan } = await import(${JSON.stringify(cleanupView)}); const { p } = await import(${JSON.stringify(ui)}); for (const line of [...formatTidyPlan(${JSON.stringify(plan)}), ...formatLost(${JSON.stringify(result)})]) p.log.message(line);` });
       expect(output.exitCode, output.stderr).toBe(0);
       const lines = output.stderr.trimEnd().split("\n");

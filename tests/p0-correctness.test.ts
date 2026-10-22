@@ -75,7 +75,7 @@ it("copies env files only with explicit opt-in", async () => {
 
 it("creates review checkouts without env copies, submodules, or shared branch metadata", async () => {
   const head = (await git(["rev-parse", "HEAD"])).stdout.trim();
-  writeFileSync(join(repo, ".gitmodules"), `[submodule "trap"]\n path = trap\n url = ${repo}\n`);
+  writeFileSync(join(repo, ".gitmodules"), `[submodule "trap"]\n path = trap\n url = ${repo.replaceAll("\\", "/")}\n`);
   await git(["config", "protocol.file.allow", "always"]);
   await git(["update-index", "--add", "--cacheinfo", `160000,${head},trap`]);
   await git(["add", ".gitmodules"]);

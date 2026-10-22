@@ -1,3 +1,4 @@
+import { samePath } from "../projects/paths.ts";
 import { lstatSync, mkdirSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -78,15 +79,15 @@ export function httpsFallback(transport: CloneTransport, diagnostic: string): st
 
 function remoteIdentity(input: string, cwd: string): string {
   const parsed = parseRemote(input);
-  if (parsed?.protocol === "file:") return `file:${realpathSync(fileURLToPath(parsed))}`;
+  if (parsed?.protocol === "file:") return `file:${realpathSync.native(fileURLToPath(parsed))}`;
   if (parsed) return `${parsed.host.toLowerCase()}/${parsed.pathname.replace(/^\/+|\/+$/g, "").replace(/\.git$/, "").toLowerCase()}`;
-  return `file:${realpathSync(resolve(cwd, input))}`;
+  return `file:${realpathSync.native(resolve(cwd, input))}`;
 }
 
 export async function alreadyCloned(repoUrl: string, destination: string): Promise<boolean> {
   try {
     const root = await run("git", ["rev-parse", "--show-toplevel"], { cwd: destination, reject: false });
-    if (root.exitCode !== 0 || realpathSync(root.stdout.trim()) !== realpathSync(destination)) return false;
+    if (root.exitCode !== 0 || !samePath(root.stdout.trim(), destination)) return false;
     const remote = await run("git", ["config", "--local", "--get", "remote.origin.url"], { cwd: destination, reject: false });
     return remote.exitCode === 0 && remoteIdentity(remote.stdout.trim(), destination) === remoteIdentity(repoUrl, process.cwd());
   } catch { return false; }

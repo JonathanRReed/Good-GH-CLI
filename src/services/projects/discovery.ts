@@ -90,7 +90,7 @@ export async function discoverProjects(options: DiscoveryOptions = {}): Promise<
   function walk(path: string, root: string, depth: number, source: DiscoverySource): void {
     if (projectExcluded(path, excluded, roots)) return;
     try {
-      const canonical = realpathSync(path);
+      const canonical = realpathSync.native(path);
       if (!within(root, canonical)) { coverage.skipped.push({ path, reason: "Symlink leaves scan root" }); return; }
       if (projectExcluded(canonical, excluded, roots)) return;
       const visitKey = `${root}\0${canonical}`;
@@ -105,7 +105,7 @@ export async function discoverProjects(options: DiscoveryOptions = {}): Promise<
         for (const host of [".claude", ".cursor"]) {
           const hostPath = join(canonical, host);
           if (!existsSync(hostPath)) continue;
-          if (!within(root, realpathSync(hostPath))) { coverage.skipped.push({ path: hostPath, reason: "Symlink leaves scan root" }); continue; }
+          if (!within(root, realpathSync.native(hostPath))) { coverage.skipped.push({ path: hostPath, reason: "Symlink leaves scan root" }); continue; }
           for (const entry of readdirSync(hostPath)) {
             if (host === ".claude" ? entry === "worktrees" : entry.startsWith("worktrees")) walk(join(hostPath, entry), root, 0, "host-location");
           }
@@ -141,11 +141,11 @@ export async function discoverProjects(options: DiscoveryOptions = {}): Promise<
       const known = knownPaths.get(path);
       let commonDir: string;
       if (known) {
-        const gitDir = realpathSync(checkoutGitDir(path, known.bare));
+        const gitDir = realpathSync.native(checkoutGitDir(path, known.bare));
         const pointer = join(gitDir, "commondir");
-        const current = existsSync(pointer) ? realpathSync(resolve(gitDir, gitLine(readFileSync(pointer, "utf8")))) : gitDir;
-        commonDir = current === known.commonDir ? current : realpathSync(gitLine((await projectGit(path, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).stdout));
-      } else commonDir = realpathSync(gitLine((await projectGit(path, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).stdout));
+        const current = existsSync(pointer) ? realpathSync.native(resolve(gitDir, gitLine(readFileSync(pointer, "utf8")))) : gitDir;
+        commonDir = current === known.commonDir ? current : realpathSync.native(gitLine((await projectGit(path, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).stdout));
+      } else commonDir = realpathSync.native(gitLine((await projectGit(path, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).stdout));
       if (!registered.has(path) && commonDir.replaceAll(sep, "/").includes("/.git/modules/")) return;
       const existing = groups.get(commonDir);
       if (existing) { for (const source of sources) existing.sources.add(source); }

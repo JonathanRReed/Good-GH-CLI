@@ -50,7 +50,7 @@ export function tidyDigest(value: unknown): string { return createHash("sha256")
 export function directoryIdentity(path: string): string {
   const info = lstatSync(path, { bigint: true });
   if (!info.isDirectory() || info.isSymbolicLink()) throw new Error(`Not a regular directory: ${path}`);
-  return `${realpathSync(path)}:${info.dev}:${info.ino}:${info.birthtimeNs}`;
+  return `${realpathSync.native(path)}:${info.dev}:${info.ino}:${info.birthtimeNs}`;
 }
 export function fetchedAt(commonDir: string): string | null {
   try { return statSync(join(commonDir, "FETCH_HEAD")).mtime.toISOString(); } catch { return null; }
@@ -80,7 +80,7 @@ export async function freshClone(clone: Clone, config: GoodGhConfig = getConfig(
   if (!source) throw new Error("No readable checkout; identity cannot be proved");
   const discovered = await discoverProjects({ config: { ...config, project_roots: [], project_exclude: [] }, registered: [source] });
   const fresh = discovered.clones.find(candidate => candidate.commonDir === clone.commonDir);
-  if (!fresh || realpathSync(fresh.commonDir) !== clone.commonDir) throw new Error("Clone identity changed or cannot be proved");
+  if (!fresh || realpathSync.native(fresh.commonDir) !== clone.commonDir) throw new Error("Clone identity changed or cannot be proved");
   return fresh;
 }
 export async function refsForTidy(commonDir: string): Promise<RefProof[]> {
@@ -260,7 +260,7 @@ export async function classifyTidyClone(input: Clone, options: TidyOptions = {},
         if (checkout.branch) await protectReflog(commonDir, { branch: checkout.branch });
         const allowIgnored = (options.allowIgnored ?? []).map(projectPath).includes(checkout.path);
         const fileState = await checkoutFileState(checkout, allowIgnored);
-        const actual = realpathSync(gitLine((await projectGit(checkout.path, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).stdout));
+        const actual = realpathSync.native(gitLine((await projectGit(checkout.path, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).stdout));
         if (actual !== commonDir) throw new Error("Checkout changed clone identity");
         result.actions.push(action({ kind: "remove-checkout", checkout, checkoutIdentity: tidyDigest([directoryIdentity(checkout.path), directoryIdentity(checkout.gitDir)]), fileState, allowIgnored, allowUnknown, integration, proof: proof([{ ref: checkout.branch ? `refs/heads/${checkout.branch}` : "HEAD", oid: checkout.head }, ...integration ? [integration] : []]) }));
       } catch (error) { result.kept.push({ target: checkout.path, reason: reason(error) }); }

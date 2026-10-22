@@ -62,6 +62,7 @@ function repo(name: string): string {
   const path = join(root, name);
   const init = Bun.spawnSync(["git", "init", "-b", "main", path]);
   expect(init.exitCode).toBe(0);
+  git(path, ["config", "core.autocrlf", "false"]);
   git(path, ["config", "user.name", "Fixture"]);
   git(path, ["config", "user.email", "fixture@example.test"]);
   writeFileSync(join(path, "file"), "base\n");

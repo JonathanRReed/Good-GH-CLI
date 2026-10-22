@@ -385,7 +385,7 @@ describe("clone process lifecycle", () => {
       Bun.spawn = (args, options) => {
         if (args[0] === 'git' && args[1] === 'clone') {
           const child = spawn([process.execPath, '-e', "await new Promise(resolve => setTimeout(resolve, 60000));"], options);
-          setTimeout(() => process.kill(process.pid, 'SIGINT'), 50);
+          setTimeout(() => process.platform === 'win32' ? process.emit('SIGINT', 'SIGINT') : process.kill(process.pid, 'SIGINT'), 50);
           return child;
         }
         return spawn(args, options);

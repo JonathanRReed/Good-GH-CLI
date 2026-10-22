@@ -298,12 +298,14 @@ it("the actual launcher records cancellation and leaves the next effect untouche
   const snapshot = await plan();
   mkdirSync(join(home, "good-gh"), { mode: 0o700 }); writeFileSync(join(home, "good-gh", "config.json"), JSON.stringify({ project_roots: [repo], host_worktree_dirs: {} }));
   const release = await acquireProcessLock(tidyLockPath(snapshot.clones[0]!.commonDir));
-  const child = Bun.spawn([process.execPath, new URL("../bin/ggh.ts", import.meta.url).pathname, "tidy", "--all", "--yes"], { cwd: root, env: { ...process.env, HOME: home, XDG_CONFIG_HOME: home, GGH_NO_PLUGINS: "1", GIT_CONFIG_NOSYSTEM: "1", NO_COLOR: "1" }, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+  const entry = new URL("../bin/ggh.ts", import.meta.url).href;
+  const script = `if(process.platform==='win32') process.stdin.on('data',()=>process.emit('SIGINT','SIGINT')); process.argv=[process.execPath,'ggh','tidy','--all','--yes']; await import(${JSON.stringify(entry)});`;
+  const child = Bun.spawn([process.execPath, "-e", script], { cwd: root, env: { ...process.env, HOME: home, XDG_CONFIG_HOME: home, GGH_NO_PLUGINS: "1", GIT_CONFIG_NOSYSTEM: "1", NO_COLOR: "1" }, stdin: "pipe", stdout: "pipe", stderr: "pipe" });
   const reader = child.stderr.getReader(); let output = ""; const decoder = new TextDecoder();
   try {
     const deadline = Date.now() + 10000;
     while (!output.includes("gc-hint") && Date.now() < deadline) { const part = await reader.read(); if (part.done) break; output += decoder.decode(part.value); }
-    expect(output).toContain("Tidy plan"); child.kill("SIGINT"); await new Promise(resolve => setTimeout(resolve, 30)); await release();
+    expect(output).toContain("Tidy plan"); if (process.platform === "win32") child.stdin.write("interrupt\n"); else child.kill("SIGINT"); await new Promise(resolve => setTimeout(resolve, 30)); await release();
     expect(await child.exited).toBe(130); expect(await git("branch", "--list", "merged")).toBe("merged");
     const records = await listOperations(repo); expect(records.every(record => record.steps.every(step => step.state !== "completed"))).toBe(true);
   } finally { await release(); child.kill(); await child.exited; reader.releaseLock(); }
@@ -324,12 +326,12 @@ it("emits one agent document when the launcher gracefully cancels tidy", async (
   await git("branch", "merged"); const snapshot = await plan();
   mkdirSync(join(home, "good-gh"), { mode: 0o700 }); writeFileSync(join(home, "good-gh", "config.json"), JSON.stringify({ project_roots: [repo], host_worktree_dirs: {} }));
   const bin = new URL("../bin/ggh.ts", import.meta.url).href;
-  const script = `const spawn=Bun.spawn.bind(Bun); Bun.spawn=(argv,options)=>{ if(argv[0]==='git'&&argv.includes('count-objects')) process.stderr.write('PLAN_READY\\n'); return spawn(argv,options); }; process.argv=[process.execPath,'ggh','tidy','--all','--agent','--approve-plan',${JSON.stringify(snapshot.snapshotId)}]; await import(${JSON.stringify(bin)});`;
-  const child = Bun.spawn([process.execPath, "-e", script], { cwd: root, env: { ...process.env, HOME: home, XDG_CONFIG_HOME: home, GGH_NO_PLUGINS: "1", GIT_CONFIG_NOSYSTEM: "1", NO_COLOR: "1" }, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+  const script = `if(process.platform==='win32') process.stdin.on('data',()=>process.emit('SIGINT','SIGINT')); const spawn=Bun.spawn.bind(Bun); Bun.spawn=(argv,options)=>{ if(argv[0]==='git'&&argv.includes('count-objects')) process.stderr.write('PLAN_READY\\n'); return spawn(argv,options); }; process.argv=[process.execPath,'ggh','tidy','--all','--agent','--approve-plan',${JSON.stringify(snapshot.snapshotId)}]; await import(${JSON.stringify(bin)});`;
+  const child = Bun.spawn([process.execPath, "-e", script], { cwd: root, env: { ...process.env, HOME: home, XDG_CONFIG_HOME: home, GGH_NO_PLUGINS: "1", GIT_CONFIG_NOSYSTEM: "1", NO_COLOR: "1" }, stdin: "pipe", stdout: "pipe", stderr: "pipe" });
   const reader = child.stderr.getReader(); let output = "";
   try {
     while (!output.includes("PLAN_READY")) { const part = await reader.read(); if (part.done) break; output += new TextDecoder().decode(part.value); }
-    expect(output).toContain("PLAN_READY"); child.kill("SIGINT");
+    expect(output).toContain("PLAN_READY"); if (process.platform === "win32") child.stdin.write("interrupt\n"); else child.kill("SIGINT");
     const data = await new Response(child.stdout).text(); expect(await child.exited).toBe(130);
     const lines = data.trim().split("\n"); expect(lines).toHaveLength(1); expect(JSON.parse(lines[0]!)).toMatchObject({ status: "cancelled" });
     expect(await git("branch", "--list", "merged")).toBe("merged");

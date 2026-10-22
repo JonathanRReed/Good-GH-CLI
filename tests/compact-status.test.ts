@@ -25,7 +25,8 @@ test("clean agent status retains full identity within 1.5 times porcelain", asyn
   expect(out.calls).toEqual([]); expect(out.providerCalls).toEqual([]);
 });
 
-test("agent status retains compact state, exact paths, root from a subdirectory, and operation", async () => {
+// Windows filenames cannot contain newlines or end in a space.
+test.skipIf(process.platform === "win32")("agent status retains compact state, exact paths, root from a subdirectory, and operation", async () => {
   const path = " leading\n-dash "; writeFileSync(join(repo, path), "new\n"); git("add", "--", path);
   writeFileSync(join(repo, path), "unstaged\n"); mkdirSync(join(repo, "sub"));
   writeFileSync(join(repo, ".git", "CHERRY_PICK_HEAD"), git("rev-parse", "HEAD") + "\n");
@@ -80,7 +81,8 @@ test("unborn and detached HEAD identities remain explicit", async () => {
   expect(JSON.parse(result.stdout).result).toMatchObject({ branch: "unborn", head: null });
 });
 
-test("compact status preserves rename source, index/worktree states and untracked paths", async () => {
+// Windows filenames cannot contain newlines or question marks.
+test.skipIf(process.platform === "win32")("compact status preserves rename source, index/worktree states and untracked paths", async () => {
   const path = " renamed\nfile ";
   git("mv", "file", path);
   writeFileSync(join(repo, path), "changed\n");

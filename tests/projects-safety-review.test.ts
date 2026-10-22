@@ -24,7 +24,7 @@ const clones = async () => (await discoverProjects({ config: config() })).clones
 const plan = async () => buildTidyPlan(await clones(), {}, config());
 const moduleUrl = (name: string) => new URL(`../src/${name}.ts`, import.meta.url).href;
 beforeEach(async () => {
-  root = realpathSync(mkdtempSync(process.platform === "win32" ? join(process.env.TEMP ?? ".", "ggh-safety-review-") : "/tmp/ggh-safety-review-")); repo = join(root, "repo"); remote = join(root, "remote.git"); mkdirSync(repo);
+  root = realpathSync.native(mkdtempSync(process.platform === "win32" ? join(process.env.TEMP ?? ".", "ggh-safety-review-") : "/tmp/ggh-safety-review-")); repo = join(root, "repo"); remote = join(root, "remote.git"); mkdirSync(repo);
   await git(repo, "init", "-b", "main"); await git(repo, "config", "user.name", "Fixture"); await git(repo, "config", "user.email", "fixture@example.invalid"); await git(repo, "config", "ggh.created", "true");
   writeFileSync(join(repo, ".gitignore"), ".env\n"); await git(repo, "add", "."); await git(repo, "commit", "-m", "initial");
   await git(repo, "init", "--bare", "-b", "main", remote); await git(repo, "remote", "add", "origin", remote); await git(repo, "push", "-u", "origin", "main"); await git(repo, "remote", "set-head", "origin", "main"); await git(repo, "fetch", "origin");
@@ -110,7 +110,8 @@ it("tidy rechecks ignored files immediately before worktree removal", async () =
   finally { Bun.spawn = spawn; }
   expect(readFileSync(join(path, ".env"), "utf8")).toBe("late ignored file\n");
 });
-it("volume guard rejects an autofs prefix even when its directory exists", async () => {
+// Windows has no autofs mounts or POSIX mount table.
+it.skipIf(process.platform === "win32")("volume guard rejects an autofs prefix even when its directory exists", async () => {
   const mount = join(root, "sshfs"); mkdirSync(mount);
   const result = await runFixture([], { root, invoke: `
     const original=Bun.spawn.bind(Bun); Bun.spawn=(args,options)=>args[0]==='mount'?{pid:0,stdout:new Blob([${JSON.stringify(`/dev/root on / type ext4 (rw)\nauto on ${mount} type autofs (rw)\n`)}]).stream(),stderr:new Blob([]).stream(),exited:Promise.resolve(0),kill(){},stdin:null}:original(args,options);
