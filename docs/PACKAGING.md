@@ -65,7 +65,10 @@ make install DESTDIR="$pkgdir" PREFIX=/usr
 ```
 
 `make` targets: `build`, `build-lean`, `man`, `completions`,
-`install`, `install-lean`, `uninstall`, `check`, `clean`. All install paths
+`install`, `install-lean`, `uninstall`, `check`, `smoke`, `clean`.
+`make smoke` compiles and installs into a temporary prefix, then checks local
+projects, navigation, clone, tidy preview, sync, status, and skill installation
+preview. It needs zsh and jq and uses only local bare remotes. All install paths
 honour `PREFIX` (default `/usr/local`) and `DESTDIR`. Completions land in
 the standard `bash-completion`, `zsh/site-functions`, and fish
 `vendor_completions.d` directories; the man page in `man1`; the license in

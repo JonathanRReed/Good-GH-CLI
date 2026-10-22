@@ -3,191 +3,106 @@
 All notable changes to this project are documented here.
 This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## 0.6.0-beta.1 - Unreleased
 
-### Removed
+### Added
 
-- Remove `label`, `secret`, `variable`, `gist`, `search`, `browse`, `workflow`, and
-  `release`. Use `ggh gh <command>` with native gh arguments.
-- Remove `changelog`, team stack snapshots, and AI triage. GitHub release notes
-  are available through `ggh gh api`; maintain the local changelog by hand.
-- Remove `draft` and AI stash naming. Use `stash push --name`, `stash list --named`,
-  and `stash restore <name>`. Existing `ggh-draft:` stashes remain restorable.
-- Remove notification view and unsubscribe actions. Keep a non-interactive inbox
-  with list and mark-read operations.
-
-### Fixed
-
-- Honor `GGH_CONFIG_DIR` without redirecting gh's XDG authentication directory.
-- Drop the SSH port when a derived enterprise clone URL falls back to HTTPS.
+- Make bare `ggh` a local projects table. Add bounded discovery, separate clone
+  and checkout identities, host provenance, private index/status caches, context
+  cards, scan roots, registration, exclusions, and explicit coverage gaps.
+- Add `go` and `init zsh|bash|fish|pwsh` for shell navigation, with ambiguous-name
+  handling, literal path transport, and editor/T3 launch options.
+- Extend `clone` with alias `get`, `clone_root`, `--to`, `--ask`, paginated
+  repository discovery, origin-verified reuse, progress/stall reporting,
+  provenance markers, protocol selection, and guarded SSH-to-HTTPS fallback.
+- Add `projects --remote`, bare `ggh --remote`, and `--uncloned`. Share remote
+  reads across clones, batch and serialize requests, reserve foreground quota,
+  retry transient failures in smaller batches, and report field freshness and
+  partial failures within a 20-second remote deadline.
+- Add `sync --all` and named-project sync with bounded workers, per-clone
+  deadlines, fast-forward-only updates, unsafe/host-checkout skips, and partial
+  effect reports. Remote fork sync requires an explicit option and confirmation.
+- Add `tidy` with exact-tip deletion proofs, digest-bound approvals, fresh safety
+  checks, per-clone locks, and journals. Keep host checkouts manual-only and
+  separate missing-worktree metadata pruning from removing checkouts.
+- Add optional `tidy --audit` with bounded metadata, provider consent, validated
+  recommendations that can only narrow safe actions, and private audited snapshots.
+- Add `lost` for unpublished branch/detached commits, stashes, dirty host
+  checkouts, and broken gitdirs. Count commits once per clone, show fetch age,
+  and offer explicit `--fetch` plus suggested recovery commands.
+- Add `review` with safe reusable checkouts, editor and terminal fallbacks,
+  explicit inspection marks, incremental review, and rewritten-history warnings.
+- Add read-only `ci why` with revision-linked failed steps, annotations,
+  full-job log fallback, bounded evidence, and explicit truncation/unavailability.
+- Add lossless `pr threads` reads with nested pagination, edited-comment cursors,
+  revision SHAs, resolution/outdated state, and a read-only MCP tool.
+- Add a coding-agent skill, schema-generated reference, guarded skill installer,
+  and result schemas for the new workflows.
+- Add an offline agent benchmark with pinned Zod/VS Code captures, dirty-repo
+  controls, evidence-recall checks, output bytes, and disclosed native-tool wins.
+  Add 20 exact-scope mutation fixtures using local Git repositories and remotes.
+- Add `make smoke` to compile, temporarily install, and check the native binary
+  against local bare remotes with isolated HOME/config and asserted JSON results.
 
 ### Changed
 
-- Show only actionable clones in default `tidy` output. Aggregate keep reasons,
-  host worktrees and broken checkout directories; retain all clone details with
-  `--verbose`.
-- Keep every affected clone visible in `lost` with one summary line each. Expand
-  the top three branches of the highest-ranked clones within an 80-line budget.
-  Show full detail with `lost <project>` or `--verbose`. Preserve JSON and agent
-  inventories.
-- Compact `status --agent` changes into XY/path tuples, including rename sources
-  and conflict codes. Preserve submodule markers separately. Add `--full` for raw
-  porcelain-v2 records and publish both shapes through `ggh agent schema`.
-- Benchmark 5- and 25-path dirty repositories against native porcelain-v2 and v1,
-  with per-path evidence checks and measured stdout bytes.
+- Show only actionable clones in default `tidy` output; aggregate keep reasons,
+  host worktrees, and broken checkout directories. `--verbose` restores every clone.
+- Keep every affected clone visible in `lost` with one summary line each, expanding
+  branch detail for the highest-ranked clones within an 80-line budget. Use
+  `lost <project>` or `--verbose` for full detail.
+- Replace `default_clone_dir` with `clone_root` and `--dir` with `--to`.
+  Clones still default to the current directory.
+- Compact agent status into full HEAD identity, XY/path tuples, rename sources,
+  and submodule markers. `--full` retains raw porcelain-v2 records. Clean status
+  measures 181 bytes versus native porcelain-v2's 121 in both pinned captures.
+- Keep status local unless `--remote` or `--providers` is requested. Remove
+  duplicated workflow jobs and fetch failed logs before returning machine output.
+- Fit project and cleanup views to terminal width, retain full JSON proofs, and
+  show cached project rows before refreshing warm terminal views.
+- Pack the embedded skill reference and share response validators. Set the
+  single-bundle CI limit to 714,271 bytes; document attribution and headroom.
+- Rewrite the README around projects, navigation, guarded upkeep, and agent use.
+
+### Removed
+
+- Remove `label`, `secret`, `variable`, `gist`, `search`, `browse`, `workflow`,
+  and `release`; use native arguments through `ggh gh`.
+- Remove `changelog`, team snapshots, and AI triage. Generate GitHub release notes
+  with native gh and maintain the local changelog by hand.
+- Move draft restore/list into named stash commands. Remove AI stash naming;
+  existing `ggh-draft:` stashes still restore.
+- Remove notification view/unsubscribe actions; keep list and mark-read.
 
 ### Fixed
 
 - Honor `COLUMNS` for piped project and cleanup output, default to 100 columns,
-  and include the log prefix in line widths.
-- Keep `tidy` previews compact with branch ancestry summaries, grouped keep reasons,
-  host worktrees and broken directories. Add `--verbose` and `--wide`; retain full
-  deletion proofs in JSON.
-- Count unpublished commits once per clone in `lost`, with exclusive and shared
-  counts per branch or detached HEAD. Show fetch age and remote-state uncertainty;
-  add `lost --fetch` using tidy's local lock, timeout and operation journal.
-- Resolve a non-bare main checkout to its working directory when discovery starts
-  from an external linked worktree, rather than displaying its `.git` directory.
-- Report completed review checkout, fetch, ref and ledger effects in agent output,
-  including effects completed before a later failure. Report clone, project index
-  and configuration writes, editor/T3 launches, and single-repository sync effects.
-- Keep single-repository `sync --dry-run` from fetching or pruning remote refs.
+  and count the log prefix in line widths.
+- Honor `GGH_CONFIG_DIR` without hiding gh authentication. Drop the derived SSH
+  port when an enterprise clone falls back to HTTPS.
+- Resolve main checkouts to their working directory when discovered through an
+  external worktree. Batch unpublished walks and give checkouts separate deadlines.
+- Cache only successful remote fields per host/login/repository; retry failures
+  rather than caching a timeout for every clone.
+- Report completed and uncertain effects for review, clone, project writes,
+  launches, and single-repo sync. Keep sync dry runs from fetching or pruning.
+- Bind commits to the previewed HEAD, branch, and index; preserve partial staging,
+  reject stale previews and hook-added publication content, and keep recovery refs.
+- Recheck squash state and expected tips; allow clean-index message-only amend.
+  Publish stack-lock owner metadata atomically to prevent initializing-lock races.
 
-### Fixed
+### Security
 
-- Recover `projects --remote` batches after timeouts and transient GitHub errors
-  by splitting failed batches, continuing other repos, and enforcing a 20-second
-  remote deadline with foreground rate-limit protection.
-- Group PR searches, fetch checks for only the latest three PRs per repository,
-  and request only the last commit's check state. Bound pagination and query cost.
-- Cache successful remote fields per host, login, and repository. Retry failures
-  immediately and preserve each field's age and five-minute expiry.
-- Render unavailable remote rows as `—`, summarize reasons in one footer, and
-  preserve the Remote column when fitting the table to the terminal.
-
-### Added
-
-- Add a ggh coding-agent skill with safe mutation recipes, native-tool guidance,
-  host PR registration, and a schema-generated reference with a freshness test.
-- Add `ggh agent skill` to print or install the pack for Claude Code, Codex, or
-  an explicit directory. Explain T3 provider paths, require installation approval,
-  protect differing files unless forced, and report dry-run and completed effects.
-
-- Add `ggh tidy --audit <provider>` with a 32 KB metadata prompt, strict JSON
-  recommendations, keep-by-default narrowing, disclosure and consent checks,
-  and explicit refusal after an audit failure. Reuse guarded execution after
-  one confirmation or `--yes`.
-- Bind audited approval snapshots to the narrowed actions and audit result.
-  Restore private approval records through `--agent --approve-plan` without
-  another model call. Support audited dry runs and explicit
-  `--proceed-without-audit` fallback.
-
-- Add `ggh projects --remote` and bare `ggh --remote` with PR counts, review
-  requests, archive and fork flags, remote age, and context-card PR lists and CI.
-- Deduplicate remote identities across clones, batch metadata and grouped PR
-  searches by query cost, serialize requests per host, and preserve foreground
-  quota and retry delays by host and login. Return partial fields with reasons.
-- Cache successful remote fields privately for five minutes with `--refresh` to bypass.
-  Add `--uncloned` for owned repositories without local clones, with bounded
-  pagination, counts and the ten most recently pushed repositories.
-- Show local terminal rows before remote requests. Extend projects JSON and the
-  agent schema with remote field freshness, request counts and rate-limit costs.
-
-- Add `ggh tidy` with per-action ancestry and publication proofs, stable action
-  IDs, digest-bound approval, fresh safety checks, per-clone locks, and operation
-  journals. Remote deletes require cached ownership and exact OID leases.
-- Add read-only `ggh lost` for unpublished branch and detached commits, stashes,
-  dirty host checkouts, and broken gitdirs, with JSON/agent result schemas.
-- Keep host-owned checkouts manual-only, protect ignored files and clone stashes,
-  and separate expired missing-worktree metadata from checkout removal.
-
-
-- Add `ggh review <pr>` with safe reusable checkouts, detached GUI editors,
-  tuicr/delta terminal fallbacks, explicit private inspection marks, incremental
-  review with rewritten-history detection, and versioned JSON/agent results.
-
-- Add 20 offline exact-scope fixtures for commit, amend, squash, split and push,
-  with staged-tree checks, local remotes and interrupted split recovery.
-
-- Add `ggh sync --all` and `ggh sync <project...>` over the project index, with
-  bounded clone concurrency, per-clone deadlines, one fetch per remote, and
-  fast-forward-only checkout updates. Skip unsafe and host-owned checkouts.
-- Report bulk-sync outcomes in human output and a compact versioned JSON/agent
-  schema. Ctrl-C stops scheduling and preserves a partial report. Remote fork
-  default-branch sync requires `--fork-upstream` and confirmation.
-- Guard single-repo sync cleanup against unpublished commits, checked-out
-  branches, and changed deletion proofs, including when `--force` is used.
-
-- Extend `ggh clone` with alias `get`, `clone_root`, `--to`, `--ask`, paginated
-  account, organization, and star discovery, and versioned agent results.
-- Verify origin identity before reusing a clone and write local provenance
-  markers after cloning. Stream progress, report stalls, redact diagnostic URL
-  credentials, disable hidden prompts, and protect existing content on cleanup.
-- Add `--protocol ssh|https` and one HTTPS retry for SSH authentication or
-  host-key failures when ggh derived the URL.
-
-- Add read-only `ggh ci why` with PR-head-linked runs, failed steps, annotations,
-  full-job fallback, bounded evidence, explicit truncation, and agent schema v1.
-- Add an offline Bun agent benchmark with pinned Zod and VS Code captures,
-  evidence recall, output bytes, token estimates, and a CI evidence gate.
-
-- Make bare `ggh` list local projects. Add bounded discovery, a private atomic
-  index, separate clone and checkout identities, host provenance, and local
-  status with per-field errors and deadlines.
-- Add `projects` context cards, scan roots, exclusions, explicit registration,
-  `go` with duplicate-name handling and editor/T3 probes, and newline-safe shell
-  functions from `init zsh|bash|fish|pwsh`.
-- Add compact versioned projects JSON and agent schemas, detached unpublished
-  commit detection, merged branch checks, and a disposable 70-repository benchmark.
-
-- Add read-only `ggh pr threads` with full comment bodies, nested pagination,
-  resolution and outdated state, revision SHAs, edited-comment cursors, compact
-  agent output, a versioned result schema, and a read-only MCP tool.
-
-### Fixed
-
-- Reduce clean `status --agent` output to 181 bytes in both benchmark captures,
-  including the full HEAD OID. Document compact defaults in the agent schema,
-  preserve porcelain-v2 conflict and path records, and enforce the 1.5x byte gate.
-- Bind commits to the previewed HEAD, branch and index. Preserve partial staging
-  with a private index, reject stale previews, and retain recovery checkpoints.
-- Reject hook-added commit contents before publication or later split groups.
-  Keep rejected commits under local recovery refs and preserve hook worktree edits.
-- Recheck the squash index and move only its expected tip. Preserve the original
-  history under a recovery ref. Allow message-only amend on a clean index.
-- Publish complete stack-lock owner metadata atomically so concurrent commands
-  cannot mistake an initializing lock for corrupt recovery state.
-- Pin pushes to one source OID and destination branch. Disable matching, mirror
-  and follow-tags scope expansion; use exact OID leases for forced updates.
-
-- Keep projects tables and checkout details within terminal width, with one
-  summary row per clone and `--wide` for full values.
-- Show private cached project status immediately on warm terminal runs, mark it
-  stale, and replace it after a local refresh. Keep JSON and piped output fresh.
-- Batch unpublished commit counts per clone, share refs and stash reads, and
-  give each checkout its own status deadline. Report missing checkout paths.
-
-- Pin PR merges to the reviewed head SHA, with `--match-head-commit` for an
-  explicit override. Re-read GitHub state and report merged, queued,
-  auto_merge_enabled, or unknown. Clean up branches only after a confirmed merge.
-- Separate PR review checkouts from development worktree setup. Review checkouts
-  skip env copying, submodule initialization, and shared branch-parent metadata.
-  Development worktrees copy env files only with `ggh wt add --copy-env`.
-- Preserve worktree paths, detached/bare state, locks, and prune reasons with
-  NUL-delimited parsing. Recheck changes and checkout identity before removal;
-  require `--force` to override safety checks.
-- Add an opt-in subprocess environment allowlist that filters inherited values
-  and caller overrides while retaining process essentials.
-- Keep JSON and agent status local by default. Add `--remote` and `--providers`
-  for optional probes. Include upstream, change counts, and operation state.
-- Remove duplicated workflow jobs, fetch failed logs before JSON output, report
-  unavailable logs, emit compact agent JSON, and describe these result schemas
-  in `ggh agent schema`.
-
-### Changed
-
-- Replace `default_clone_dir` with `clone_root` and `--dir` with `--to`.
-  The default destination remains `$PWD/<repo-name>`.
+- Pin merges to the reviewed head, reread GitHub state, and clean up only after
+  confirmed merges. Report queued, auto-merge-enabled, and unknown outcomes.
+- Keep review checkouts separate from development setup. Copy environment files
+  only when development worktrees explicitly request `--copy-env`.
+- Preserve worktree lock/prune/path state with NUL-delimited parsing and recheck
+  identity and changes before removal. Add an opt-in subprocess env allowlist.
+- Pin pushes to one source OID and destination, disable scope-expanding Git
+  settings, and use exact expected-OID leases for forced updates and remote deletes.
+- Protect unpublished and checked-out branches during single-repo sync cleanup,
+  including with `--force`. Unknown deletion proof means keep.
 
 ## 0.5.0-beta.2 - 2026-10-15
 
