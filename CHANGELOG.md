@@ -7,9 +7,22 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Extend `ggh clone` with alias `get`, `clone_root`, `--to`, `--ask`, paginated
+  account, organization, and star discovery, and versioned agent results.
+- Verify origin identity before reusing a clone and write local provenance
+  markers after cloning. Stream progress, report stalls, redact diagnostic URL
+  credentials, disable hidden prompts, and protect existing content on cleanup.
+- Add `--protocol ssh|https` and one HTTPS retry for SSH authentication or
+  host-key failures when ggh derived the URL.
+
 - Add read-only `ggh pr threads` with full comment bodies, nested pagination,
   resolution and outdated state, revision SHAs, edited-comment cursors, compact
   agent output, a versioned result schema, and a read-only MCP tool.
+
+### Changed
+
+- Replace `default_clone_dir` with `clone_root` and `--dir` with `--to`.
+  The default destination remains `$PWD/<repo-name>`.
 
 ## 0.5.0-beta.2 - 2026-10-15
 
