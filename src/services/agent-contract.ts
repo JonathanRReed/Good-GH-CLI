@@ -1,4 +1,6 @@
 import { projectsResultSchema } from "./projects/schema.ts";
+import { projectSyncResultSchema } from "./projects/sync-schema.ts";
+import type { ProjectSyncResult } from "./projects/sync.ts";
 import type { OperationRecord } from "./operations.ts";
 import type { CommandIssue } from "./runtime.ts";
 import type { CloneMode } from "./config.ts";
@@ -34,7 +36,8 @@ export function agentEnvelope(input: { command: string[]; result?: unknown; issu
   const { operation, issue } = input;
   const path = input.command.join(" ");
   const result = typeof input.result === "object" && input.result !== null && !Array.isArray(input.result) ? input.result : undefined;
-  const workflow = path === "commit" || path === "pr create" || path === "repo create" || path.startsWith("stack ");
+  const bulkSync = path === "sync" && isProjectSyncResult(input.result) ? input.result : undefined;
+  const workflow = Boolean(bulkSync) || path === "commit" || path === "pr create" || path === "repo create" || path.startsWith("stack ");
   const noOp = ["clone", "worktree remove", "worktree prune", "rename", "draft", "draft create", "undo", "discard", "sync", "squash", "operation resume"].includes(path);
   const managedStatus = result && "status" in result && ((workflow && ["partially_completed", "needs_input", "cancelled", "failed", "succeeded", "no_op"].includes(String(result.status))) || (noOp && result.status === "no_op")) ? result.status : undefined;
   const strings = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
@@ -48,13 +51,29 @@ export function agentEnvelope(input: { command: string[]; result?: unknown; issu
     pending: operation?.steps.filter(step => step.state === "pending").map(step => step.name) ?? (workflow && result && "remaining" in result ? strings(result.remaining) : input.preview.length ? ["command_effects"] : []),
     uncertain: operation?.steps.filter(step => step.state === "unknown" || step.state === "failed").map(step => step.name) ?? [],
   };
+  if (bulkSync) {
+    for (const clone of bulkSync.clones) {
+      for (const fetch of clone.fetches) {
+        if (fetch.outcome === "updated") effects.completed.push(`fetch:${clone.commonDir}:${fetch.remote}`);
+        else if (fetch.outcome === "uncertain") effects.uncertain.push(`fetch:${clone.commonDir}:${fetch.remote}`);
+      }
+      for (const checkout of clone.checkouts) {
+        if (checkout.outcome === "updated") effects.completed.push(`ff:${checkout.path}`);
+        else if (checkout.outcome === "uncertain") effects.uncertain.push(`ff:${checkout.path}`);
+        else if (checkout.outcome === "skipped" && checkout.reason === "cancelled") effects.pending.push(`ff:${checkout.path}`);
+      }
+      if (clone.forkUpstream.outcome === "updated") effects.completed.push(`fork:${clone.forkUpstream.target}`);
+      else if (clone.forkUpstream.outcome === "uncertain") effects.uncertain.push(`fork:${clone.forkUpstream.target}`);
+      if (clone.outcome === "skipped" && clone.reason === "cancelled") effects.pending.push(`sync:${clone.commonDir}`);
+    }
+  }
   if (operation && !operation.steps.length && status === "succeeded") {
     if (input.command[0] === "api") effects.uncertain.push("command_effects");
     else effects.completed.push("command");
   }
   const code = status === "partially_completed" ? "partial_completion" : issue?.code ?? (status === "cancelled" ? "cancelled" : status === "needs_input" ? "missing_input" : "operation_failed");
   const failed = ["failed", "partially_completed", "cancelled", "needs_input"].includes(status);
-  if (failed && !effects.uncertain.length && !["invalid_arguments", "missing_input", "confirmation_required", "authentication_required", "provider_unavailable"].includes(code)) effects.uncertain.push("command_effects");
+  if (failed && !bulkSync && !effects.uncertain.length && !["invalid_arguments", "missing_input", "confirmation_required", "authentication_required", "provider_unavailable"].includes(code)) effects.uncertain.push("command_effects");
   return {
     contract: "ggh.agent", version: 1, command: input.command, status,
     ...(input.result !== undefined ? { result: input.result } : {}),
@@ -62,6 +81,24 @@ export function agentEnvelope(input: { command: string[]; result?: unknown; issu
     ...(issue?.requiredInputs ? { requiredInputs: issue.requiredInputs } : {}), effects,
     ...(operation ? { operationId: operation.id, resources: operation.resources } : workflow && result ? { ...("operationId" in result && typeof result.operationId === "string" ? { operationId: result.operationId } : {}), ...("resources" in result ? { resources: strings(result.resources) } : {}) } : {}),
   };
+}
+
+function isProjectSyncResult(value: unknown): value is ProjectSyncResult {
+  function object(row: unknown): row is Record<string, unknown> { return !!row && typeof row === "object" && !Array.isArray(row); }
+  function outcome(row: Record<string, unknown>): boolean {
+    return row.outcome === "up-to-date" || row.outcome === "updated" && typeof row.old === "string" && typeof row.new === "string"
+      || row.outcome === "skipped" && typeof row.reason === "string" || ["failed", "uncertain"].includes(String(row.outcome)) && typeof row.message === "string";
+  }
+  return object(value) && value.schemaVersion === 1 && typeof value.cancelled === "boolean"
+    && ["succeeded", "partially_completed", "failed", "cancelled", "no_op"].includes(String(value.status))
+    && Array.isArray(value.clones) && value.clones.every((clone: unknown) => {
+      if (!object(clone) || typeof clone.commonDir !== "string" || typeof clone.name !== "string") return false;
+      if (!["updated", "up-to-date"].includes(String(clone.outcome)) && !outcome(clone)) return false;
+      if (!Array.isArray(clone.fetches) || !clone.fetches.every((fetch: unknown) => object(fetch) && typeof fetch.remote === "string" && (fetch.outcome === "updated" || ["failed", "uncertain"].includes(String(fetch.outcome)) && typeof fetch.message === "string"))) return false;
+      if (!Array.isArray(clone.checkouts) || !clone.checkouts.every((checkout: unknown) => object(checkout) && typeof checkout.path === "string" && (checkout.branch === null || typeof checkout.branch === "string") && outcome(checkout))) return false;
+      const fork = clone.forkUpstream;
+      return object(fork) && (fork.outcome === "skipped" && typeof fork.reason === "string" || typeof fork.target === "string" && (fork.outcome === "updated" || fork.outcome === "uncertain" && typeof fork.message === "string"));
+    });
 }
 
 export const envelopeSchema = {
@@ -152,6 +189,11 @@ export const ciEvidenceResultSchema = {
   },
 };
 export const coreResultSchemas = {
+  sync: { commandPaths: [["sync"]], schema: { anyOf: [projectSyncResultSchema,
+    { type: "object", required: ["schemaVersion", "query", "candidates"], properties: { schemaVersion: { const: 1 }, query: { type: "string" }, candidates: { type: "array", items: { type: "object", required: ["name", "paths"], properties: { name: { type: "string" }, paths: stringArraySchema } } } } },
+    { type: "object", required: ["currentBranch", "goneBranches", "deletedCount"], properties: { currentBranch: { type: "string" }, goneBranches: stringArraySchema, deletedCount: { type: "integer", minimum: 0 } } },
+    { type: "object", required: ["status", "reason"], properties: { status: { const: "no_op" }, reason: { const: "no_remotes" } } },
+  ] } },
   ciWhy: { commandPaths: [["ci", "why"]], schema: ciEvidenceResultSchema },
   projects: { commandPaths: [["projects"]], includesSubcommands: true, schema: projectsResultSchema },
   go: { commandPaths: [["go"]], schema: { type: "object", required: ["schemaVersion"], properties: { schemaVersion: { const: 1 }, path: { type: "string" }, target: { enum: ["cd", "editor", "t3"] }, query: { type: "string" }, candidates: { type: "array", items: { type: "object" } } }, anyOf: [{ required: ["path", "target"] }, { required: ["query", "candidates"] }] } },

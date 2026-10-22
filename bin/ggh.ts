@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { cancelActiveClones } from "../src/services/git/clone.ts";
+import { cancelActiveSyncs } from "../src/services/projects/sync.ts";
 import { runCli } from "../src/index.ts";
 import { killAllChildren } from "../src/utils/exec.ts";
 import { restoreTerminal, finalizeJsonOutput } from "../src/utils/output.ts";
@@ -20,6 +21,11 @@ async function onInterrupt(signal: NodeJS.Signals): Promise<void> {
   process.stderr.write("\n\x1b[31m✖\x1b[0m  Cancelled.\n");
   recordCommandIssue({ status: "cancelled", message: "Cancelled." });
   restoreTerminal();
+  if (cancelActiveSyncs()) {
+    process.exitCode = signal === "SIGTERM" ? 143 : 130;
+    await cliRun;
+    process.exit(signal === "SIGTERM" ? 143 : 130);
+  }
   const cancelledClone = await cancelActiveClones();
   await killAllChildren();
   process.exitCode = signal === "SIGTERM" ? 143 : 130;
