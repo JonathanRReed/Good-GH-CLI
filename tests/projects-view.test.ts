@@ -72,3 +72,24 @@ describe("project views", () => {
     for (const control of ["\u001b", "\r", "\n", "\t"]) expect(lines.join("")).not.toContain(control);
   });
 });
+
+it("renders remote counts, failing checks, age, unavailable reasons and width limits", () => {
+  const row = fixture();
+  row.remote = [{
+    repo: {host:"github.com",owner:"fixture",name:"project"}, login:"fixture",
+    defaultBranch:ok({name:"main",oid:"abcdef0123456"}),defaultCi:ok("SUCCESS"),archived:ok(true),fork:ok({isFork:true,parent:"upstream/project"}),permission:ok("WRITE"),reviewRequested:ok(1),
+    authored:ok({count:2,pullRequests:[{number:7,title:"Fix checks\u001b[31m\n",headRefName:"fix-ci",statusCheckRollup:"FAILURE",reviewDecision:"REVIEW_REQUIRED"}]}),
+  }];
+  const lines = formatProjects([row],{wide:true,remote:true});
+  expect(lines[1]).toContain("PR 2 ✗ review 1 archived fork");
+  expect(lines[0]).toContain("Seen");
+  const card = formatProjectCard(row,undefined,false,{wide:true,remote:true}).join("\n");
+  expect(card).toContain("CI: SUCCESS"); expect(card).toContain("#7 Fix checks"); expect(card).toContain("Fork: upstream/project");
+  expect(card).not.toContain("\u001b");
+  for (const width of [40,80,100,160]) for (const formatted of [formatProjects([row],{width,remote:true}),formatProjectCard(row,undefined,false,{width,remote:true})]) expect(formatted.every(line=>Bun.stringWidth(line)+3<=width)).toBe(true);
+  const remote = row.remote[0]; if (!remote) throw new Error("fixture"); remote.defaultCi = {state:"unavailable",reason:"Reserve reached"};
+  expect(formatProjects([row],{wide:true,remote:true})[1]).toContain("unavailable");
+  expect(formatProjectCard(row,undefined,false,{wide:true,remote:true})).toContain("defaultCi: Reserve reached");
+  expect(formatProjects([fixture()],{wide:true,remote:true})[1]).toContain("pending");
+  expect(formatProjects([fixture()],{wide:true})[0]).not.toContain("Remote");
+});

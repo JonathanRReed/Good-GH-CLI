@@ -245,7 +245,7 @@ export async function runCli(argv: string[]): Promise<void> {
     return;
   }
 
-  if (args.length === 0 || args.every(arg => ["--agent", "--json", "-q", "--quiet", "--no-input", "--wide"].includes(arg))) args = ["projects", ...args];
+  if (args.length === 0 || args.every(arg => ["--agent", "--json", "-q", "--quiet", "--no-input", "--wide", "--remote", "--uncloned", "--refresh"].includes(arg))) args = ["projects", ...args];
 
   const agentRequested = args.slice(0, args.indexOf("--") < 0 ? args.length : args.indexOf("--")).includes("--agent");
   if (agentRequested) {

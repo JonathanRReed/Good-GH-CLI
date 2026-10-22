@@ -1,11 +1,12 @@
 const strings = { type: "array", items: { type: "string" } };
 const nullableString = { type: ["string", "null"] };
 const count = { type: "integer", minimum: 0 };
-function field(value: object) {
+function field(value: object, unavailable = false) {
   return { oneOf: [
     { type: "object", required: ["state", "value", "observedAt"], properties: { state: { const: "ok" }, value, observedAt: { type: "string", format: "date-time" } } },
     { type: "object", required: ["state", "reason"], properties: { state: { const: "unknown" }, reason: { type: "string" } } },
     { type: "object", required: ["state", "message"], properties: { state: { const: "error" }, message: { type: "string" } } },
+    ...(unavailable ? [{ type: "object", required: ["state", "reason"], properties: { state: { const: "unavailable" }, reason: { type: "string" }, retryAt: { type: "string", format: "date-time" } } }] : []),
   ] };
 }
 const remote = { anyOf: [{ type: "null" }, { type: "object", required: ["host", "owner", "name"], properties: { host: { type: "string" }, owner: { type: "string" }, name: { type: "string" } } }] };
@@ -21,9 +22,30 @@ const checkout = {
     operation: field({ enum: [null, "merge", "rebase", "cherry-pick", "revert", "bisect"] }),
   },
 };
+const remoteRepository = {
+  type: "object", required: ["repo", "login"], properties: {
+    repo: remote, login: nullableString,
+    defaultBranch: field({ type: ["object", "null"], required: ["name", "oid"], properties: { name: { type: "string" }, oid: { type: "string" } } }, true),
+    archived: field({ type: "boolean" }, true),
+    fork: field({ type: "object", required: ["isFork", "parent"], properties: { isFork: { type: "boolean" }, parent: nullableString } }, true),
+    permission: field(nullableString, true),
+    defaultCi: field(nullableString, true),
+    reviewRequested: field(count, true),
+    authored: field({ type: "object", required: ["count", "pullRequests"], properties: {
+      count, pullRequests: { type: "array", maxItems: 3, items: { type: "object", required: ["number", "title", "headRefName", "statusCheckRollup", "reviewDecision"], properties: {
+        number: count, title: { type: "string" }, headRefName: { type: "string" }, statusCheckRollup: nullableString, reviewDecision: nullableString,
+      } } },
+    } }, true),
+  },
+};
+const uncloned = { type: "object", required: ["host", "login", "count", "repositories", "scanned", "complete"], properties: {
+  host: { type: "string" }, login: nullableString, count: field(count, true), scanned: count, complete: { type: "boolean" },
+  repositories: field({ type: "array", maxItems: 10, items: { type: "object", required: ["nameWithOwner", "pushedAt"], properties: { nameWithOwner: { type: "string" }, pushedAt: nullableString } } }, true),
+} };
 const project = {
   type: "object", required: ["commonDir", "name", "primary", "remotes", "lastSeen", "checkouts", "stashes", "newestStash", "unpublished", "mergedBranches", "lastCommit"],
   properties: {
+    remote: { type: "array", items: remoteRepository },
     commonDir: { type: "string" }, name: { type: "string" }, primary: remote, lastSeen: { type: "string" }, missing: { type: "boolean" },
     remotes: { type: "array", items: { type: "object", required: ["name", "url", "repo"], properties: { name: { type: "string" }, url: { type: "string" }, repo: remote } } },
     checkouts: { type: "array", items: checkout }, stashes: field(count), newestStash: field(nullableString), mergedBranches: field(strings), lastCommit: field({ anyOf: [{ type: "null" }, commit] }),
@@ -33,6 +55,7 @@ const project = {
 export const projectsResultSchema = {
   type: "object", required: ["schemaVersion"], properties: {
     schemaVersion: { const: 1 }, updatedAt: { type: "string" },
+    remote: { type: "object", required: ["requests", "cost", "uncloned"], properties: { requests: count, cost: count, uncloned: { type: "array", items: uncloned } } },
     projects: { type: "array", items: project }, project,
     history: { type: "object", required: ["recent", "unpublished"], properties: { recent: field({ type: "array", items: commit }), unpublished: field({ type: "array", items: commit }) } },
     coverage: { type: "object", required: ["roots", "skipped", "truncated"], properties: { roots: strings, truncated: { type: "boolean" }, skipped: { type: "array", items: { type: "object", required: ["path", "reason"], properties: { path: { type: "string" }, reason: { type: "string" } } } } } },
