@@ -2,6 +2,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ciResponses, recordedRun, specimens, statusResponses } from "./cases.ts";
 import { recorded, replayCli } from "./replay.ts";
+import { dirtyStatusCase } from "./dirty-status.ts";
 import { nativeCi } from "./native.ts";
 
 interface ExpectedEvidence { label: string; pattern: string }
@@ -76,11 +77,22 @@ for (const specimen of specimens) {
     results.push({ case: `${specimen.name}-${kind}`, question: kind === "ci" ? "Why did CI fail at this PR head?" : kind === "status" ? "Which branch and tracking branch, what drift, and is it clean?" : "Which run/jobs failed and what did the failed steps print?", expectedEvidence: expected, nativeCommands: commands, gghCommand: `ggh ${command.join(" ")}`, native, ggh });
   }
 }
-const artifact = { schemaVersion: 1, fixtureRevision: "agent-pain-2026-10-22", tokenMetric: "bytes/4 estimate; no offline tokenizer dev dependency installed", results };
+const dirtyResults = [];
+for (const count of [5, 25]) {
+  const row = await dirtyStatusCase(count);
+  dirtyResults.push({ case: `dirty-status-${count}`, question: "Which paths need index, worktree, rename, untracked or conflict actions?", expectedEvidence: row.expected,
+    nativeCommands: ["git status --porcelain=v2 --branch"], nativeV1Commands: ["git status --porcelain=v1 -b"], gghCommand: "ggh status --agent",
+    native: metrics(row.nativeOutput, row.expected, 1), nativeV1: metrics(row.nativeV1Output, row.expected, 1),
+    previousRawFormat: { bytes: Buffer.byteLength(row.previousOutput), measurement: "Previous raw-record shape reconstructed from the same porcelain response and envelope, not an older binary." },
+    ggh: { ...metrics(row.out.stdout, row.expected, 1), subprocessCalls: row.out.calls.length, exitCode: row.out.exitCode, unexpected: row.out.unexpected, stderr: row.out.stderr },
+  });
+}
+const artifact = { schemaVersion: 1, fixtureRevision: "agent-pain-2026-10-22", tokenMetric: "bytes/4 estimate; no offline tokenizer dev dependency installed", results, dirtyResults };
 writeFileSync(join(import.meta.dir, "results.json"), JSON.stringify(artifact, null, 2) + "\n");
 console.table(results.map(row => ({ case: row.case, "native bytes": row.native.bytes, "ggh bytes": row.ggh.bytes, "native ~tokens": row.native.tokens, "ggh ~tokens": row.ggh.tokens, "native recall": `${row.native.recall * 100}%`, "ggh recall": `${row.ggh.recall * 100}%`, "native calls": row.native.toolCalls, "ggh calls": row.ggh.toolCalls })));
+console.table(dirtyResults.map(row => ({ case: row.case, "native v2 bytes": row.native.bytes, "native v1 bytes": row.nativeV1.bytes, "previous raw bytes": row.previousRawFormat.bytes, "ggh bytes": row.ggh.bytes, "v2 / v1 / ggh recall": `${row.native.recall * 100}% / ${row.nativeV1.recall * 100}% / ${row.ggh.recall * 100}%` })));
 console.log(artifact.tokenMetric);
-if (results.some(row => row.ggh.recall < 1 || row.native.recall < 1 || row.ggh.recall < row.native.recall || row.ggh.exitCode !== 0 || row.ggh.unexpected.length || row.ggh.stderr || (row.ggh.byteRatio !== undefined && row.ggh.byteRatio > 1.5))) {
+if (dirtyResults.some(row => [row.native, row.nativeV1, row.ggh].some(result => result.recall < 1) || row.ggh.exitCode !== 0 || row.ggh.unexpected.length || row.ggh.stderr) || results.some(row => row.ggh.recall < 1 || row.native.recall < 1 || row.ggh.recall < row.native.recall || row.ggh.exitCode !== 0 || row.ggh.unexpected.length || row.ggh.stderr || (row.ggh.byteRatio !== undefined && row.ggh.byteRatio > 1.5))) {
   console.error("Agent evidence gate failed. See bench/agent/results.json.");
   process.exitCode = 1;
 }

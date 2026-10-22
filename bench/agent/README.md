@@ -7,7 +7,7 @@ Both native and ggh must retain 100% of each case's declared evidence. Clean
 status must also stay at or below 1.5 times the native porcelain-v2 byte count.
 
 These are output-size measurements on two recorded CI failures, with status and
-run-detail controls for each repository. They are not agent repair-success
+run-detail controls for each repository, plus two generated dirty repositories. They are not agent repair-success
 claims. No blind diagnosis trial, latency comparison, network-traffic measurement,
 or billed-token measurement has run.
 
@@ -74,12 +74,47 @@ remote state. `effects` may be omitted for read-only status when all arrays are
 empty. Other commands retain effects. `ggh agent schema` documents these rules;
 legacy `status --json` retains its nested payload and explicit counts.
 
-Dirty agent status carries lossless porcelain-v2 records in `changes`, including
-rename source records, submodule flags, modes, object IDs and conflict stages.
-Generated local tests cover unusual paths, conflicts, detached/unborn HEAD,
-subdirectories, operations, separate routing targets and fetch metadata. The
-1.5 ratio gate applies to the two pinned clean captures. Dirty output and other
-branch/upstream shapes are correctness checks, not a universal byte-ratio claim.
+Dirty agent status uses `[xy, path]` tuples, with `origPath` as a third item for
+renames and copies. XY keeps index and worktree state separate, including conflict
+codes such as `UU`. `submodules` holds `[path, S<c><m><u>]` markers. `--full` adds
+`rawChanges` with the original porcelain-v2 records, including modes, object IDs,
+conflict stages and separate rename sources. Generated tests cover newline and
+space paths, renames, submodule markers, conflicts, detached/unborn HEAD,
+subdirectories, operations, separate routing targets and fetch metadata.
+
+## Dirty status comparison
+
+`dirty-status.ts` creates real local repositories with 5 and 25 changed paths.
+Each has a staged rename, an untracked file, an unresolved merge conflict, and
+tracked files with index-only, worktree-only or combined modifications. The
+5-path case has combined and index-only modifications. The 25-path case also has
+worktree-only modifications. Git generates both native outputs and the NUL
+porcelain-v2 response replayed through the current CLI. No network is used.
+
+| Changed paths | Native v2 bytes | Native v1 bytes | Prior raw format bytes | Compact agent bytes | v2 / v1 / ggh recall |
+|---|---:|---:|---:|---:|---|
+| 5 | 707 | 119 | 843 | 371 | 100% / 100% / 100% |
+| 25 | 3,200 | 412 | 3,378 | 786 | 100% / 100% / 100% |
+
+Native commands are exactly `git status --porcelain=v2 --branch` and
+`git status --porcelain=v1 -b`. Byte counts include untouched stdout and its final
+newline. Prior-format bytes reconstruct the old raw-record `changes` payload
+from the same Git response and current envelope. They do not run an older binary.
+
+Each case declares evidence for branch/upstream, zero drift, both rename paths,
+untracked state, the conflicting path and code, and each tracked path's exact
+index/worktree code. `results.json` records every expected item and each missing
+item. All three outputs must retain 100%; CLI errors, stderr and unexpected calls
+also fail the gate. Full HEAD identity, modes, blob IDs and conflict stages are
+outside this shared action-evidence list. Porcelain-v1 does not supply full HEAD
+identity, while ggh retains it and v2 supplies it. `--full` supplies the detailed
+records when needed. This gate does not claim byte-for-byte information parity
+with raw v2 metadata.
+
+Compact agent output reduces the prior format by 56.0% and 76.7% in these cases.
+Porcelain-v1 wins on bytes. The 1.5 ratio gate still applies only to the two
+pinned clean captures, not dirty repositories or all branch/upstream shapes.
+These are deterministic byte counts, not latency or tokenizer measurements.
 Run controls ask for run/jobs and failed-step text, including the complete raw
 failed logs. They do not substitute for the CI precursor-step question.
 
