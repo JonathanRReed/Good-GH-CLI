@@ -14,5 +14,5 @@
     "noEmit": true,
     "types": ["bun-types"]
   },
-  "include": ["src/**/*", "tests/**/*", "bin/**/*", "scripts/**/*"]
+  "include": ["src/**/*", "tests/**/*", "bin/**/*", "scripts/**/*", "bench/agent/**/*.ts"]
 }

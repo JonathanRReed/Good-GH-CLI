@@ -1,0 +1,284 @@
+{
+  "schemaVersion": 1,
+  "fixtureRevision": "agent-pain-2026-10-22",
+  "tokenMetric": "bytes/4 estimate; no offline tokenizer dev dependency installed",
+  "results": [
+    {
+      "case": "zod-ci",
+      "question": "Why did CI fail at this PR head?",
+      "expectedEvidence": [
+        {
+          "label": "PR head revision",
+          "pattern": "611a961879eef8379c44f778b113316b084180fa"
+        },
+        {
+          "label": "recursive pipe return type",
+          "pattern": "'pipe' implicitly has return type 'any'"
+        },
+        {
+          "label": "circular pipe type",
+          "pattern": "Type of property 'pipe' circularly references itself"
+        },
+        {
+          "label": "first source location",
+          "pattern": "recursive-types\\.test\\.ts:456:9"
+        },
+        {
+          "label": "second source location",
+          "pattern": "recursive-types\\.test\\.ts:457:14"
+        }
+      ],
+      "nativeCommands": [
+        "gh pr view 5914 -R colinhacks/zod --json number,url,headRefOid",
+        "gh run list -R colinhacks/zod --commit 611a961879eef8379c44f778b113316b084180fa --json databaseId,workflowName,conclusion,headSha,url",
+        "gh run view 32274929243 -R colinhacks/zod --json databaseId,headSha,url,workflowName,conclusion,jobs",
+        "gh run view 32274929243 -R colinhacks/zod --log-failed"
+      ],
+      "gghCommand": "ggh ci why 5914 -R colinhacks/zod --agent",
+      "native": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 5402,
+        "tokens": 1350.5,
+        "toolCalls": 4
+      },
+      "ggh": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 7231,
+        "tokens": 1807.75,
+        "toolCalls": 1,
+        "subprocessCalls": 6,
+        "exitCode": 0,
+        "unexpected": [],
+        "stderr": ""
+      }
+    },
+    {
+      "case": "zod-status",
+      "question": "Which branch and tracking branch, what drift, and is it clean?",
+      "expectedEvidence": [
+        {
+          "label": "branch",
+          "pattern": "main"
+        },
+        {
+          "label": "tracking branch",
+          "pattern": "origin/main"
+        },
+        {
+          "label": "ahead/behind",
+          "pattern": "# branch\\.ab \\+0 -0|\"ahead\":0,\"behind\":0"
+        },
+        {
+          "label": "clean checkout",
+          "pattern": "^# branch\\.ab \\+0 -0\\n?$|\"staged\":0,\"unstaged\":0,\"untracked\":0,\"conflicts\":0"
+        }
+      ],
+      "nativeCommands": [
+        "git status --porcelain=v2 --branch"
+      ],
+      "gghCommand": "ggh status --agent",
+      "native": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 121,
+        "tokens": 30.25,
+        "toolCalls": 1
+      },
+      "ggh": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 331,
+        "tokens": 82.75,
+        "toolCalls": 1,
+        "subprocessCalls": 7,
+        "exitCode": 0,
+        "unexpected": [],
+        "stderr": ""
+      }
+    },
+    {
+      "case": "zod-run",
+      "question": "Which run/jobs failed and what did the failed steps print?",
+      "expectedEvidence": [
+        {
+          "label": "run ID",
+          "pattern": "32274929243"
+        },
+        {
+          "label": "conclusion",
+          "pattern": "failure"
+        },
+        {
+          "label": "workflow",
+          "pattern": "test"
+        },
+        {
+          "label": "failed-step output",
+          "pattern": "'pipe' implicitly has return type 'any'"
+        }
+      ],
+      "nativeCommands": [
+        "gh run view 32274929243 -R colinhacks/zod --json databaseId,displayTitle,workflowName,status,conclusion,headBranch,event,createdAt,url,jobs",
+        "gh run view 32274929243 -R colinhacks/zod --log-failed"
+      ],
+      "gghCommand": "ggh run 32274929243 -R colinhacks/zod --agent",
+      "native": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 230459,
+        "tokens": 57614.75,
+        "toolCalls": 2
+      },
+      "ggh": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 233858,
+        "tokens": 58464.5,
+        "toolCalls": 1,
+        "subprocessCalls": 4,
+        "exitCode": 0,
+        "unexpected": [],
+        "stderr": ""
+      }
+    },
+    {
+      "case": "vscode-ci",
+      "question": "Why did CI fail at this PR head?",
+      "expectedEvidence": [
+        {
+          "label": "PR head revision",
+          "pattern": "5f8cec627c1d4b555e917956e93233ca140a4eba"
+        },
+        {
+          "label": "missing dependency",
+          "pattern": "SessionChatInputToolbar depends on UNKNOWN service quickInputService"
+        },
+        {
+          "label": "deferring failed step",
+          "pattern": "Fail if fixtures had errors"
+        },
+        {
+          "label": "second failed job",
+          "pattern": "Screenshots & Tests"
+        }
+      ],
+      "nativeCommands": [
+        "gh pr view 343557 -R microsoft/vscode --json number,url,headRefOid",
+        "gh run list -R microsoft/vscode --commit 5f8cec627c1d4b555e917956e93233ca140a4eba --json databaseId,workflowName,conclusion,headSha,url",
+        "gh run view 39818915094 -R microsoft/vscode --json databaseId,headSha,url,workflowName,conclusion,jobs",
+        "gh run view 39818915094 -R microsoft/vscode --log-failed",
+        "gh run view 39818915094 -R microsoft/vscode --job 119964605506 --log"
+      ],
+      "gghCommand": "ggh ci why 343557 -R microsoft/vscode --agent",
+      "native": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 133470,
+        "tokens": 33367.5,
+        "toolCalls": 5
+      },
+      "ggh": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 8625,
+        "tokens": 2156.25,
+        "toolCalls": 1,
+        "subprocessCalls": 10,
+        "exitCode": 0,
+        "unexpected": [],
+        "stderr": ""
+      }
+    },
+    {
+      "case": "vscode-status",
+      "question": "Which branch and tracking branch, what drift, and is it clean?",
+      "expectedEvidence": [
+        {
+          "label": "branch",
+          "pattern": "main"
+        },
+        {
+          "label": "tracking branch",
+          "pattern": "origin/main"
+        },
+        {
+          "label": "ahead/behind",
+          "pattern": "# branch\\.ab \\+0 -0|\"ahead\":0,\"behind\":0"
+        },
+        {
+          "label": "clean checkout",
+          "pattern": "^# branch\\.ab \\+0 -0\\n?$|\"staged\":0,\"unstaged\":0,\"untracked\":0,\"conflicts\":0"
+        }
+      ],
+      "nativeCommands": [
+        "git status --porcelain=v2 --branch"
+      ],
+      "gghCommand": "ggh status --agent",
+      "native": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 121,
+        "tokens": 30.25,
+        "toolCalls": 1
+      },
+      "ggh": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 334,
+        "tokens": 83.5,
+        "toolCalls": 1,
+        "subprocessCalls": 7,
+        "exitCode": 0,
+        "unexpected": [],
+        "stderr": ""
+      }
+    },
+    {
+      "case": "vscode-run",
+      "question": "Which run/jobs failed and what did the failed steps print?",
+      "expectedEvidence": [
+        {
+          "label": "run ID",
+          "pattern": "39818915094"
+        },
+        {
+          "label": "conclusion",
+          "pattern": "failure"
+        },
+        {
+          "label": "workflow",
+          "pattern": "Component Fixtures"
+        },
+        {
+          "label": "failed-step output",
+          "pattern": "See the 'Check fixture errors' step"
+        }
+      ],
+      "nativeCommands": [
+        "gh run view 39818915094 -R microsoft/vscode --json databaseId,displayTitle,workflowName,status,conclusion,headBranch,event,createdAt,url,jobs",
+        "gh run view 39818915094 -R microsoft/vscode --log-failed"
+      ],
+      "gghCommand": "ggh run 39818915094 -R microsoft/vscode --agent",
+      "native": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 11533,
+        "tokens": 2883.25,
+        "toolCalls": 2
+      },
+      "ggh": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 11846,
+        "tokens": 2961.5,
+        "toolCalls": 1,
+        "subprocessCalls": 4,
+        "exitCode": 0,
+        "unexpected": [],
+        "stderr": ""
+      }
+    }
+  ]
+}

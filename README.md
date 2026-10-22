@@ -162,6 +162,39 @@ ggh run cancel 12345
 
 With `--ai`, issue generation uses the title and optional `--notes` to draft a description, reproduction steps, and expected and actual results. Accept, edit, or regenerate before opening the issue.
 
+### CI failure evidence
+
+`ggh ci why` is a read-only prototype that links CI evidence to a PR's head SHA.
+It fetches the latest run per workflow for that revision, failing jobs and steps,
+check-run annotations, and failed-step logs. When those logs defer to another
+step or contain only a summary, it reads the full job log.
+
+```bash
+ggh ci why                         # Current branch's PR
+ggh ci why 42                      # PR number, or run ID if no PR matches
+ggh ci why https://github.com/owner/repo/pull/42
+ggh ci why 12345 --run -R owner/repo # Explicit run ID
+ggh ci why 42 --agent --max-bytes 6144 --context 2
+```
+
+The deterministic extractor keeps errors, assertions, exceptions, TypeScript
+errors, and source locations with context and original log line numbers.
+`--agent` returns compact JSON with result `schemaVersion: 1`, described by
+`ggh agent schema`. Stale runs are flagged and their evidence excluded.
+Missing logs, annotations, and incomplete pagination appear in `unavailable`.
+
+The default evidence budget is 6 KiB per failing job, shared by annotations and
+log excerpts. Failure identity and other metadata are extra. Every failure has
+`truncated: {bytesTotal, bytesShown}` for the selected log source and a separate
+`annotationsTruncated` count. Log totals count original UTF-8 bytes; shown bytes
+count displayed text after prefix removal and deduplication. Counts disclose
+extraction omissions as well as budget cuts. `--context` supplies nearby lines
+after matching evidence receives its budget.
+
+The [offline benchmark](bench/agent/README.md) records output size and evidence
+recall on two archived failures. It includes losses against native commands.
+Agent repair success and blind diagnosis accuracy remain unmeasured.
+
 ## Stacked branches
 
 Each new branch's parent is stored in Git config. `ggh stack` reads those relationships; it needs no separate service or account. Restacking updates local branches. `stack submit` is the explicit publication action and uses `--force-with-lease` when a rewritten branch must replace a remote tip. A changed remote tip stops the update.

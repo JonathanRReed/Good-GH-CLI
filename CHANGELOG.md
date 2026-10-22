@@ -7,6 +7,10 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add read-only `ggh ci why` with PR-head-linked runs, failed steps, annotations,
+  full-job fallback, bounded evidence, explicit truncation, and agent schema v1.
+- Add an offline Bun agent benchmark with pinned Zod and VS Code captures,
+  evidence recall, output bytes, token estimates, and a CI evidence gate.
 - Add read-only `ggh pr threads` with full comment bodies, nested pagination,
   resolution and outdated state, revision SHAs, edited-comment cursors, compact
   agent output, a versioned result schema, and a read-only MCP tool.
