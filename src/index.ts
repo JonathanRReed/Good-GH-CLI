@@ -1,3 +1,4 @@
+import { removedCommandMessage } from "./services/removed-commands.ts";
 import { registerTidyCommand } from "./commands/tidy.ts";
 import { registerLostCommand } from "./commands/lost.ts";
 import { registerProjectsCommand } from "./commands/projects.ts";
@@ -18,7 +19,6 @@ import { registerCiCommand } from "./commands/ci.ts";
 import { registerChecksCommand } from "./commands/checks.ts";
 import { registerCompletionCommand } from "./commands/completion.ts";
 import { registerDiscardCommand } from "./commands/discard.ts";
-import { registerDraftCommand } from "./commands/draft.ts";
 import { registerHookCommand } from "./commands/hook.ts";
 import { registerIgnoreCommand } from "./commands/ignore.ts";
 import { registerLogCommand } from "./commands/log.ts";
@@ -26,21 +26,12 @@ import { registerIssueCommand } from "./commands/issue.ts";
 import { registerMcpCommand } from "./commands/mcp.ts";
 import { registerRunCommand } from "./commands/run.ts";
 import { registerApiCommand } from "./commands/api.ts";
-import { registerBrowseCommand } from "./commands/browse.ts";
-import { registerGistCommand } from "./commands/gist.ts";
-import { registerLabelCommand } from "./commands/label.ts";
 import { registerNotificationsCommand } from "./commands/notifications.ts";
 import { registerPluginCommand, loadPlugins } from "./commands/plugin.ts";
 import { registerRepoCommand } from "./commands/repo.ts";
-import { registerSearchCommand } from "./commands/search.ts";
-import { registerSecretCommand } from "./commands/secret.ts";
-import { registerVariableCommand } from "./commands/variable.ts";
-import { registerWorkflowCommand } from "./commands/workflow.ts";
 import { registerStackCommand } from "./commands/stack.ts";
-import { registerChangelogCommand } from "./commands/changelog.ts";
 import { registerReviewCommand } from "./commands/review.ts";
 import { registerPrCommand } from "./commands/pr.ts";
-import { registerReleaseCommand } from "./commands/release.ts";
 import { registerRenameCommand } from "./commands/rename.ts";
 import { registerResolveCommand } from "./commands/resolve.ts";
 import { registerSquashCommand } from "./commands/squash.ts";
@@ -48,8 +39,6 @@ import { registerStashCommand } from "./commands/stash.ts";
 import { registerStatusCommand } from "./commands/status.ts";
 import { registerSwitchCommand } from "./commands/switch.ts";
 import { registerSyncCommand } from "./commands/sync.ts";
-import { registerTeamCommand } from "./commands/team.ts";
-import { registerTriageCommand } from "./commands/triage.ts";
 import { registerUndoCommand } from "./commands/undo.ts";
 import { gitPassthrough } from "./services/git.ts";
 import { run } from "./utils/exec.ts";
@@ -93,25 +82,13 @@ export const HELP_GROUPS: Record<string, string> = {
   run: "GitHub",
   checks: "GitHub",
   ci: "GitHub",
-  release: "GitHub",
-  changelog: "GitHub",
   api: "GitHub",
-  workflow: "GitHub",
-  label: "GitHub",
-  gist: "GitHub",
-  search: "GitHub",
-  secret: "GitHub",
-  variable: "GitHub",
   notifications: "GitHub",
-  browse: "GitHub",
-  triage: "GitHub",
-  draft: "Local workflow",
   ignore: "Local workflow",
   alias: "Local workflow",
   hook: "Local workflow",
   mcp: "Extensions",
   plugin: "Extensions",
-  team: "Extensions",
   config: "Setup",
   completion: "Setup",
   git: "Native tools",
@@ -168,25 +145,13 @@ export async function createProgram(): Promise<Command> {
   registerRunCommand(program);
   registerChecksCommand(program);
   registerCiCommand(program);
-  registerReleaseCommand(program);
-  registerChangelogCommand(program);
   registerApiCommand(program);
-  registerWorkflowCommand(program);
-  registerLabelCommand(program);
-  registerGistCommand(program);
-  registerSearchCommand(program);
-  registerSecretCommand(program);
-  registerVariableCommand(program);
   registerNotificationsCommand(program);
-  registerBrowseCommand(program);
-  registerTriageCommand(program);
-  registerDraftCommand(program);
   registerIgnoreCommand(program);
   registerAliasCommand(program);
   registerHookCommand(program);
   registerMcpCommand(program);
   registerPluginCommand(program);
-  registerTeamCommand(program);
 
   registerConfigCommand(program);
   registerOperationCommand(program);
@@ -257,6 +222,15 @@ export async function runCli(argv: string[]): Promise<void> {
   if (agentRequested) {
     beginCommandOutput();
     setFlags({ agent: true, json: true, noInput: true });
+  }
+  const removedHead = args.find(arg => !arg.startsWith("-"));
+  const removed = removedHead ? removedCommandMessage(removedHead) : undefined;
+  if (removed) {
+    if (args.includes("--json")) setFlags({ json: true });
+    setCommandPath([removedHead ?? ""]);
+    fail(removed, { code: "invalid_arguments" });
+    finalizeJsonOutput();
+    return;
   }
   let program: Command;
   try { program = await createProgram(); }

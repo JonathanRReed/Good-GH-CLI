@@ -82,13 +82,4 @@ describe("github surface", () => {
     expect(help.toLowerCase()).not.toContain("url");
   });
 
-  for (const name of ["release", "workflow"]) {
-    it(`\`ggh ${name}\` keeps its default list action reachable`, async () => {
-      const program = await createProgram();
-      const command = program.commands.find((candidate) => candidate.name() === name);
-      expect(command).toBeDefined();
-      expect(command!.usage()).toContain("[action]");
-      expect(command!.usage()).not.toContain("<action>");
-    });
-  }
 });

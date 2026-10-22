@@ -1,98 +1,39 @@
 import { Command } from "commander";
 import { getFlags } from "../services/runtime.ts";
-import { parseJsonResponse } from "../services/ai/prompt.ts";
 import { clampLimit, ghGlobal, paginateGhGlobal, requireAuth } from "../services/github.ts";
 import { dryRun } from "../utils/flags.ts";
-import { emitJson, fail, failFromGitHub, header, p, pc, jsonOut, unknownAction, confirmOrAbort } from "../utils/ui.ts";
+import { emitJson, failFromGitHub, header, p, pc, jsonOut } from "../utils/ui.ts";
 
 export function registerNotificationsCommand(program: Command): void {
   const notifications = program
-    .command("notifications [action] [id]")
+    .command("notifications")
     .alias("notifs")
-    .description("List, view, mark, and unsubscribe from GitHub notifications")
+    .description("List notifications or mark them read without prompting")
     .option("--limit <n>", "Maximum notifications to list", "30")
     .option("-a, --all", "Include read notifications")
-    .option("-y, --yes", "Skip confirmation")
-    .action(async (
-      action?: string,
-      id?: string,
-      options?: { limit?: string; all?: boolean; yes?: boolean },
-    ) => {
-      header("GitHub Notifications");
-
-      if (!(await requireAuth())) return;
-
-      const subcommand = action?.toLowerCase();
-
-      if (subcommand === "list" || (!action && !id)) {
-        await listNotifications(options);
-        return;
-      }
-
-      if (subcommand === "view" && id) {
-        await viewNotification(id);
-        return;
-      }
-
-      if (subcommand === "mark") {
-        if (id) {
-          await markNotification(id, options);
-        } else {
-          await markAllNotifications(options);
-        }
-        return;
-      }
-
-      if (subcommand === "unsubscribe" && id) {
-        await unsubscribeNotification(id, options);
-        return;
-      }
-
-      unknownAction("notification", action, ["list", "view", "mark", "unsubscribe"]);
-    });
-
-  notifications
-    .command("list")
-    .description("List notifications")
-    .option("--limit <n>", "Maximum notifications to list", "30")
-    .option("-a, --all", "Include read notifications")
-    .action(async (options?: { limit?: string; all?: boolean }) => {
+    .action(async (options: { limit?: string; all?: boolean }) => {
       header("GitHub Notifications");
       if (!(await requireAuth())) return;
       await listNotifications(options);
     });
 
-  notifications
-    .command("view <id>")
-    .description("View a notification")
-    .action(async (id: string) => {
+  notifications.command("list")
+    .description("List notifications")
+    .option("--limit <n>", "Maximum notifications to list", "30")
+    .option("-a, --all", "Include read notifications")
+    .action(async (options: { limit?: string; all?: boolean }) => {
       header("GitHub Notifications");
       if (!(await requireAuth())) return;
-      await viewNotification(id);
+      await listNotifications(options);
     });
 
-  notifications
-    .command("mark [id]")
-    .description("Mark one or all notifications as read")
-    .option("-y, --yes", "Skip confirmation")
-    .action(async (id?: string, options?: { yes?: boolean }) => {
+  notifications.command("mark [id]")
+    .description("Mark one notification read, or all when no ID is supplied")
+    .action(async (id?: string) => {
       header("GitHub Notifications");
       if (!(await requireAuth())) return;
-      if (id) {
-        await markNotification(id, options);
-      } else {
-        await markAllNotifications(options);
-      }
-    });
-
-  notifications
-    .command("unsubscribe <id>")
-    .description("Unsubscribe from a notification")
-    .option("-y, --yes", "Skip confirmation")
-    .action(async (id: string, options?: { yes?: boolean }) => {
-      header("GitHub Notifications");
-      if (!(await requireAuth())) return;
-      await unsubscribeNotification(id, options);
+      if (id) await markNotification(id);
+      else await markAllNotifications();
     });
 
   async function listNotifications(options?: { limit?: string; all?: boolean }): Promise<void> {
@@ -123,32 +64,8 @@ export function registerNotificationsCommand(program: Command): void {
     }
   }
 
-  async function viewNotification(id: string): Promise<void> {
-    const s = p.spinner();
-    s.start(`Fetching notification ${id}...`);
-    try {
-      const { stdout } = await ghGlobal(["api", `/notifications/threads/${id}`]);
-      const data = parseJsonResponse(stdout, null);
-      s.stop(data ? "Loaded." : "Not found.");
-      if (!data) {
-        fail(`Notification ${id} not found.`);
-        return;
-      }
-      if (jsonOut(data)) return;
-      const n = data as { id: string; subject: { title: string; type: string }; reason: string; unread: boolean };
-      p.log.step(pc.bold(n.subject.title));
-      p.log.message(`  Type:  ${pc.cyan(n.subject.type)}`);
-      p.log.message(`  Reason: ${pc.cyan(n.reason)}`);
-      p.log.message(`  Unread: ${n.unread ? pc.yellow("yes") : pc.dim("no")}`);
-    } catch (err) {
-      s.stop(pc.red("Failed to fetch notification."));
-      failFromGitHub(err);
-    }
-  }
-
-  async function markNotification(id: string, options?: { yes?: boolean }): Promise<void> {
+  async function markNotification(id: string): Promise<void> {
     if (dryRun(`mark notification ${id} as read`)) return;
-    if (!(await confirmOrAbort(`Mark notification ${pc.bold(id)} as read?`, { assumeYes: options?.yes }))) return;
     const s = p.spinner();
     s.start(`Marking notification ${id} as read...`);
     try {
@@ -162,9 +79,8 @@ export function registerNotificationsCommand(program: Command): void {
     }
   }
 
-  async function markAllNotifications(options?: { yes?: boolean }): Promise<void> {
+  async function markAllNotifications(): Promise<void> {
     if (dryRun("mark all notifications as read")) return;
-    if (!(await confirmOrAbort("Mark all notifications as read?", { assumeYes: options?.yes }))) return;
     const s = p.spinner();
     s.start("Marking all notifications as read...");
     try {
@@ -178,19 +94,4 @@ export function registerNotificationsCommand(program: Command): void {
     }
   }
 
-  async function unsubscribeNotification(id: string, options?: { yes?: boolean }): Promise<void> {
-    if (dryRun(`unsubscribe from notification ${id}`)) return;
-    if (!(await confirmOrAbort(`Unsubscribe from notification ${pc.bold(id)}?`, { assumeYes: options?.yes }))) return;
-    const s = p.spinner();
-    s.start(`Unsubscribing from notification ${id}...`);
-    try {
-      await ghGlobal(["api", "--method", "PUT", `/notifications/threads/${id}/subscription`, "-f", "ignored=true"]);
-      s.stop(pc.green("Unsubscribed."));
-      if (getFlags().json) emitJson({ id, action: "unsubscribe" });
-      p.outro("Done.");
-    } catch (err) {
-      s.stop(pc.red("Failed."));
-      failFromGitHub(err);
-    }
-  }
 }

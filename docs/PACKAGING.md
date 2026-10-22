@@ -46,6 +46,13 @@ from a GitHub asset release alone.
 regenerates the versioned man page, rebuilds, commits, and creates a **local**
 tag. It does not push. Review the commit before pushing the tag.
 
+## Release command cuts
+
+The repository ships through `scripts/release.ts`, the Makefile, and
+`.github/workflows/release.yml`. None invokes `ggh release` or `ggh changelog`.
+The script promotes a manually maintained Unreleased section; CI uses native
+`gh release` and `scripts/release-notes.cjs`. Version 0.6 removes both CLI wrappers.
+
 ## Build
 
 Build dependencies: Bun 1.4.0, Git, and the dependencies pinned in `bun.lock`.

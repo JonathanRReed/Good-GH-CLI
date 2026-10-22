@@ -34,8 +34,9 @@ arrays and no shell. The npm launcher follows the same rule on Windows.
 
 ### Credential disclosure
 
-Secret prompts hide typed input. Secret values and GitHub bodies use stdin, so
-they do not appear in process arguments. AI prompts use owner-only temporary
+Use native `gh secret set NAME` for masked input or stdin. The removed ggh secret
+command is no longer part of this contract. GitHub bodies use stdin to keep
+their contents out of process arguments. AI prompts use owner-only temporary
 files where a provider requires a file and remove them after use. Config and
 cache files use owner-only permissions on POSIX systems.
 

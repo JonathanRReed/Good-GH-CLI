@@ -9,10 +9,10 @@ import { run } from "../utils/exec.ts";
 import { fail, jsonOut } from "../utils/ui.ts";
 import { getAIUsageReports } from "./ai/index.ts";
 
-const MANAGED_GIT_DOMAINS = new Set(["commit", "stack", "worktree", "stash", "discard", "undo", "resolve", "squash", "rename", "sync", "switch", "clone", "hook", "ignore", "draft", "operation"]);
+const MANAGED_GIT_DOMAINS = new Set(["commit", "stack", "worktree", "stash", "discard", "undo", "resolve", "squash", "rename", "sync", "switch", "clone", "hook", "ignore", "operation"]);
 const READ_ACTIONS = new Set(["list", "view", "get", "doctor", "diff", "status", "log", "show", "inspect", "download", "threads"]);
 const LOCAL_MUTATIONS = new Set(["commit", "discard", "sync", "squash", "undo", "rename", "resolve", "switch", "clone"]);
-const READ_DOMAINS = new Set(["status", "log", "search", "browse", "checks", "mcp", "completion", "operation", "review"]);
+const READ_DOMAINS = new Set(["status", "log", "checks", "mcp", "completion", "operation", "review"]);
 
 function commandParts(command: Command): string[] {
   const names: string[] = [];
@@ -29,7 +29,7 @@ function wouldRecord(command: Command, names: string[]): boolean {
   const domain = names[0] ?? "";
   const action = names.at(-1) ?? "";
   if (getFlags().dryRun || READ_DOMAINS.has(domain)) return false;
-  if (!getFlags().aiDisabled && (action === "triage" || action === "review" || action === "summarize")) return true;
+  if (!getFlags().aiDisabled && (action === "review" || action === "summarize")) return true;
   if (!DRY_RUN_CAPABLE.has(domain)) return false;
   const options = command.opts();
   if (domain === "config" && action === "doctor") return options.fix === true;
@@ -40,9 +40,7 @@ function wouldRecord(command: Command, names: string[]): boolean {
   if (domain === "alias") return Boolean(options.remove || command.processedArgs[1]?.length);
   if (domain === "ignore") return Boolean(options.remove || command.processedArgs[0]?.length);
   if (domain === "plugin") return ["install", "remove"].includes(String(command.processedArgs[0]));
-  if (domain === "team") return ["publish", "pull"].includes(String(command.processedArgs[0]));
-  if (domain === "changelog") return !getFlags().aiDisabled || (!options.stdout && !getFlags().json);
-  if (domain === "stash" || domain === "draft") return !getFlags().json;
+  if (domain === "stash") return !getFlags().json;
   if (domain === "api") return (typeof options.method === "string" && options.method.toUpperCase() !== "GET") || command.processedArgs.some(arg => Array.isArray(arg) && arg.some(value => ["-X", "--method", "-f", "-F", "--field", "--raw-field"].includes(value)));
   return false;
 }

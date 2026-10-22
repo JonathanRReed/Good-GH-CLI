@@ -67,11 +67,12 @@ Every managed command accepts `--agent`. It wraps this payload in `result` and d
 | `ggh worktree list` |  | --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run | Unspecified |
 | `ggh worktree add` | `[branchOrPrompt]` | --base value, --copy-env, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run | Unspecified |
 | `ggh worktree remove` | `[target]` | --force, --yes, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run | Unspecified |
-| `ggh stash` | `[action]` | --message value, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
+| `ggh stash` | `[action]` | --message value, --name value, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
 | `ggh stash pop` | `[ref]` | --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
 | `ggh stash drop` | `<ref>` | --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
-| `ggh stash push` |  | --message value, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
-| `ggh stash list` |  | --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
+| `ggh stash push` |  | --message value, --name value, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
+| `ggh stash list` |  | --named, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
+| `ggh stash restore` | `<name>` | --yes, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
 | `ggh discard` | `[files...]` | --all, --yes, --include-untracked, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
 | `ggh undo` |  | --yes, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
 | `ggh resolve` |  | --yes, --dry-run, --agent, --quiet, --no-input, --json | Unspecified |
@@ -124,52 +125,10 @@ Every managed command accepts `--agent`. It wraps this payload in `result` and d
 | `ggh checks` |  | --watch, --timeout value, --dry-run, --agent, --quiet, --no-input, --json, --repo value | Unspecified |
 | `ggh ci` |  | --agent, --quiet, --no-input, --json, --repo value | Unspecified |
 | `ggh ci why` | `[target]` | --run, --max-bytes value, --context value, --agent, --quiet, --no-input, --json, --repo value | [ciWhy](#ciwhy) |
-| `ggh release` | `[action] [tag] [files...]` | --title value, --notes value, --draft, --prerelease, --yes, --limit value, --pattern value, --dir value, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
-| `ggh release list` |  | --limit value, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
-| `ggh release view` | `<tag>` | --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
-| `ggh release download` | `<tag>` | --pattern value, --dir value, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
-| `ggh release upload` | `<tag> [files...]` | --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
-| `ggh release delete` | `<tag>` | --yes, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
-| `ggh release create` | `[tag]` | --title value, --notes value, --draft, --prerelease, --yes, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
-| `ggh changelog` | `[version]` | --since value, --stdout, --yes, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run | Unspecified |
 | `ggh api` | `<endpoint...>` | --agent, --quiet, --no-input, --json, --dry-run, --repo value | Unspecified |
-| `ggh workflow` | `[action] [id]` | --limit value, --yes, --agent, --quiet, --no-input, --json, --dry-run, --repo value | Unspecified |
-| `ggh workflow list` |  | --limit value, --agent, --quiet, --no-input, --json, --dry-run, --repo value | Unspecified |
-| `ggh workflow view` | `<id>` | --agent, --quiet, --no-input, --json, --dry-run, --repo value | Unspecified |
-| `ggh workflow run` | `<id>` | --yes, --agent, --quiet, --no-input, --json, --dry-run, --repo value | Unspecified |
-| `ggh workflow enable` | `<id>` | --yes, --agent, --quiet, --no-input, --json, --dry-run, --repo value | Unspecified |
-| `ggh workflow disable` | `<id>` | --yes, --agent, --quiet, --no-input, --json, --dry-run, --repo value | Unspecified |
-| `ggh label` | `[action] [name]` | --limit value, --color value, --description value, --new-name value, --yes, --agent, --quiet, --no-input, --json, --dry-run, --repo value | Unspecified |
-| `ggh label list` |  | --limit value, --agent, --quiet, --no-input, --json, --dry-run, --repo value | Unspecified |
-| `ggh label create` | `<name>` | --color value, --description value, --yes, --agent, --quiet, --no-input, --json, --dry-run, --repo value | Unspecified |
-| `ggh label edit` | `<name>` | --color value, --description value, --new-name value, --yes, --agent, --quiet, --no-input, --json, --dry-run, --repo value | Unspecified |
-| `ggh label delete` | `<name>` | --yes, --agent, --quiet, --no-input, --json, --dry-run, --repo value | Unspecified |
-| `ggh gist` | `[action] [idOrFiles...]` | --limit value, --public, --desc value, --add value, --yes, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
-| `ggh gist list` |  | --limit value, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
-| `ggh gist view` | `<id>` | --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
-| `ggh gist create` | `<files...>` | --public, --desc value, --yes, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
-| `ggh gist edit` | `<id>` | --add value, --desc value, --yes, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
-| `ggh gist delete` | `<id>` | --yes, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
-| `ggh search` | `[type] [query...]` | --limit value, --sort value, --order value, --dry-run, --agent, --quiet, --no-input, --json | Unspecified |
-| `ggh secret` | `[action] [name]` | --limit value, --body value, --body-file value, --yes, --agent, --quiet, --no-input, --json, --dry-run, --repo value | Unspecified |
-| `ggh secret list` |  | --limit value, --agent, --quiet, --no-input, --json, --dry-run, --repo value | Unspecified |
-| `ggh secret set` | `<name> [value]` | --body value, --body-file value, --yes, --agent, --quiet, --no-input, --json, --dry-run, --repo value | Unspecified |
-| `ggh secret delete` | `<name>` | --yes, --agent, --quiet, --no-input, --json, --dry-run, --repo value | Unspecified |
-| `ggh variable` | `[action] [name]` | --limit value, --body value, --body-file value, --yes, --agent, --quiet, --no-input, --json, --dry-run, --repo value | Unspecified |
-| `ggh variable list` |  | --limit value, --agent, --quiet, --no-input, --json, --dry-run, --repo value | Unspecified |
-| `ggh variable set` | `<name> [value]` | --body value, --body-file value, --yes, --agent, --quiet, --no-input, --json, --dry-run, --repo value | Unspecified |
-| `ggh variable delete` | `<name>` | --yes, --agent, --quiet, --no-input, --json, --dry-run, --repo value | Unspecified |
-| `ggh notifications` | `[action] [id]` | --limit value, --all, --yes, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
+| `ggh notifications` |  | --limit value, --all, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
 | `ggh notifications list` |  | --limit value, --all, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
-| `ggh notifications view` | `<id>` | --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
-| `ggh notifications mark` | `[id]` | --yes, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
-| `ggh notifications unsubscribe` | `<id>` | --yes, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
-| `ggh triage` |  | --limit value, --source value, --provider value, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
-| `ggh draft` | `[action]` | --provider value, --yes, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run | Unspecified |
-| `ggh draft create` |  | --provider value, --yes, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run | Unspecified |
-| `ggh draft list` |  | --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run | Unspecified |
-| `ggh draft resume` |  | --yes, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run | Unspecified |
-| `ggh draft drop` |  | --yes, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run | Unspecified |
+| `ggh notifications mark` | `[id]` | --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
 | `ggh ignore` | `[patterns...]` | --local, --list, --remove value, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
 | `ggh ignore list` |  | --local, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
 | `ggh ignore add` | `[patterns...]` | --local, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
@@ -188,10 +147,6 @@ Every managed command accepts `--agent`. It wraps this payload in `result` and d
 | `ggh plugin list` |  | --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
 | `ggh plugin install` | `<name>` | --from value, --yes, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
 | `ggh plugin remove` | `<name>` | --yes, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
-| `ggh team` | `[action]` | --user value, --gist value, --yes, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
-| `ggh team publish` |  | --yes, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
-| `ggh team pull` |  | --user value, --gist value, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
-| `ggh team list` |  | --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
 | `ggh config` |  | --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
 | `ggh config list` |  | --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
 | `ggh config cache-clear` |  | --agent, --quiet, --no-input, --json, --dry-run | Unspecified |

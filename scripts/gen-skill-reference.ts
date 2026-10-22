@@ -49,7 +49,7 @@ export async function generateSkillReference(): Promise<string> {
   const home = mkdtempSync(join(tmpdir(), "ggh-skill-schema-"));
   try {
     const child = Bun.spawn([process.execPath, "run", join(root, "bin", "ggh.ts"), "agent", "schema"], {
-      cwd: root, env: { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: home, GGH_NO_PLUGINS: "1" }, stdin: "ignore", stdout: "pipe", stderr: "pipe",
+      cwd: root, env: { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: home, GGH_CONFIG_DIR: join(home, "good-gh"), GGH_NO_PLUGINS: "1" }, stdin: "ignore", stdout: "pipe", stderr: "pipe",
     });
     const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
     if (code !== 0 || stderr) throw new Error(`ggh agent schema failed: ${stderr || stdout}`);
