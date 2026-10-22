@@ -152,7 +152,7 @@ describe("missing worktree metadata", () => {
     const old = new Date("2020-01-01T00:00:00Z"); utimesSync(join(data, "gitdir"), old, old); if (existsSync(join(data, "index"))) utimesSync(join(data, "index"), old, old);
     const snapshot = await plan(); expect(snapshot.clones[0]?.actions.some(action => action.kind === "prune-worktree-metadata")).toBe(false);
     expect(snapshot.clones[0]?.kept).toContainEqual(expect.objectContaining({ reason: expect.stringContaining("unmounted") }));
-    expect(volumeAvailable(unavailable)).toBe(false); expect(volumeAvailable(join(root, "missing"))).toBe(true);
+    expect(await volumeAvailable(unavailable)).toBe(false); expect(await volumeAvailable(join(root, "missing"))).toBe(true);
   });
 });
 function parseRoot() { return process.platform === "win32" ? "Z:\\" : "/"; }
@@ -215,7 +215,8 @@ it("exposes one offline preview, lost JSON and agent schema, and rejects changed
 });
 
 async function remoteFixtureInvocation(body: string) {
-  await git("branch", "topic"); await git("push", "origin", "topic");
+  if (!await git("branch", "--list", "topic")) await git("branch", "topic");
+  await git("push", "origin", "topic");
   const script = join(root, "offline-ssh.cjs");
   writeFileSync(script, `const {spawnSync}=require('node:child_process'); const command=process.argv.at(-1); const operation=command.includes('git-receive-pack')?'receive-pack':'upload-pack'; const child=spawnSync('git',[operation,${JSON.stringify(remote)}],{stdio:'inherit'}); process.exit(child.status??1);`);
   const { quoteShellArgument } = await import("../src/utils/command-args.ts");
@@ -231,6 +232,14 @@ async function remoteFixtureInvocation(body: string) {
     const {run}=await import(${JSON.stringify(new URL("../src/utils/exec.ts", import.meta.url).href)});
     const {clones}=await discoverProjects();
     const plan=await buildTidyPlan(clones,{remoteBranches:true});
+    const spawn=Bun.spawn.bind(Bun); const networkEnvs=[];
+    Bun.spawn=(argv,options)=>{
+      if(argv[0]==='git' && (argv.includes('ls-remote')||argv.includes('push'))){
+        networkEnvs.push(options.env);
+        return spawn(argv,{...options,env:{...options.env,GIT_SSH_COMMAND:${JSON.stringify(`${quoteShellArgument(process.execPath)} ${quoteShellArgument(script)}`)}}});
+      }
+      return spawn(argv,options);
+    };
     ${body}
   ` });
 }
@@ -419,4 +428,27 @@ it("shows full lost detail for a named clone and preserves JSON and agent invent
   const inventory = JSON.parse(json.stdout);
   expect(JSON.parse(agent.stdout).result).toEqual(inventory);
   expect(inventory.items.filter((item: { kind: string }) => item.kind === "unpublished")).toHaveLength(8);
+});
+
+it("tidy remote deletion preserves SSH agent auth and forces batch mode", async () => {
+  const result = await remoteFixtureInvocation(`
+    process.env.SSH_AUTH_SOCK='/tmp/ggh-fixture-agent';
+    const outcomes=await executeTidyPlan(plan,clones,{approvedSnapshot:plan.snapshotId});
+    console.log(JSON.stringify({outcomes,envs:networkEnvs.map(env=>({sock:env.SSH_AUTH_SOCK,ssh:env.GIT_SSH_COMMAND,prompt:env.GIT_TERMINAL_PROMPT}))}));
+  `);
+  expect(result.exitCode, result.stderr).toBe(0);
+  const payload = JSON.parse(result.stdout);
+  expect(payload.outcomes).toContainEqual(expect.objectContaining({ kind: "delete-remote-branch", state: "completed" }));
+  expect(payload.envs).toEqual(Array.from({ length: 2 }, () => ({ sock: "/tmp/ggh-fixture-agent", ssh: "ssh -oBatchMode=yes", prompt: "0" })));
+});
+it("tidy reports remote auth denial as refused and network timeout as uncertain", async () => {
+  for (const denial of [true, false]) {
+    const result = await remoteFixtureInvocation(`
+      const original=Bun.spawn.bind(Bun);
+      Bun.spawn=(argv,options)=>argv[0]==='git'&&argv.includes('ls-remote')?{pid:0,stdout:new Blob([]).stream(),stderr:new Blob([${JSON.stringify(denial ? "Permission denied (publickey)" : "Connection timed out")}]).stream(),exited:Promise.resolve(128),kill(){},stdin:null}:original(argv,options);
+      console.log(JSON.stringify(await executeTidyPlan(plan,clones,{approvedSnapshot:plan.snapshotId})));
+    `);
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toContainEqual(expect.objectContaining({ kind: "delete-remote-branch", state: denial ? "refused" : "uncertain" }));
+  }
 });

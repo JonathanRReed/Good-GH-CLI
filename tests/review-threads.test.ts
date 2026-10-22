@@ -272,3 +272,13 @@ describe("review threads", () => {
     expect(result.calls).toHaveLength(1);
   });
 });
+
+test("human threads strip terminal controls while JSON bodies and logins stay raw", async () => {
+  const malicious = "review\x1b[2J\x1b]0;forged\x07\rbody";
+  const replies = [graphql(response([thread("T1", { comments: connection([comment("C1", { body: malicious, author: { login: malicious } })]) })]))];
+  const human = await cli(["42"], replies);
+  expect(human.exitCode, human.stderr).toBe(0);
+  expect(human.stdout).not.toContain("\x1b"); expect(human.stdout).not.toContain("\r"); expect(human.stdout).toContain("reviewbody");
+  const raw = await cli(["42", "--json"], replies);
+  expect(JSON.parse(raw.stdout).threads[0].comments[0]).toMatchObject({ body: malicious, author: { login: malicious } });
+});
