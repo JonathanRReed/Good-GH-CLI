@@ -12,7 +12,7 @@ import {
   viewPullRequest,
   viewPullRequestInBrowser,
 } from "../services/github.ts";
-import { detectDefaultBranch, fetchPullRequestBranch, requireGitRepo, worktreeAdd } from "../services/git.ts";
+import { detectDefaultBranch, fetchPullRequestBranch, requireGitRepo, checkoutForReview } from "../services/git.ts";
 import { registerPrCreateCommand } from "./pr-create.ts";
 import { registerPrLifecycleCommands } from "./pr-lifecycle.ts";
 import { registerPrReviewCommand } from "./pr-review.ts";
@@ -91,7 +91,7 @@ export function registerPrCommand(program: Command): void {
           s.start(`Setting up isolated worktree for PR #${num}...`);
           try {
             await fetchPullRequestBranch(num, branchName);
-            await worktreeAdd(branchName, worktreePath);
+            await checkoutForReview(branchName, worktreePath);
             s.stop(pc.green(`PR #${num} checked out to isolated worktree at ${pc.bold(pc.cyan(worktreePath))}!`));
             if (jsonOut({ action: "worktree", number: num, branch: branchName, path: worktreePath })) return;
             p.log.info(`Run ${pc.bold(pc.cyan(`cd ${worktreePath}`))} to start working.`);
@@ -302,8 +302,9 @@ export function registerPrCommand(program: Command): void {
       const mergeSpinner = p.spinner();
       mergeSpinner.start(`Merging PR #${num}...`);
       try {
-        await mergePullRequest(num, { method, deleteBranch: true });
-        mergeSpinner.stop(pc.green(`PR #${num} merged.`));
+        const result = await mergePullRequest(num, { method, matchHeadCommit: detail.headRefOid, deleteBranch: true });
+        mergeSpinner.stop(`PR #${num}: ${result.outcome}.`);
+        if (result.cleanupError) p.log.warn(result.cleanupError);
       } catch (err) {
         mergeSpinner.stop(pc.red("Merge failed."));
         failFromGitHub(err);
@@ -352,7 +353,7 @@ export function registerPrCommand(program: Command): void {
       wtSpinner.start(`Creating isolated worktree for PR #${num}...`);
       try {
         await fetchPullRequestBranch(num, branchName);
-        await worktreeAdd(branchName, worktreePath);
+        await checkoutForReview(branchName, worktreePath);
         wtSpinner.stop(pc.green(`PR #${num} ready at ${pc.bold(pc.cyan(worktreePath))}!`));
         p.log.info(`Run ${pc.bold(pc.cyan(`cd ${worktreePath}`))} to review or build.`);
       } catch (err) {

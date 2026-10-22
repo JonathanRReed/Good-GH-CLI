@@ -113,6 +113,21 @@ export const reviewThreadsResultSchema = {
 };
 export const coreResultSchemas = {
   coverage: "Partial field schemas. Optional fields vary by outcome. Other command result payloads are not yet specified.",
+  status: { commandPaths: [["status"]], schema: { type: "object", required: ["repository"], properties: {
+    repository: { type: ["object", "null"], required: ["root", "branch", "detached", "upstream", "ahead", "behind", "staged", "unstaged", "untracked", "conflicts", "operation"], properties: {
+      root: { type: "string" }, branch: { type: ["string", "null"] }, detached: { type: "boolean" }, upstream: { type: ["string", "null"] },
+      ...Object.fromEntries(["ahead", "behind", "staged", "unstaged", "untracked", "conflicts"].map(key => [key, { type: "integer", minimum: 0 }])),
+      operation: { enum: [null, "rebase", "merge", "cherry-pick", "revert", "sequencer", "bisect"] },
+    } }, pullRequest: { type: ["object", "null"] }, github: { type: "object" }, ai: { type: "object" },
+  } } },
+  run: { commandPaths: [["run"]], schema: { anyOf: [{ type: "array", items: { type: "object" } }, { type: "object", required: ["run", "jobs", "log", "logStatus"], properties: {
+    run: { type: "object", not: { required: ["jobs"] } }, jobs: { type: "array", items: { type: "object" } }, log: { type: ["string", "null"] },
+    logStatus: { enum: ["available", "unavailable", "not_applicable"] }, logError: { type: "string" },
+  } }] } },
+  merge: { commandPaths: [["pr", "merge"]], schema: { type: "object", required: ["number", "action", "outcome"], properties: {
+    number: { type: "integer" }, action: { const: "merge" }, outcome: { enum: ["merged", "queued", "auto_merge_enabled", "unknown"] },
+    url: { type: "string" }, cleanupError: { type: "string" },
+  } } },
   publication: { commandPaths: [["repo", "create"], ["pr", "create"], ["commit"]], schema: workflowResultSchema },
   stack: { commandPaths: [["stack"]], includesSubcommands: true, schema: { anyOf: [workflowResultSchema, { type: "array", items: { type: "object", additionalProperties: true, properties: { branch: { type: "string" }, parent: { type: ["string", "null"] }, ahead: { type: "number" }, behind: { type: "number" } } } }] } },
   operationList: { commandPaths: [["operation", "list"]], schema: { type: "array", items: operationResultSchema } },

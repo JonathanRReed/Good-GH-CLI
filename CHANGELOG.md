@@ -11,6 +11,25 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   resolution and outdated state, revision SHAs, edited-comment cursors, compact
   agent output, a versioned result schema, and a read-only MCP tool.
 
+### Fixed
+
+- Pin PR merges to the reviewed head SHA, with `--match-head-commit` for an
+  explicit override. Re-read GitHub state and report merged, queued,
+  auto_merge_enabled, or unknown. Clean up branches only after a confirmed merge.
+- Separate PR review checkouts from development worktree setup. Review checkouts
+  skip env copying, submodule initialization, and shared branch-parent metadata.
+  Development worktrees copy env files only with `ggh wt add --copy-env`.
+- Preserve worktree paths, detached/bare state, locks, and prune reasons with
+  NUL-delimited parsing. Recheck changes and checkout identity before removal;
+  require `--force` to override safety checks.
+- Add an opt-in subprocess environment allowlist that filters inherited values
+  and caller overrides while retaining process essentials.
+- Keep JSON and agent status local by default. Add `--remote` and `--providers`
+  for optional probes. Include upstream, change counts, and operation state.
+- Remove duplicated workflow jobs, fetch failed logs before JSON output, report
+  unavailable logs, emit compact agent JSON, and describe these result schemas
+  in `ggh agent schema`.
+
 ## 0.5.0-beta.2 - 2026-10-15
 
 ### Workflow and release qualification

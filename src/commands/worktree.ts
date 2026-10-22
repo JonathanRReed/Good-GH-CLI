@@ -18,7 +18,7 @@ import { dryRun, isDryRun } from "../utils/flags.ts";
 import { sanitizeForAI } from "../utils/diff.ts";
 import { branchToWorktreeDirectoryName, validateBranchName } from "../utils/branch-name.ts";
 import {
-  confirmOrAbort, jsonOut,
+  jsonOut,
   fail,
   formatAIFallback,
   header,
@@ -53,7 +53,7 @@ export function registerWorktreeCommand(program: Command): void {
         const isCurrent = resolve(process.cwd()) === resolve(item.path);
         const prefix = isCurrent ? pc.green("● ") : "  ";
         p.log.message(
-          `${prefix}${pc.bold(item.branch)} ${pc.dim(`(${item.head.slice(0, 7)})`)}\n    ${pc.dim(item.path)}`,
+          `${prefix}${pc.bold(item.branch ?? "detached")} ${pc.dim(`(${item.head.slice(0, 7)})`)}\n    ${pc.dim(item.path)}`,
         );
       }
       p.outro("Done.");
@@ -62,7 +62,8 @@ export function registerWorktreeCommand(program: Command): void {
   wt.command("add [branchOrPrompt]")
     .description("Create a new worktree (accepts branch name or natural language task prompt)")
     .option("-b, --base <branch>", "Base branch to create worktree from")
-    .action(async (arg?: string, options?: { base?: string }) => {
+    .option("--copy-env", "Copy .env, .env.local, and .env.development into the worktree")
+    .action(async (arg?: string, options?: { base?: string; copyEnv?: boolean }) => {
       header("Add Worktree");
       if (!(await requireGitRepo())) return;
 
@@ -147,7 +148,7 @@ export function registerWorktreeCommand(program: Command): void {
       s.start(`Creating worktree for ${pc.cyan(branchName)} at ${pc.dim(targetPath)}...`);
 
       try {
-        const result = await worktreeAdd(branchName, targetPath, baseBranch);
+        const result = await worktreeAdd(branchName, targetPath, baseBranch, process.cwd(), { copyEnv: options?.copyEnv });
         s.stop(pc.green("Worktree created successfully!"));
         if (jsonOut({ action: "add", branch: branchName, path: targetPath, base: baseBranch, copiedEnvFiles: result.copiedEnvFiles })) return;
         if (result.copiedEnvFiles.length > 0) {
@@ -170,7 +171,7 @@ export function registerWorktreeCommand(program: Command): void {
   wt.command("remove [target]")
     .alias("rm")
     .description("Remove an active worktree and clean up references")
-    .option("-f, --force", "Force remove even with uncommitted changes")
+    .option("-f, --force", "Force remove even with local changes or a lock")
     .option("-y, --yes", "Skip confirmation prompts")
     .action(async (target?: string, options?: { force?: boolean; yes?: boolean }) => {
       header("Remove Worktree");
@@ -178,9 +179,9 @@ export function registerWorktreeCommand(program: Command): void {
 
       const repoRoot = await getRepoRoot();
       const list = await worktreeList();
-      const nonMainList = list.filter((w) => !w.isBare && resolve(w.path) !== resolve(repoRoot));
+      const nonMainList = list.filter((w) => !w.isBare && w !== list[0] && resolve(w.path) !== resolve(repoRoot));
 
-      if (nonMainList.length === 0) {
+      if (nonMainList.length === 0 && !target) {
         if (jsonOut({ status: "no_op", reason: "no_secondary_worktrees" })) return;
         p.log.warn("No removable secondary worktrees found.");
         return;
@@ -195,8 +196,8 @@ export function registerWorktreeCommand(program: Command): void {
         if (match) {
           selectedPath = match.path;
         }
-        if (resolve(selectedPath) === resolve(repoRoot)) {
-          fail("Cannot remove the main repository working tree.");
+        if (!options?.force && resolve(selectedPath) === resolve(repoRoot)) {
+          fail("Cannot remove the current working tree.");
           return;
         }
       } else {
@@ -204,7 +205,7 @@ export function registerWorktreeCommand(program: Command): void {
           title: "Select worktree to remove:",
           items: nonMainList.map((w) => ({
             value: w.path,
-            label: w.branch,
+            label: w.branch ?? "detached",
             hint: w.path,
           })),
           pageSize: 8,
@@ -229,27 +230,7 @@ export function registerWorktreeCommand(program: Command): void {
         p.outro("Done.");
       } catch (err: unknown) {
         s.stop(pc.yellow("Worktree removal blocked."));
-        const errStr = String(err);
-        if (errStr.includes("contains modified or untracked files") || errStr.includes("use --force")) {
-          const confirmForce = await confirmOrAbort("Worktree contains untracked build files or local edits. Force remove?", { assumeYes: options?.yes, cancelText: null });
-
-          if (confirmForce) {
-            const forceSpinner = p.spinner();
-            forceSpinner.start("Force removing worktree...");
-            try {
-              await worktreeRemove(selectedPath, true);
-              forceSpinner.stop(pc.green("Worktree force removed and metadata pruned!"));
-              if (jsonOut({ action: "remove", path: selectedPath, forced: true })) return;
-              p.outro("Done.");
-              return;
-            } catch (forceErr) {
-              forceSpinner.stop(pc.red("Failed to force remove worktree."));
-              fail(String(forceErr));
-              return;
-            }
-          }
-        }
-        fail(errStr);
+        fail(String(err));
       }
     });
 }

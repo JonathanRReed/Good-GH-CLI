@@ -38,7 +38,7 @@ export {
   setBranchMergeBase,
 } from "./git/stack.ts";
 export type { WorktreeAddResult, WorktreeInfo } from "./git/worktree.ts";
-export { worktreeAdd, worktreeList, worktreeRemove } from "./git/worktree.ts";
+export { checkoutForReview, worktreeAdd, worktreeList, worktreeRemove } from "./git/worktree.ts";
 export type { StashEntry } from "./git/stash.ts";
 export { stashDiff, stashDrop, stashList, stashPop, stashPush } from "./git/stash.ts";
 export {
