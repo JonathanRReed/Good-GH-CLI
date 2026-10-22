@@ -16,5 +16,3 @@ export type { IssueDetail, IssueFilters, IssueItem } from "./github/issues.ts";
 export { listIssues, viewIssue, createIssue, setIssueState, commentOnIssue, commentOnIssueWithAttachments, editIssue } from "./github/issues.ts";
 export type { WorkflowJob, WorkflowRun } from "./github/runs.ts";
 export { listWorkflowRuns, viewWorkflowRun, getFailedRunLog, rerunWorkflowRun, cancelWorkflowRun } from "./github/runs.ts";
-export type { ReleaseItem } from "./github/releases.ts";
-export { listReleases, viewRelease, createRelease, deleteRelease, downloadRelease, uploadRelease, getCommitsSinceTag } from "./github/releases.ts";

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { generateSkillReference } from "../scripts/gen-skill-reference.ts";
+import { generateSkillReference, unpackSkillReference } from "../scripts/gen-skill-reference.ts";
 
 const repo = join(import.meta.dir, "..");
 const bundled = join(repo, "skills", "ggh");
@@ -34,7 +34,9 @@ test("skill has valid Agent Skills frontmatter, bounded length, and a local refe
 });
 
 test("generated reference matches the current CLI contract", async () => {
-  expect(readFileSync(join(bundled, "reference.md"), "utf8").replace(/\r\n/g, "\n")).toBe(await generateSkillReference());
+  const generated = await generateSkillReference();
+  expect(readFileSync(join(bundled, "reference.md"), "utf8").replace(/\r\n/g, "\n")).toBe(generated);
+  expect(unpackSkillReference(readFileSync(join(repo, "src", "generated", "skill-reference.ts"), "utf8"))).toBe(generated);
 });
 
 test("reference generation ignores user aliases that shadow agent", async () => {

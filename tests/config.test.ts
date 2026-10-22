@@ -6,6 +6,7 @@ import {
   DEFAULT_CONFIG,
   getConfig,
   getConfigPath,
+  getConfigDir,
   getConfigWithSources,
   getProjectConfig,
   sanitizeConfig,
@@ -17,7 +18,7 @@ import {
 // developer's real ~/.config/good-gh/config.json.
 let home: string;
 let previousXdg: string | undefined;
-const envKeys = Object.keys(DEFAULT_CONFIG).map((k) => `GGH_${k.toUpperCase()}`);
+const envKeys = [...Object.keys(DEFAULT_CONFIG).map((k) => `GGH_${k.toUpperCase()}`), "GGH_CONFIG_DIR"];
 const previousEnv: Record<string, string | undefined> = {};
 
 beforeEach(() => {
@@ -41,6 +42,27 @@ afterEach(() => {
 });
 
 describe("config service", () => {
+  it("isolates ggh config without changing gh's XDG auth directory", () => {
+    const ghDir = join(home, "gh");
+    mkdirSync(ghDir);
+    writeFileSync(join(ghDir, "hosts.yml"), "auth fixture\n");
+    const override = join(home, "isolated ggh");
+    process.env.GGH_CONFIG_DIR = override;
+    expect(getConfigDir()).toBe(override);
+    saveConfig({ ai_enabled: false });
+    expect(getConfigPath()).toBe(join(override, "config.json"));
+    expect(JSON.parse(readFileSync(getConfigPath(), "utf8"))).toEqual({ ai_enabled: false });
+    expect(process.env.XDG_CONFIG_HOME).toBe(home);
+    expect(readFileSync(join(ghDir, "hosts.yml"), "utf8")).toBe("auth fixture\n");
+    delete process.env.GGH_CONFIG_DIR;
+    expect(getConfigPath()).toBe(join(home, "good-gh", "config.json"));
+  });
+
+  it("uses XDG when GGH_CONFIG_DIR is empty", () => {
+    process.env.GGH_CONFIG_DIR = "";
+    expect(getConfigDir()).toBe(join(home, "good-gh"));
+  });
+
   it("provides config path under XDG_CONFIG_HOME/good-gh", () => {
     expect(getConfigPath()).toBe(join(home, "good-gh", "config.json"));
   });

@@ -1,3 +1,4 @@
+import { responseValidators } from "./response.ts";
 import { classifyGitHubError, gh, ghApi, GitHubError, parseRepoFlag } from "./client.ts";
 
 export interface ReviewThreadComment {
@@ -69,26 +70,7 @@ fragment Comments on PullRequestReviewCommentConnection {
   pageInfo { hasNextPage endCursor }
 }`;
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-function object(value: unknown): Record<string, unknown> {
-  if (!isObject(value)) throw new Error("Invalid review thread response from GitHub.");
-  return value;
-}
-function string(value: unknown): string {
-  if (typeof value !== "string") throw new Error("Invalid review thread string from GitHub.");
-  return value;
-}
-function boolean(value: unknown): boolean {
-  if (typeof value !== "boolean") throw new Error("Invalid review thread boolean from GitHub.");
-  return value;
-}
-function nullableNumber(value: unknown): number | null {
-  if (value === null) return null;
-  if (typeof value !== "number" || !Number.isSafeInteger(value)) throw new Error("Invalid review thread number from GitHub.");
-  return value;
-}
+const { object, string, boolean, nullableNumber } = responseValidators({ label: "review thread", source: " from GitHub", object: "response" });
 
 /** The cursor is an ISO timestamp, so it can be passed directly to --since. */
 export function reviewThreadsSince(value: string): number {

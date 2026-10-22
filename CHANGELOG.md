@@ -5,6 +5,22 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Removed
+
+- Remove `label`, `secret`, `variable`, `gist`, `search`, `browse`, `workflow`, and
+  `release`. Use `ggh gh <command>` with native gh arguments.
+- Remove `changelog`, team stack snapshots, and AI triage. GitHub release notes
+  are available through `ggh gh api`; maintain the local changelog by hand.
+- Remove `draft` and AI stash naming. Use `stash push --name`, `stash list --named`,
+  and `stash restore <name>`. Existing `ggh-draft:` stashes remain restorable.
+- Remove notification view and unsubscribe actions. Keep a non-interactive inbox
+  with list and mark-read operations.
+
+### Fixed
+
+- Honor `GGH_CONFIG_DIR` without redirecting gh's XDG authentication directory.
+- Drop the SSH port when a derived enterprise clone URL falls back to HTTPS.
+
 ### Changed
 
 - Compact `status --agent` changes into XY/path tuples, including rename sources

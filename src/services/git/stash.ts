@@ -12,6 +12,12 @@ export interface StashEntry {
 }
 
 
+export function namedStashName(message: string): string | undefined {
+  const prefix = "ggh-draft:";
+  const offset = message.indexOf(prefix);
+  return offset < 0 ? undefined : message.slice(offset + prefix.length).trim();
+}
+
 export async function stashList(cwd = process.cwd()): Promise<StashEntry[]> {
   try {
     const { stdout } = await run("git", ["stash", "list", "--pretty=format:%gd%x00%cr%x00%gs"], { cwd });

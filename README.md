@@ -559,10 +559,9 @@ ggh rename feat/new-name    # Rename locally and remotely
 ggh sync                    # Fetch, prune, and delete stale branches
 ggh log                     # Alias: ggh graph
 
-ggh draft --ai              # Stash work with an AI description
-ggh draft list
-ggh draft resume
-ggh draft drop
+ggh stash push --name "login work"
+ggh stash list --named
+ggh stash restore "login work" --yes
 ggh ignore "*.log" ".env"
 ggh ignore "*.key" --local  # Write .git/info/exclude instead
 ggh hook install pre-commit
@@ -615,15 +614,7 @@ from every remote-tracking ref. Unknown deletion proof also means keep.
 | --- | --- |
 | `ggh clone`, `ggh get` | Search and clone with `--to`, `--ask`, `--fast`, `--shallow`, and `--agent` |
 | `ggh repo` | View, create, fork, edit, rename, archive, delete, or sync repositories |
-| `ggh release` | Browse, create, view, download, upload, or delete releases |
-| `ggh changelog v1.0.0` | Write a generated changelog to `CHANGELOG.md` |
-| `ggh search` | Search issues, PRs, repositories, or code |
-| `ggh notifications` | Browse, triage, or mark notifications read |
-| `ggh triage --ai` | Group notifications and issues without changing them |
-| `ggh browse` | Open a repository, PR, or issue in the browser |
-| `ggh label`, `ggh secret`, `ggh variable` | Manage repository labels, secrets, and variables |
-| `ggh gist`, `ggh workflow` | Manage gists and workflow runs |
-| `ggh team` | Publish a stack as a secret gist, or pull a shared stack |
+| `ggh notifications` | List notifications; `mark [id]` marks one or all read without prompting |
 | `ggh plugin` | Install, list, or remove local commands |
 | `ggh mcp` | Start the MCP server; `--list-tools` lists its tools |
 | `ggh api` | Call GitHub endpoints not wrapped by another command |
@@ -636,6 +627,27 @@ GGH_NO_PLUGINS=1 ggh plugin remove <name> -y
 ```
 
 For GitHub Enterprise, sign in with `gh auth login --hostname ghe.example.com`, then set `GH_HOST=ghe.example.com`. Check the host and account with `ggh status`.
+
+### Moved to gh
+
+Version 0.6 removes these command families. Use the native escape:
+
+| Removed | Replacement |
+| --- | --- |
+| `label`, `secret`, `variable` | `ggh gh label`, `ggh gh secret`, `ggh gh variable` |
+| `gist`, `search`, `browse` | `ggh gh gist`, `ggh gh search`, `ggh gh browse` |
+| `workflow`, `release` | `ggh gh workflow`, `ggh gh release` |
+| `changelog` | `ggh gh api --method POST repos/{owner}/{repo}/releases/generate-notes -f tag_name=<tag>` for release notes; edit `CHANGELOG.md` by hand |
+| `team`, `triage` | Snapshot sharing and AI grouping are retired. Use `ggh gh gist list`, `ggh gh issue list`, or `ggh notifications` for reads. |
+| `draft` | `ggh stash list --named`, `ggh stash restore <name>`; existing tagged stashes still work |
+
+`ggh gh` uses gh's arguments, output, and exit status. It does not apply ggh's
+confirmations, dry-run behavior, or agent envelope. For secrets, use the masked
+`ggh gh secret set NAME` prompt or pipe the value on stdin. Keep secret values out
+of command arguments.
+
+Named stash restoration pops the matching stash after confirmation, or with `--yes`.
+Duplicate names require an explicit ref from `stash list --named`, then `stash pop <ref>`.
 
 ## For agents
 
@@ -730,6 +742,10 @@ before recovering.
 Typos get command suggestions unless the word is a Git command or one of your Git aliases, which take precedence.
 
 ## Configuration
+
+Set `GGH_CONFIG_DIR=/path/to/ggh-config` to isolate ggh settings and project metadata
+while leaving gh authentication under its usual XDG directory. Otherwise ggh uses
+`$XDG_CONFIG_HOME/good-gh`, defaulting to `~/.config/good-gh`.
 
 ```bash
 ggh config

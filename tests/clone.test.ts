@@ -133,12 +133,12 @@ describe("clone transport", () => {
   test("fallback requires derived SSH and an auth or host-key rejection", () => {
     const derived = cloneTransport("owner/repo", "ssh", undefined, "enterprise.test:2222");
     expect(derived.url).toBe("ssh://git@enterprise.test:2222/owner/repo.git");
-    expect(httpsFallback(derived, "Permission denied (publickey).")).toBe("https://enterprise.test:2222/owner/repo.git");
-    expect(httpsFallback(derived, "Host key verification failed.")).toContain("enterprise.test:2222");
+    expect(httpsFallback(derived, "Permission denied (publickey).")).toBe("https://enterprise.test/owner/repo.git");
+    expect(httpsFallback(derived, "Host key verification failed.")).toBe("https://enterprise.test/owner/repo.git");
     expect(httpsFallback(derived, "Connection timed out")).toBeNull();
     expect(httpsFallback(cloneTransport("git@host:owner/repo.git", "ssh"), "Permission denied (publickey)")).toBeNull();
     expect(httpsFallback(cloneTransport("owner/repo", "ssh", "ssh"), "Permission denied (publickey)")).toBeNull();
-    expect(cloneTransport("ssh://git@host:2222/owner/repo.git", "ssh", "https").url).toBe("https://host:2222/owner/repo.git");
+    expect(cloneTransport("ssh://git@host:2222/owner/repo.git", "ssh", "https").url).toBe("https://host/owner/repo.git");
   });
 
   test("progress keeps four diagnostics, parses carriage returns, and resumes after stalling", () => {
@@ -381,4 +381,12 @@ describe("clone process lifecycle", () => {
     expect(JSON.parse(result.stdout)).toMatchObject({ status: "cancelled", result: { destination } });
     expect(existsSync(destination)).toBe(false);
   });
+});
+
+test("SSH fallback drops the SSH port from derived enterprise HTTPS URLs", () => {
+  const derived = cloneTransport("org/repo", "ssh", undefined, "enterprise.test:2222");
+  expect(derived.url).toBe("ssh://git@enterprise.test:2222/org/repo.git");
+  expect(httpsFallback(derived, "Permission denied (publickey)")).toBe("https://enterprise.test/org/repo.git");
+  expect(httpsFallback(cloneTransport("org/repo", "ssh", "ssh", "enterprise.test:2222"), "Permission denied (publickey)")).toBeNull();
+  expect(cloneTransport("https://enterprise.test:8443/org/repo.git").url).toBe("https://enterprise.test:8443/org/repo.git");
 });

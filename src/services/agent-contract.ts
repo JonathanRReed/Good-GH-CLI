@@ -39,7 +39,7 @@ export function agentEnvelope(input: { command: string[]; result?: unknown; issu
   const result = typeof input.result === "object" && input.result !== null && !Array.isArray(input.result) ? input.result : undefined;
   const bulkSync = path === "sync" && isProjectSyncResult(input.result) ? input.result : undefined;
   const workflow = Boolean(bulkSync) || path === "tidy" || path === "commit" || path === "pr create" || path === "repo create" || path.startsWith("stack ");
-  const noOp = ["clone", "worktree remove", "worktree prune", "rename", "draft", "draft create", "undo", "discard", "sync", "squash", "operation resume"].includes(path);
+  const noOp = ["clone", "worktree remove", "worktree prune", "rename", "undo", "discard", "sync", "squash", "operation resume"].includes(path);
   const managedStatus = result && "status" in result && ((workflow && ["partially_completed", "needs_input", "cancelled", "failed", "succeeded", "no_op"].includes(String(result.status))) || (noOp && result.status === "no_op")) ? result.status : undefined;
   const strings = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 

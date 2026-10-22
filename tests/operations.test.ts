@@ -163,7 +163,7 @@ describe("local operation records", () => {
 
   test("serializes concurrent updates without dropping either update", async () => {
     const cwd = await repository();
-    const record = await startOperation({ command: "ggh release create", cwd });
+    const record = await startOperation({ command: "ggh issue create", cwd });
     await Promise.all([
       updateOperation(record.id, { status: { state: "partially_completed" } }, cwd),
       updateOperation(record.id, { resources: ["https://example.com/run/123"] }, cwd),

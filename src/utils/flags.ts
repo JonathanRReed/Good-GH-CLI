@@ -7,10 +7,9 @@ import { p, pc } from "./ui.ts";
 export const JSON_CAPABLE = new Set([
   "tidy", "lost", "projects", "go", "clone", "commit", "operation", "review",
   "status", "pr", "checks", "ci", "log", "stash", "worktree", "config",
-  "release", "issue", "run", "repo", "stack", "sync", "changelog", "api",
-  "workflow", "label", "gist", "search", "secret", "variable", "notifications",
-  "squash", "undo", "rename", "resolve", "discard", "switch", "triage",
-  "draft", "ignore", "alias", "hook", "team", "plugin",
+  "issue", "run", "repo", "stack", "sync", "api",
+  "notifications",
+  "squash", "undo", "rename", "resolve", "discard", "switch", "ignore", "alias", "hook", "plugin",
 ]);
 
 export const AGENT_CAPABLE = new Set([...JSON_CAPABLE, "agent"]);
@@ -18,21 +17,15 @@ export const AGENT_CAPABLE = new Set([...JSON_CAPABLE, "agent"]);
 /** Commands that change the repository or the remote and deserve a preview. */
 export const DRY_RUN_CAPABLE = new Set([
   "tidy", "operation", "review",
-  "commit", "discard", "sync", "squash", "undo", "worktree", "release",
-  "rename", "stash", "pr", "issue", "stack", "repo", "changelog", "workflow",
-  "label", "gist", "secret", "variable", "notifications",
-  "run", "switch", "clone", "resolve", "checks", "search", "status", "triage",
-  "draft", "hook", "team", "plugin", "alias", "ignore", "api", "config",
+  "commit", "discard", "sync", "squash", "undo", "worktree", "rename", "stash", "pr", "issue", "stack", "repo", "notifications",
+  "run", "switch", "clone", "resolve", "checks", "status", "hook", "plugin", "alias", "ignore", "api", "config",
 ]);
 
 /** Commands that act on GitHub and can therefore target another repository. */
 export const REPO_SCOPED = new Set([
-  "pr", "checks", "ci", "release", "issue", "run", "repo", "api", "stack",
-  "workflow", "label", "secret", "variable", "browse", "triage",
+  "pr", "checks", "ci", "issue", "run", "repo", "api", "stack",
 ]);
-// Note: `triage` honors -R for issues; notifications are account-global and
-// ignore it. `changelog` is deliberately excluded: it writes the local
-// CHANGELOG.md, so a remote -R target would be misleading.
+// Notifications are account-global and do not accept -R.
 
 /**
  * Adds an option only when neither its long nor its short form is already taken.
@@ -55,7 +48,7 @@ function decorate(command: Command, domain: string): void {
   if (AGENT_CAPABLE.has(domain)) addSafe(command, "--agent", "Emit the versioned agent envelope without prompting");
   addSafe(command, "-q, --quiet", "Suppress progress output; errors are still shown");
   addSafe(command, "--no-input", "Never prompt; fail with instructions instead");
-  if (["tidy", "commit", "pr", "issue", "worktree", "squash", "draft", "changelog", "release", "run", "triage"].includes(domain)) {
+  if (["tidy", "commit", "pr", "issue", "worktree", "squash", "run"].includes(domain)) {
     addSafe(command, "--ai", "Allow AI generation for this command");
     addSafe(command, "--no-ai", "Disable AI generation for this command");
   }
@@ -113,7 +106,7 @@ export function applyGlobalFlags(program: Command): void {
       providerSource === "cli" ||
       (actionCommand.name() === "commit" && pick<boolean>("split") === true) ||
       (actionCommand.name() === "create" && parent?.name() === "issue" && pick<boolean>("fromDiff") === true) ||
-      actionCommand.name() === "triage" || (actionCommand.name() === "review" && parent?.name() === "pr");
+      (actionCommand.name() === "review" && parent?.name() === "pr");
     const explicitNoAI = (aiSource === "cli" && aiOption === false) ||
       (actionCommand.name() === "commit" && pick<string>("message") !== undefined);
     const agent = getFlags().agent || pick<boolean>("agent") === true;
