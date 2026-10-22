@@ -42,14 +42,14 @@ function fit(value: string, width: number): string {
   }
   return result + "…";
 }
-function table(rows: string[][], options: ProjectViewOptions): string[] {
+function table(rows: string[][], options: ProjectViewOptions, priority = -1): string[] {
   const widths = rows[0]?.map((_, index) => Math.max(...rows.map(row => Bun.stringWidth(cell(row[index] ?? ""))))) ?? [];
   const limit = available(options);
   while (widths.reduce((sum, width) => sum + width, 0) + Math.max(0, widths.length - 1) * 2 > limit) {
-    const widest = Math.max(...widths);
-    if (widest <= 1) break;
-    const index = widths.indexOf(widest);
-    widths[index] = widest - 1;
+    const candidates = widths.map((width, index) => ({ width, index })).filter(({width,index}) => width > 1 && (index !== priority || width > 28));
+    const choice = candidates.sort((a,b) => b.width - a.width)[0] ?? widths.map((width,index) => ({width,index})).filter(item=>item.width>1).sort((a,b)=>b.width-a.width)[0];
+    if (!choice) break;
+    widths[choice.index] = choice.width - 1;
   }
   return rows.map(row => fit(row.map((value, index) => {
     const width = widths[index] ?? 0;
@@ -83,13 +83,25 @@ function stateSummary(row: ProjectRow): string {
 }
 export function formatProjects(rows: ProjectRow[], options: ProjectViewOptions = {}): string[] {
   if (!rows.length) return [fit("No projects. Add a scan root with ggh projects roots add <path>.", available(options))];
-  return table([["Name", "Branch", "State", "↑/↓", "Unpublished", "Stashes", "Worktrees", "Age", ...(options.remote ? ["Remote", "Seen"] : [])], ...rows.map(row => {
+  const lines = table([["Name", "Branch", "State", "↑/↓", "Unpublished", "Stashes", "Worktrees", "Age", ...(options.remote ? ["Remote", "Seen"] : [])], ...rows.map(row => {
     const primary = row.clone.checkouts.find(checkout => checkout.gitDir === row.clone.commonDir) ?? row.clone.checkouts[0];
     const status = row.status.checkouts.find(checkout => checkout.path === primary?.path);
     const hosts = new Map<string, number>();
     for (const checkout of row.clone.checkouts.filter(checkout => checkout !== primary)) hosts.set(checkout.createdBy, (hosts.get(checkout.createdBy) ?? 0) + 1);
     return [row.clone.displayName, primary ? branch(primary) : "-", stateSummary(row), status ? drift(status.upstream) : "?", unpublished(row.status), show(row.status.stashes, String), [...hosts].map(([host, count]) => `${count} ${host === "unknown" ? "other" : host}`).join(", ") || "-", show(row.status.lastCommit, age), ...(options.remote ? [remoteSummary(row.remote), remoteAge(row.remote)] : [])];
-  })], options);
+  })], options, options.remote ? 8 : -1);
+  if (options.remote) {
+    const failed = new Map<string, Set<string>>();
+    for (const row of rows) for (const repo of row.remote ?? []) {
+      const reasons = Object.values(repo).flatMap(field => field && typeof field === "object" && "state" in field && field.state !== "ok" ? ["reason" in field ? String(field.reason) : "message" in field ? String(field.message) : "unavailable"] : []);
+      if (reasons.length) failed.set(`${repo.repo.host}/${repo.repo.owner}/${repo.repo.name}`.toLowerCase(), new Set(reasons));
+    }
+    if (failed.size) {
+      const reasons = [...new Set([...failed.values()].flatMap(value=>[...value]))];
+      lines.push(fit(`remote unavailable for ${failed.size} repos: ${reasons.join("; ")}`, available(options)));
+    }
+  }
+  return lines;
 }
 export function renderProjects(rows: ProjectRow[], options: ProjectViewOptions = {}): void {
   for (const line of formatProjects(rows, options)) p.log.message(line);
@@ -139,13 +151,13 @@ function remoteSummary(repositories?: RemoteRepository[]): string {
   if (!repositories) return "pending";
   if (!repositories.length) return "-";
   return repositories.map(repo => {
+    if (!Object.values(repo).some(field => field && typeof field === "object" && "state" in field && field.state === "ok")) return "—";
     const parts: string[] = [];
-    if (repo.authored) parts.push(remoteShow(repo.authored, value => `PR ${value.count}${value.pullRequests.some(pr => ci(pr.statusCheckRollup) === "✗") ? " ✗" : ""}`));
-    if (repo.reviewRequested) parts.push(remoteShow(repo.reviewRequested, value => `review ${value}`));
+    if (repo.authored?.state === "ok") parts.push(remoteShow(repo.authored, value => `PR ${value.count}${value.pullRequests.some(pr => ci(pr.statusCheckRollup) === "✗") ? " ✗" : ""}`));
+    if (repo.reviewRequested?.state === "ok") parts.push(remoteShow(repo.reviewRequested, value => `review ${value}`));
     if (repo.archived?.state === "ok" && repo.archived.value) parts.push("archived");
     if (repo.fork?.state === "ok" && repo.fork.value.isFork) parts.push("fork");
-    if (Object.values(repo).some(field => field && typeof field === "object" && "state" in field && field.state !== "ok")) parts.push("unavailable");
-    return parts.join(" ");
+    return parts.join(" ") || "—";
   }).join("; ");
 }
 function remoteAge(repositories?: RemoteRepository[]): string {
