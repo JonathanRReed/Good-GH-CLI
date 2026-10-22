@@ -34,7 +34,8 @@ jobs:
   verify:
     name: verify (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    # Windows runs a real PowerShell ACL audit for each isolated CLI profile.
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 25 || 15 }}
     strategy:
       fail-fast: false
       matrix:

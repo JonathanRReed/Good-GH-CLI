@@ -49,6 +49,8 @@ export async function runFixture(
   args: string[],
   options: { root: string; cwd?: string; responses?: FixtureResponse[]; invoke?: string; config?: Record<string, unknown> },
 ): Promise<{ stdout: string; stderr: string; exitCode: number; calls: string[][]; providerCalls: string[][]; inputs: Array<{ args: string[]; text: string }> }> {
+  // Windows private-storage inspection can spend up to 15 seconds in PowerShell.
+  const timeoutMs = process.platform === "win32" ? 20_000 : 10_000;
   const runRoot = mkdtempSync(join(options.root, "run-"));
   const trace = join(runRoot, "gh-calls.jsonl");
   const providerTrace = join(runRoot, "provider-calls.jsonl");
@@ -106,7 +108,7 @@ export async function runFixture(
     const outcome = await Promise.race([
       completed.then((result) => ({ kind: "completed" as const, result })),
       new Promise<{ kind: "timeout" }>((resolve) => {
-        timer = setTimeout(() => resolve({ kind: "timeout" }), 10_000);
+        timer = setTimeout(() => resolve({ kind: "timeout" }), timeoutMs);
       }),
     ]);
     if (outcome.kind === "timeout") {
@@ -115,7 +117,7 @@ export async function runFixture(
       const detail = captured
         ? ` stdout=${JSON.stringify(captured[0])} stderr=${JSON.stringify(captured[1])} exit=${captured[2]}`
         : " stdout/stderr did not close after the child tree exited";
-      throw new Error(`CLI fixture timed out after 10000ms (pid ${child.pid}).${detail}`);
+      throw new Error(`CLI fixture timed out after ${timeoutMs}ms (pid ${child.pid}).${detail}`);
     }
     const [stdout, stderr, exitCode] = outcome.result;
     let calls: string[][] = [];

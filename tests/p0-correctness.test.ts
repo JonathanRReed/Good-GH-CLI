@@ -12,6 +12,7 @@ const detail = { number: 42, title: "Fix", headRefName: "feature", headRefOid: s
 const git = (args: string[], cwd = repo) => run("git", args, { cwd });
 beforeAll(async () => {
   await run("git", ["init", "-b", "main", repo], { cwd: root });
+  await git(["config", "core.autocrlf", "false"]);
   await git(["config", "user.name", "Fixture"]);
   await git(["config", "user.email", "fixture@example.com"]);
   writeFileSync(join(repo, "tracked"), "base\n");
