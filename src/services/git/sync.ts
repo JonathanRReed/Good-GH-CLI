@@ -8,6 +8,7 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { execGitWithRetry } from "./exec.ts";
 import { getCurrentBranch, getRemoteTrackingBranch, getRemotes, getRepoRoot, hasBranch, isDetachedHead, resolveBranchRef } from "./branch.ts";
+import { branchSettings, pushTarget } from "./push-target.ts";
 import { getBranchMergeBase } from "./stack.ts";
 
 export async function push(
@@ -28,29 +29,35 @@ export async function push(
   const branch = options.branch || (await getCurrentBranch(cwd));
   if (!(await hasBranch(branch, cwd))) throw new Error(`Local branch "${branch}" does not exist.`);
 
-  const args = ["push"];
-  if (options.noVerify) {
-    args.push("--no-verify");
-  }
-  if (options.forceWithLease) {
-    args.push("--force-with-lease");
-  }
+  const settings = await branchSettings(cwd);
+  const target = pushTarget(branch, remotes, settings, options);
+  if (!target) throw new Error("Cannot determine a push destination.");
+  const urls = target.remote === "." ? ["."] : (await run("git", ["remote", "get-url", "--push", "--all", target.remote], { cwd })).stdout.trim().split("\n");
+  if (urls.length !== 1 || !urls[0]) throw new Error("Push requires one exact destination URL. Configure a single push URL before retrying.");
+  const destination = urls[0];
+  const source = (await run("git", ["rev-parse", "--verify", `refs/heads/${branch}^{commit}`], { cwd })).stdout.trim();
   const tracking = await getRemoteTrackingBranch(cwd, branch);
-  // Unqualified pushes keep Git's configured refspec/upstream behavior. Once a
-  // caller selects a target, never let push.default=matching publish other refs.
-  if (options.remote || options.branch || options.setUpstream || !tracking) {
-    const keys = [`branch.${branch}.pushRemote`, "remote.pushDefault", `branch.${branch}.remote`];
-    const configured = await Promise.all(keys.map(async (key) => {
-      const result = await run("git", ["config", "--get", key], { cwd, reject: false });
-      return result.exitCode === 0 ? result.stdout.trim() : "";
-    }));
-    const remote = options.remote || configured.find(Boolean) || (remotes.includes("origin") ? "origin" : remotes[0]!);
-    if (options.setUpstream || !tracking) args.push("-u");
-    const ref = `refs/heads/${branch}`;
-    args.push("--", remote, `${ref}:${ref}`);
+  const args = ["push", "--no-follow-tags", "--no-mirror"];
+  if (options.noVerify) args.push("--no-verify");
+  if (options.forceWithLease) {
+    const observedRef = target.remote === "." ? `refs/heads/${target.branch}` : `refs/remotes/${target.remote}/${target.branch}`;
+    const remoteTip = await run("git", ["rev-parse", "--verify", "--quiet", "--end-of-options", observedRef], { cwd, reject: false });
+    const expected = remoteTip.exitCode === 0 ? remoteTip.stdout.trim() : "";
+    args.push(`--force-with-lease=refs/heads/${target.branch}:${expected}`);
+  }
+  // Every push names one destination and an immutable source OID. Matching
+  // configuration and a moving local ref cannot widen the publication scope.
+  args.push("--", target.remote, `${source}:refs/heads/${target.branch}`);
+  if (target.remote !== ".") {
+    const current = (await run("git", ["remote", "get-url", "--push", "--all", target.remote], { cwd })).stdout.trim();
+    if (current !== destination) throw new Error("Push destination changed after preflight. Review the destination again.");
   }
 
   await execGitWithRetry(args, { cwd, stdio: "inherit" });
+  if (options.setUpstream || !tracking) {
+    await execGitWithRetry(["config", `branch.${branch}.remote`, target.remote], { cwd });
+    await execGitWithRetry(["config", `branch.${branch}.merge`, `refs/heads/${target.branch}`], { cwd });
+  }
 }
 
 

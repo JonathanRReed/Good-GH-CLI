@@ -1,7 +1,8 @@
+import { captureStagedSnapshot } from "../services/git/split.ts";
+import { executeSnapshotCommit } from "../services/git/scoped-commit.ts";
 import { Command } from "commander";
 import { getFlags, isNonInteractive, recordCommandIssue } from "../services/runtime.ts";
 import {
-  commit,
   getCommitCount,
   getSquashPreview,
   type SquashPreview,
@@ -114,6 +115,8 @@ export function registerSquashCommand(program: Command): void {
         fail(String(err));
         return;
       }
+      const snapshot = await captureStagedSnapshot(process.cwd(), { allowEmpty: true });
+      if (snapshot.head !== preview.head) { fail("HEAD changed while preparing the squash. Review the scope again."); return; }
       const previousMessages = preview.previousMessages;
 
       p.log.step("Commits being squashed:");
@@ -205,10 +208,10 @@ export function registerSquashCommand(program: Command): void {
       if (!commitSubject || commitSubject.trim().length === 0) return;
 
       // Prompts and AI finish before the first history mutation. Recheck the
-      // original branch, HEAD and clean worktree immediately before resetting.
+      // original branch, HEAD, index and clean worktree before rewriting.
       let recoveryRef: string;
       try {
-        ({ recoveryRef } = await squashCommits(count, process.cwd(), preview));
+        ({ recoveryRef } = await squashCommits(count, process.cwd(), { ...preview, indexBytes: snapshot.indexBytes }));
       } catch (err) {
         fail(String(err));
         return;
@@ -217,7 +220,7 @@ export function registerSquashCommand(program: Command): void {
 
       if (getFlags().json) {
         try {
-          await commit(commitSubject, commitBody);
+          await executeSnapshotCommit({ ...snapshot, head: preview.base }, commitSubject, commitBody);
           emitJson({ squashed: count, subject: commitSubject, body: commitBody });
         } catch (err) {
           emitJson({ squashed: 0, error: String(err), recoveryRef });
@@ -229,7 +232,7 @@ export function registerSquashCommand(program: Command): void {
       const cSpinner = p.spinner();
       cSpinner.start("Finalizing squashed commit...");
       try {
-        await commit(commitSubject, commitBody);
+        await executeSnapshotCommit({ ...snapshot, head: preview.base }, commitSubject, commitBody);
         cSpinner.stop(pc.green(`Successfully squashed ${count} commits into 1!`));
         p.outro(pc.bold(pc.cyan(`Commit: ${commitSubject}`)));
       } catch (err) {
