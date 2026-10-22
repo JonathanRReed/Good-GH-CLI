@@ -28,7 +28,7 @@ export interface GoodGhConfig {
   grok_model?: string;
   claude_model?: string;
   ollama_model?: string;
-  default_clone_dir?: string;
+  clone_root?: string;
   default_clone_mode?: CloneMode;
   commit_style?: "auto" | CommitStyle;
   /** Per-attempt timeout for an AI provider invocation, in milliseconds. */
@@ -48,7 +48,7 @@ export const DEFAULT_CONFIG: Required<GoodGhConfig> = {
   grok_model: "grok-4.5",
   claude_model: "sonnet",
   ollama_model: "qwen2.5-coder",
-  default_clone_dir: ".",
+  clone_root: "",
   default_clone_mode: "standard",
   commit_style: "auto",
   ai_timeout_ms: 120_000,
@@ -99,11 +99,9 @@ export function validateConfigValue(key: string, raw: unknown): { value?: unknow
       return typeof raw === "string" && MODEL_PATTERN.test(raw)
         ? { value: raw }
         : { problem: "must be a model name (letters, digits, . _ : / -)" };
-    case "default_clone_dir": {
-      if (typeof raw !== "string" || !raw.trim()) return { problem: "must be a directory path" };
-      if (raw.includes("\0")) return { problem: "must not contain NUL" };
-      return { value: raw };
-    }
+    case "clone_root":
+      return typeof raw === "string" && (isAbsolute(raw) || raw === "~" || raw.startsWith("~/")) && !/[\0\r\n]/.test(raw)
+        ? { value: raw } : { problem: "must be an absolute path or a ~ path" };
     case "default_clone_mode":
       return CLONE_MODES.includes(raw as CloneMode)
         ? { value: raw }
@@ -226,7 +224,7 @@ export function getProjectConfig(cwd = process.cwd()): ProjectConfig | null {
  * Environment overrides, named after the config keys they set:
  * GGH_AI_ENABLED, GGH_AI_PROVIDER, GGH_AI_FALLBACK, GGH_CODEX_MODEL, GGH_GROK_MODEL,
  * GGH_CLAUDE_MODEL, GGH_OLLAMA_MODEL, GGH_AI_TIMEOUT_MS, GGH_COMMIT_STYLE,
- * GGH_DEFAULT_CLONE_DIR, GGH_DEFAULT_CLONE_MODE, GGH_HOSTED_AI_CONSENT.
+ * GGH_CLONE_ROOT, GGH_DEFAULT_CLONE_MODE, GGH_HOSTED_AI_CONSENT.
  */
 function readEnvConfig(): Partial<GoodGhConfig> {
   const env: Record<string, unknown> = {};

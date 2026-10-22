@@ -1,289 +1,137 @@
-import { Command } from "commander";
-import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { homedir } from "node:os";
+import { Command, Option } from "commander";
+import { lstatSync, readdirSync } from "node:fs";
 import { clone } from "../services/git.ts";
-import {
-  getGitHubAuthStatus,
-  listStarredRepositories,
-  listUserRepositories,
-  normalizeCloneUrl,
-  searchRepositories,
-  trimRepositorySuffix,
-  type RepositoryItem,
-} from "../services/github.ts";
+import { alreadyCloned, CloneCancelledError, cloneDestination, cloneTransport, redactCloneCredentials } from "../services/git/clone.ts";
+import { getGitHubAuthStatus, searchRepositories, type RepositoryItem } from "../services/github.ts";
+import { listCloneRepositories, matchCloneRepositories } from "../services/github/clone-repos.ts";
 import { getConfig, type CloneMode } from "../services/config.ts";
-import {
-  confirmOrAbort,
-  fail,
-  failFromGitHub,
-  header,
-  p,
-  pc,
-  type PickerItem,
-  promptInput,
-  searchablePicker,
-  selectMenu,
-} from "../utils/ui.ts";
+import { getFlags, isNonInteractive, recordCommandIssue } from "../services/runtime.ts";
+import { fail, failFromGitHub, header, jsonOut, p, promptInput, searchablePicker, selectMenu } from "../utils/ui.ts";
 import { dryRun } from "../utils/flags.ts";
+import type { CloneResult } from "../services/agent-contract.ts";
 
-function expandPath(pathStr: string): string {
-  if (pathStr.startsWith("~/") || pathStr === "~") {
-    return join(homedir(), pathStr.slice(1));
-  }
-  return resolve(pathStr);
+interface CloneOptions {
+  fast?: boolean;
+  blobless?: boolean;
+  shallow?: boolean;
+  to?: string;
+  ask?: boolean;
+  protocol?: "ssh" | "https";
+  refresh?: boolean;
 }
 
-function extractRepoName(urlOrShorthand: string): string {
-  const clean = trimRepositorySuffix(urlOrShorthand.trim());
-  const parts = clean.split(/[/:]/);
-  return parts[parts.length - 1] || "project";
+function needsInput(message: string): void {
+  process.exitCode = 1;
+  recordCommandIssue({ status: "needs_input", code: "missing_input", message, requiredInputs: [{ name: "repo", description: "Pass an exact OWNER/REPO or repository URL and --to <directory> if choosing a destination." }] });
+  p.log.error(message);
+}
+
+function pickerItems(repos: RepositoryItem[]) {
+  return repos.map(repo => ({ value: repo.nameWithOwner, label: repo.nameWithOwner, hint: repo.description?.slice(0, 60) ?? "" }));
 }
 
 export function registerCloneCommand(program: Command): void {
   program
     .command("clone [repo]")
-    .description("Search for and clone a repository, optionally blobless")
-    .option("--fast, --blobless", "Use fast blobless clone (--filter=blob:none)")
-    .option("--shallow", "Use shallow clone with depth 1 (--depth 1)")
-    .option("-d, --dir <directory>", "Target directory for the cloned repository")
+    .alias("get")
+    .description("Search for and clone a repository")
+    .option("--fast, --blobless", "Use a blobless clone (--filter=blob:none)")
+    .option("--shallow", "Clone only the latest commit (--depth 1)")
+    .option("--to <dir>", "Clone into this directory")
+    .option("--ask", "Prompt for the destination")
+    .addOption(new Option("--protocol <protocol>", "Choose the clone transport").choices(["ssh", "https"]))
     .option("--refresh", "Bypass the cached repository list")
-    .option("--dry-run", "Show what would be cloned and where, without cloning")
-    .action(async (repoArg?: string, options?: { fast?: boolean; blobless?: boolean; shallow?: boolean; dir?: string; refresh?: boolean; dryRun?: boolean }) => {
-      header("Clone & Add Project");
-
-      let selectedRepo = repoArg;
-      const isFast = Boolean(options?.fast || options?.blobless);
-      let cloneMode: CloneMode = isFast ? "blobless" : options?.shallow ? "shallow" : "standard";
-
-      // If a single-word keyword or shorthand was provided as argument, search user's repos and GitHub
-      if (selectedRepo && !selectedRepo.includes("/") && !selectedRepo.includes(":") && !selectedRepo.startsWith("http")) {
-        const query = selectedRepo.toLowerCase();
-        const s = p.spinner();
-        s.start(`Finding repository matching "${selectedRepo}"...`);
-        const [userRepos, globalResults] = await Promise.all([
-          listUserRepositories({ limit: 100 }, options?.refresh),
-          searchRepositories(selectedRepo, { limit: 10 }),
-        ]);
-        s.stop();
-
-        const exactUserMatch = userRepos.find(
-          (r) => r.nameWithOwner.toLowerCase().split("/")[1] === query,
-        );
-
-        if (exactUserMatch) {
-          selectedRepo = exactUserMatch.nameWithOwner;
-        } else {
-          const matchedUserRepos = userRepos.filter(
-            (r) =>
-              r.nameWithOwner.toLowerCase().includes(query) ||
-              (r.description && r.description.toLowerCase().includes(query)),
-          );
-
-          const seen = new Set<string>();
-          const candidateList: RepositoryItem[] = [];
-          for (const r of [...matchedUserRepos, ...globalResults]) {
-            const key = r.nameWithOwner.toLowerCase();
-            if (!seen.has(key)) {
-              seen.add(key);
-              candidateList.push(r);
-            }
-          }
-
-          if (candidateList.length === 1 && candidateList[0]) {
-            const only = candidateList[0].nameWithOwner;
-            if (!(await confirmOrAbort(`No repository is named '${selectedRepo}'. Clone ${pc.bold(pc.cyan(only))} instead?`, { initialValue: false, cancelText: "Clone cancelled." }))) return;
-            selectedRepo = only;
-          } else if (candidateList.length > 1) {
-            const pick = await searchablePicker({
-              title: `Repositories matching "${selectedRepo}":`,
-              items: candidateList.map((r) => ({
-                value: r.nameWithOwner,
-                label: r.nameWithOwner,
-                hint: r.isPrivate ? "🔒 private" : r.description?.slice(0, 45) || "",
-              })),
-              pageSize: 8,
-            });
-
-            if (!pick) {
-              p.cancel("Clone cancelled.");
-              return;
-            }
-            selectedRepo = pick;
-          }
-        }
-      }
-
-      // Interactive discovery if no repo argument given or not resolved
-      let ghAuth: Awaited<ReturnType<typeof getGitHubAuthStatus>> | null = null;
-      if (!selectedRepo) {
-        ghAuth = await getGitHubAuthStatus();
-        if (!ghAuth.authenticated) {
-          p.log.warn(
-            pc.yellow("GitHub CLI is not authenticated. You can still paste any repository URL."),
-          );
-        }
-
-        const s = p.spinner();
-        s.start("Loading your GitHub repositories...");
-        const [userRepos, starredRepos] = await Promise.all([
-          listUserRepositories({ limit: 100 }, options?.refresh),
-          listStarredRepositories(30, options?.refresh),
-        ]);
-        s.stop("Repositories loaded.");
-
-        const items: PickerItem[] = [];
-        const seenRepos = new Set<string>();
-
-        for (const r of userRepos) {
-          if (seenRepos.has(r.nameWithOwner)) continue;
-          seenRepos.add(r.nameWithOwner);
-          items.push({
-            value: r.nameWithOwner,
-            label: r.nameWithOwner,
-            hint: r.isPrivate ? "🔒 private" : r.description?.slice(0, 45) || "",
-          });
-        }
-
-        for (const r of starredRepos) {
-          if (seenRepos.has(r.nameWithOwner)) continue;
-          seenRepos.add(r.nameWithOwner);
-          items.push({
-            value: r.nameWithOwner,
-            label: `★ ${r.nameWithOwner}`,
-            hint: r.description?.slice(0, 45) || "Starred",
-          });
-        }
-
-        const pick = await searchablePicker({
-          title: "Select or search repository to clone:",
-          items,
-          pageSize: 8,
-          onSearchGitHub: async (q: string) => {
-            const results = await searchRepositories(q, { limit: 15 });
-            return results.map((r) => ({
-              value: r.nameWithOwner,
-              label: `🌐 ${r.nameWithOwner}`,
-              hint: r.isPrivate ? "🔒 private" : r.description?.slice(0, 45) || "",
-            }));
-          },
-        });
-
-        if (!pick) {
-          p.cancel("Clone cancelled.");
-          return;
-        }
-
-        selectedRepo = pick;
-      }
-
-      const finalAuth = ghAuth ?? (await getGitHubAuthStatus());
-      const repoUrl = normalizeCloneUrl(selectedRepo, finalAuth.protocol || "https", finalAuth.host);
-      const defaultRepoName = extractRepoName(selectedRepo);
-
-      // Destination directory resolution
-      let targetDir = options?.dir;
-
-      if (!targetDir) {
-        const config = getConfig();
-        const baseCloneDir = config.default_clone_dir && config.default_clone_dir !== "."
-          ? expandPath(config.default_clone_dir)
-          : process.cwd();
-
-        const defaultPath = join(baseCloneDir, defaultRepoName);
-
-        const dirChoice = await selectMenu({
-          message: "Where would you like to clone this project?",
-          options: [
-            {
-              value: defaultPath,
-              label: `./${defaultRepoName}`,
-              hint: defaultPath,
-            },
-            {
-              value: "__custom_dir__",
-              label: "Choose custom path...",
-              hint: "Enter a specific directory path",
-            },
-          ],
-        });
-
-        if (dirChoice === null) {
-          p.cancel("Clone cancelled.");
-          return;
-        }
-
-        if (dirChoice === "__custom_dir__") {
-          const customPath = await promptInput({
-            message: "Enter target directory path:",
-            defaultValue: defaultPath,
-            placeholder: defaultPath,
-          });
-          if (!customPath) {
-            p.cancel("Clone cancelled.");
-            return;
-          }
-          targetDir = expandPath(customPath);
-        } else {
-          targetDir = dirChoice as string;
-        }
-      } else {
-        targetDir = expandPath(targetDir);
-      }
-
-      if (existsSync(targetDir)) {
-        fail(`Target directory '${targetDir}' already exists!`);
+    .option("--dry-run", "Show the repository and destination without cloning")
+    .action(async (repoArg: string | undefined, options: CloneOptions) => {
+      header("Clone");
+      if (options.ask && isNonInteractive()) {
+        needsInput("--ask requires an interactive terminal. Pass --to <directory> or omit --ask.");
         return;
       }
-
-      // Clone mode selection if not specified via flags. `--fast` is an alias of
-      // `--blobless`, so commander only ever populates `blobless`.
-      if (!isFast && !options?.shallow) {
-        const modePick = await selectMenu({
-          message: "Select clone mode:",
-          options: [
-            {
-              value: "standard" as const,
-              label: "Standard Clone",
-              hint: "Full repository history and blobs",
-            },
-            {
-              value: "blobless" as const,
-              label: "Fast Blobless (--filter=blob:none)",
-              hint: "Much faster download; blobs fetched lazily as needed",
-            },
-            {
-              value: "shallow" as const,
-              label: "Ultra-Fast Shallow (--depth 1)",
-              hint: "Latest commit only; minimal footprint",
-            },
-          ],
-        });
-
-        if (modePick === null) {
-          p.cancel("Clone cancelled.");
-          return;
-        }
-        cloneMode = modePick as CloneMode;
-      }
-
-      const cloneSpinner = p.spinner();
-      cloneSpinner.start(`Cloning ${pc.cyan(selectedRepo)} [${cloneMode} mode] into ${pc.dim(targetDir)}...`);
-
-      cloneSpinner.stop(pc.yellow("dry run"));
-      if (dryRun(`clone ${pc.cyan(selectedRepo)} [${cloneMode}] into ${pc.dim(targetDir)}`)) {
-        p.outro(pc.dim("No files were changed."));
-        return;
-      }
-
+      let selected = repoArg?.trim();
+      let result: CloneResult | undefined;
       try {
-        await clone(repoUrl, targetDir, cloneMode);
-        cloneSpinner.stop(pc.green("Repository cloned successfully!"));
-        p.log.message(`\nTo get started, navigate to your project:\n  ${pc.bold(pc.cyan(`cd ${targetDir}`))}\n`);
-        p.outro(pc.green("Ready to code!"));
-      } catch (err) {
-        cloneSpinner.stop(pc.red("Clone failed."));
-        failFromGitHub(err);
+        if (!selected || (!selected.includes("/") && !selected.includes(":"))) {
+          const all = await listCloneRepositories(options.refresh);
+          const matches = selected ? matchCloneRepositories(all, selected) : all;
+          const global = selected ? await searchRepositories(selected, { limit: 30 }) : [];
+          const candidates = [...new Map([...matches, ...global].map(repo => [repo.nameWithOwner.toLowerCase(), repo])).values()];
+          if (selected && candidates.length === 1) {
+            selected = candidates[0]!.nameWithOwner;
+          } else if (isNonInteractive()) {
+            needsInput(candidates.length ? "Choose an exact OWNER/REPO from candidates." : "Pass an exact OWNER/REPO or repository URL.");
+            jsonOut({ version: 1, candidates: candidates.map(repo => ({ repo: repo.nameWithOwner, destination: cloneDestination(repo.nameWithOwner, { cloneRoot: getConfig().clone_root, to: options.to }) })) });
+            return;
+          } else {
+            selected = await searchablePicker({
+              title: "Repository to clone:", items: pickerItems(candidates), pageSize: 8,
+              matchesQuery: (item, query) => matchCloneRepositories([{ nameWithOwner: item.value, description: item.hint }], query).length > 0,
+              onSearchGitHub: async query => pickerItems(await searchRepositories(query, { limit: 30 })),
+            }) ?? undefined;
+            if (!selected) { p.cancel("Clone cancelled."); return; }
+          }
+        }
+        const auth = await getGitHubAuthStatus();
+        const transport = cloneTransport(selected, auth.protocol ?? "https", options.protocol, auth.host);
+        const config = getConfig();
+        let destination = cloneDestination(selected, { cloneRoot: config.clone_root, to: options.to });
+        if (options.ask) {
+          const input = await promptInput({ message: "Clone into:", defaultValue: destination });
+          if (!input) { p.cancel("Clone cancelled."); return; }
+          destination = cloneDestination(selected, { to: input });
+        }
+        p.log.message(`Destination: ${destination}`);
+        const isFast = options.fast || options.blobless;
+        let mode: CloneMode = isFast ? "blobless" : options.shallow ? "shallow" : config.default_clone_mode ?? "standard";
+        result = { version: 1, destination, repo: redactCloneCredentials(selected), mode, protocol: transport.protocol, fallbackUsed: false, alreadyCloned: false };
+        // Record the resolved target even when validation or cloning fails.
+        jsonOut(result);
+        let exists = false;
+        try {
+          const stat = lstatSync(destination);
+          exists = true;
+          if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("Destination must be a directory, not a symlink.");
+        } catch (error) {
+          if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+        }
+        if (exists && await alreadyCloned(transport.url, destination)) {
+          jsonOut({ ...result, status: "no_op", alreadyCloned: true });
+          p.log.success(`already cloned at ${destination}`);
+          return;
+        }
+        if (exists && readdirSync(destination).length) throw new Error(`Refusing non-empty destination '${destination}': it is not a clone of the same repository.`);
+        if (!isFast && !options.shallow && !isNonInteractive() && !getFlags().dryRun) {
+          const pick = await selectMenu<CloneMode>({ message: "Clone mode:", options: [
+            { value: "standard", label: "Standard" },
+            { value: "blobless", label: "Blobless" },
+            { value: "shallow", label: "Shallow" },
+          ] });
+          if (!pick) { p.cancel("Clone cancelled."); return; }
+          mode = pick;
+          result.mode = mode;
+        }
+        if (dryRun(`clone ${result.repo} [${mode}] into ${destination}`)) { jsonOut(result); return; }
+        const progress = p.spinner();
+        progress.start(`Cloning ${result.repo} into ${destination}`);
+        try {
+          const outcome = await clone(transport.url, destination, mode, process.cwd(), {
+            transport,
+            onProgress: line => progress.message(line),
+            onFallback: () => { if (result) { result.fallbackUsed = true; result.protocol = "https"; } progress.message("SSH authentication or host-key check failed; retrying once over HTTPS."); },
+          });
+          jsonOut({ ...result, ...outcome });
+          progress.stop(`Cloned at ${destination}`);
+        } catch (error) {
+          progress.stop("Clone failed.");
+          jsonOut({ ...result, status: error instanceof CloneCancelledError ? "cancelled" : "failed", error: { message: redactCloneCredentials(error instanceof Error ? error.message : String(error)) } });
+          if (error instanceof CloneCancelledError) {
+            process.exitCode = 130;
+            recordCommandIssue({ status: "cancelled", code: "cancelled", message: error.message });
+          } else fail(redactCloneCredentials(error instanceof Error ? error.message : String(error)));
+        }
+      } catch (error) {
+        if (result) jsonOut({ ...result, status: "failed", error: { message: redactCloneCredentials(error instanceof Error ? error.message : String(error)) } });
+        failFromGitHub(error);
       }
     });
 }
