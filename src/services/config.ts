@@ -13,6 +13,11 @@ export const CLONE_MODES: readonly CloneMode[] = ["blobless", "shallow", "standa
 export const COMMIT_STYLES = ["auto", "conventional", "gitmoji", "concise"] as const;
 
 export interface GoodGhConfig {
+  project_roots?: string[];
+  project_exclude?: string[];
+  project_scan_depth?: number;
+  host_worktree_dirs?: { t3?: string; codex?: string; cursor?: string; claude?: string };
+  go_default?: "cd" | "editor" | "t3";
   repo_create_confirm?: boolean;
   attachment_upload_command?: string;
   /** User-owned permission for commands to generate content with AI. */
@@ -39,6 +44,11 @@ export interface GoodGhConfig {
 }
 
 export const DEFAULT_CONFIG: Required<GoodGhConfig> = {
+  project_roots: [],
+  project_exclude: [],
+  project_scan_depth: 4,
+  host_worktree_dirs: { t3: "~/.t3/worktrees" },
+  go_default: "cd",
   repo_create_confirm: true,
   attachment_upload_command: "",
   ai_enabled: false,
@@ -62,6 +72,10 @@ export const MAX_AI_TIMEOUT_MS = 3_600_000;
 /** A model slug: letters, digits, and the punctuation vendors actually use. */
 const MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 
+function isProjectRoot(path: string): boolean {
+  return !path.includes("\0") && (isAbsolute(path) || path === "~" || path.startsWith("~/"));
+}
+
 export interface ConfigProblem {
   key: string;
   message: string;
@@ -73,7 +87,25 @@ export interface ConfigProblem {
  * `.ggh.json` a cloned repository may ship — which is untrusted input.
  */
 export function validateConfigValue(key: string, raw: unknown): { value?: unknown; problem?: string } {
+  if (["project_roots", "project_exclude", "host_worktree_dirs"].includes(key) && typeof raw === "string") {
+    try { raw = JSON.parse(raw); }
+    catch { return { problem: "must be valid JSON" }; }
+  }
   switch (key as keyof GoodGhConfig) {
+    case "project_roots":
+    case "project_exclude":
+      return Array.isArray(raw) && raw.every((path: unknown) => typeof path === "string" && path.length > 0 && !path.includes("\0") && (key === "project_exclude" || isProjectRoot(path)))
+        ? { value: raw }
+        : { problem: key === "project_roots" ? "must be an array of absolute or ~/ paths" : "must be an array of paths or globs" };
+    case "project_scan_depth": {
+      const n = typeof raw === "number" ? raw : typeof raw === "string" && /^\d+$/.test(raw) ? Number(raw) : NaN;
+      return Number.isInteger(n) && n >= 0 && n <= 8 ? { value: n } : { problem: "must be an integer between 0 and 8" };
+    }
+    case "host_worktree_dirs":
+      return raw && typeof raw === "object" && !Array.isArray(raw) && Object.entries(raw).every(([host, path]) => ["t3", "codex", "cursor", "claude"].includes(host) && typeof path === "string" && isProjectRoot(path))
+        ? { value: raw } : { problem: "must be an object mapping t3, codex, cursor, or claude to absolute or ~/ paths" };
+    case "go_default":
+      return typeof raw === "string" && ["cd", "editor", "t3"].includes(raw) ? { value: raw } : { problem: "must be cd, editor, or t3" };
     case "attachment_upload_command":
       return typeof raw === "string" && (raw === "" || (isAbsolute(raw) && raw.length <= 4096 && !/[\0\r\n]/.test(raw)))
         ? { value: raw }

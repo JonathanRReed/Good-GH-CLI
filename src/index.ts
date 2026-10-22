@@ -1,3 +1,6 @@
+import { registerProjectsCommand } from "./commands/projects.ts";
+import { registerGoCommand } from "./commands/go.ts";
+import { registerInitCommand } from "./commands/init.ts";
 import { CapabilityError } from "./services/dependency-compatibility.ts";
 import { registerAgentCommand } from "./commands/agent.ts";
 import { finalizeJsonOutput } from "./utils/output.ts";
@@ -61,6 +64,9 @@ import { registerCommandOperations } from "./services/command-operations.ts";
  * Commands without an entry (including community plugins) keep the default group.
  */
 export const HELP_GROUPS: Record<string, string> = {
+  projects: "Projects",
+  go: "Projects",
+  init: "Setup",
   status: "Status",
   commit: "Daily loop",
   log: "Daily loop",
@@ -127,6 +133,9 @@ export async function createProgram(): Promise<Command> {
 
   // Registration order is the order `ggh --help` prints them, so it runs from
   // "where am I" through the daily loop, then GitHub, then configuration.
+  registerProjectsCommand(program);
+  registerGoCommand(program);
+  registerInitCommand(program);
   registerStatusCommand(program);
   registerCommitCommand(program);
   registerLogCommand(program);
@@ -233,6 +242,8 @@ export async function runCli(argv: string[]): Promise<void> {
     return;
   }
 
+  if (args.length === 0 || args.every(arg => ["--agent", "--json", "-q", "--quiet", "--no-input"].includes(arg))) args = ["projects", ...args];
+
   const agentRequested = args.slice(0, args.indexOf("--") < 0 ? args.length : args.indexOf("--")).includes("--agent");
   if (agentRequested) {
     beginCommandOutput();
@@ -283,11 +294,6 @@ export async function runCli(argv: string[]): Promise<void> {
       ? `Use the explicit Git command: ggh git ${args.join(" ")}`
       : `Unknown command "${head}".${suggestion ? ` Did you mean "ggh ${suggestion}"?` : ""} Use ggh git or ggh gh for native commands.`);
     if (agentRequested) { recordCommandIssue({ status: "failed", code: "invalid_arguments", message: "Unknown command." }); finalizeJsonOutput(); }
-    return;
-  }
-
-  if (args.length === 0) {
-    program.outputHelp();
     return;
   }
 

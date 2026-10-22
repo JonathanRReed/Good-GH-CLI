@@ -14,6 +14,73 @@ Run git with its native arguments, output, and exit status
 .TP
 \fBgh\fR
 Run gh with its native arguments, output, and exit status
+.SS "Projects"
+.TP
+\fBprojects\fR
+List local projects or inspect one project
+.RS
+.TP
+\fBroots\fR
+Manage project scan roots
+.RE
+.RS
+.TP
+\fBregister\fR
+Include a nested repository explicitly
+.RE
+.RS
+.TP
+\fBexclude\fR
+Exclude a path without deleting its files
+.RE
+.RS
+.TP
+\fBforget\fR
+Forget a path without deleting its files
+.RE
+.TP
+\fBgo\fR
+Find a project and print its path or open it
+.SS "Setup"
+.TP
+\fBinit\fR
+Print a shell function to jump to projects
+.TP
+\fBconfig\fR
+Configure AI permission, providers, models, and defaults
+.RS
+.TP
+\fBlist, ls\fR
+List all configuration settings
+.RE
+.RS
+.TP
+\fBcache-clear\fR
+Delete cached GitHub responses
+.RE
+.RS
+.TP
+\fBget\fR
+Get a specific configuration value
+.RE
+.RS
+.TP
+\fBset\fR
+Set a configuration value (e.g. ai_enabled true, ai_provider grok)
+.RE
+.RS
+.TP
+\fBunset\fR
+Remove a value from your user config so the default (or project/env) applies
+.RE
+.RS
+.TP
+\fBdoctor\fR
+Check configuration and inspect installed AI CLI versions and capabilities
+.RE
+.TP
+\fBcompletion\fR
+Generate completions for zsh, bash, fish, or powershell
 .SS "Status"
 .TP
 \fBstatus, st\fR
@@ -122,8 +189,8 @@ Rename the current branch, locally and on the remote
 Fetch, prune, and delete branches whose remote is gone
 .SS "GitHub"
 .TP
-\fBclone\fR
-Search for and clone a repository, optionally blobless
+\fBclone, get\fR
+Search for and clone a repository
 .TP
 \fBrepo\fR
 View, fork, create, and set the default repository
@@ -684,43 +751,6 @@ Fetch a teammate's stack
 \fBlist\fR
 List your team-stack gists
 .RE
-.SS "Setup"
-.TP
-\fBconfig\fR
-Configure AI permission, providers, models, and defaults
-.RS
-.TP
-\fBlist, ls\fR
-List all configuration settings
-.RE
-.RS
-.TP
-\fBcache-clear\fR
-Delete cached GitHub responses
-.RE
-.RS
-.TP
-\fBget\fR
-Get a specific configuration value
-.RE
-.RS
-.TP
-\fBset\fR
-Set a configuration value (e.g. ai_enabled true, ai_provider grok)
-.RE
-.RS
-.TP
-\fBunset\fR
-Remove a value from your user config so the default (or project/env) applies
-.RE
-.RS
-.TP
-\fBdoctor\fR
-Check configuration and inspect installed AI CLI versions and capabilities
-.RE
-.TP
-\fBcompletion\fR
-Generate completions for zsh, bash, fish, or powershell
 .SS "Other commands"
 .TP
 \fBagent\fR

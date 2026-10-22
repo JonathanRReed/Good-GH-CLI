@@ -3,7 +3,7 @@ import { getGitPath } from "./paths.ts";
  * Worktree management. Depends on exec/branch/stack only.
  */
 
-import { run } from "../../utils/exec.ts";
+import { run, type RunOptions } from "../../utils/exec.ts";
 import { existsSync, appendFileSync, readFileSync, copyFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, isAbsolute, resolve } from "node:path";
 import { execGitWithRetry } from "./exec.ts";
@@ -53,8 +53,8 @@ function isStrictDescendant(directory: string, candidate: string): boolean {
 }
 
 
-export async function worktreeList(cwd = process.cwd()): Promise<WorktreeInfo[]> {
-  const { stdout } = await run("git", ["worktree", "list", "--porcelain", "-z"], { cwd });
+export async function worktreeList(cwd = process.cwd(), options: Omit<RunOptions, "cwd"> = {}): Promise<WorktreeInfo[]> {
+  const { stdout } = await run("git", ["worktree", "list", "--porcelain", "-z"], { ...options, cwd });
   const entries: WorktreeInfo[] = [];
   for (const block of stdout.split("\0\0")) {
     const entry: WorktreeInfo = {

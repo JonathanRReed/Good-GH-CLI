@@ -5,7 +5,7 @@ import { p, pc } from "./ui.ts";
 
 /** Commands that can emit structured data instead of a rendered view. */
 export const JSON_CAPABLE = new Set([
-  "clone", "commit", "operation",
+  "projects", "go", "clone", "commit", "operation",
   "status", "pr", "checks", "ci", "log", "stash", "worktree", "config",
   "release", "issue", "run", "repo", "stack", "sync", "changelog", "api",
   "workflow", "label", "gist", "search", "secret", "variable", "notifications",
@@ -81,11 +81,8 @@ function decorate(command: Command, domain: string): void {
 export function applyGlobalFlags(program: Command): void {
   for (const command of program.commands) {
     const domain = command.name();
-    decorate(command, domain);
-    // Subcommands inherit the same surface (e.g. `ggh pr create --json`).
-    for (const sub of command.commands) {
-      decorate(sub, domain);
-    }
+    const commands = [command];
+    for (const child of commands) { decorate(child, domain); commands.push(...child.commands); }
   }
 
   program.hook("preAction", (_thisCommand, actionCommand) => {
@@ -94,9 +91,9 @@ export function applyGlobalFlags(program: Command): void {
     for (let current: Command | null = actionCommand; current?.parent; current = current.parent) names.unshift(current.name());
     setCommandPath(names);
     const parent = actionCommand.parent;
-    if (parent) {
-      for (const [key, value] of Object.entries(parent.opts())) {
-        const parentSource = parent.getOptionValueSource(key);
+    for (let ancestor = parent; ancestor; ancestor = ancestor.parent) {
+      for (const [key, value] of Object.entries(ancestor.opts())) {
+        const parentSource = ancestor.getOptionValueSource(key);
         const childSource = actionCommand.getOptionValueSource(key);
         if (value !== undefined && parentSource && parentSource !== "default" && childSource !== "cli") {
           actionCommand.setOptionValueWithSource(key, value, parentSource);

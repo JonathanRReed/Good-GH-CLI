@@ -9,6 +9,79 @@ I hated the GitHub CLI. This makes it bearable.
 
 Git and GitHub commands are explicit. Use `ggh git <args>` for Git, `ggh gh <args>` for GitHub CLI, or `ggh -- <git-args>` as a short Git escape. Unknown commands do not run as Git.
 
+## Projects
+
+```bash
+ggh projects roots add ~/Downloads
+ggh                         # All indexed local projects
+ggh projects                # Same table
+ggh projects Good-GH-CLI     # Checkouts, unpublished work, stashes, history
+ggh projects --agent         # Compact, versioned JSON; no network
+ggh go Good-GH-CLI           # Context on stderr, path on stdout
+ggh go Good-GH-CLI --editor  # VISUAL, EDITOR, code, cursor, or zed
+ggh go Good-GH-CLI --t3      # Probe an installed T3 launcher
+ggh go Good-GH-CLI --print   # Path only
+ggh projects roots list
+ggh projects roots remove ~/Downloads
+ggh projects exclude ~/Downloads/archive
+ggh projects forget ~/Downloads/old-project
+ggh projects register ~/Downloads/parent/nested-repo
+```
+
+Bare `ggh` lists projects, including without a terminal. Help stays at `ggh --help`.
+Scan roots start empty. Discovery stops at a repository, includes its linked
+worktrees wherever Git lists them, and checks configured host worktree directories.
+T3 defaults to `~/.t3/worktrees`; Claude and Cursor directories inside a repository
+are included. Codex directories require configuration. Host labels describe path
+evidence, not permission to delete a checkout.
+
+Each clone gets its own row, even when several clones share a remote. Status is
+local and read on demand, with eight clone workers and a three-second deadline per
+clone. Unknown and failed fields stay visible. Unpublished counts include every
+local branch and detached checkout HEAD, measured against all remote-tracking refs.
+Merged branches require a known remote default branch. Nothing fetches or reads
+host transcripts. Discovery reports unreadable and depth-limited paths.
+
+The private index lives at `<configDir>/projects.json`. It stores checkout metadata
+and redacted remote URLs, never status. Missing clones remain flagged for one
+refresh before removal. `forget` and `exclude` remove paths from discovery without
+deleting their files. Registering a path clears an exact index exclusion; remove
+any matching `project_exclude` rule separately to include an excluded path again.
+
+Configure discovery with `ggh config set` using JSON for lists and objects:
+
+```bash
+ggh config set project_roots '["~/Downloads", "/work"]'
+ggh config set project_exclude '["**/archive/**", "/work/old"]'
+ggh config set project_scan_depth 4  # Range: 0 through 8
+ggh config set host_worktree_dirs '{"t3":"~/.t3/worktrees","codex":"/work/codex"}'
+ggh config set go_default editor    # cd, editor, or t3; default cd
+```
+
+Install the shell function to change your current shell's directory:
+
+```bash
+# Add to ~/.zshrc, or use bash in ~/.bashrc:
+eval "$(ggh init zsh)"
+g Good-GH-CLI
+# Choose another function name:
+eval "$(ggh init zsh --cmd jump)"
+```
+
+For fish, add `ggh init fish | source` to `config.fish`. For PowerShell, add
+`Invoke-Expression (ggh init pwsh | Out-String)` to your profile. Only the generated
+function is sourced. Repository paths are passed as data and never evaluated.
+The hook calls `ggh go --print --shell`; its path ends in `/.` so command
+substitution preserves trailing newlines. Failed lookups leave the directory
+unchanged. Identical basenames require a choice or an exact checkout path.
+Noninteractive ambiguous or missing lookups return JSON candidates and exit
+nonzero. A missing local project suggests `ggh clone`; it never clones for you.
+
+Run `bun run scripts/bench-projects.ts` for a disposable 70-repository cold/warm
+benchmark. Set `GGH_BENCH_REAL=1` to also measure `~/Downloads` and T3 worktrees.
+The benchmark writes its index under a temporary directory and leaves repositories
+unchanged. Timings include discovery, index refresh, and local status.
+
 ## Install
 
 Follow the [platform installation and repair guide](docs/INSTALL.md) for checksum, PATH, and dependency steps. See [dependency compatibility](docs/COMPATIBILITY.md) for the supported Git floor and tested GitHub CLI capabilities.
