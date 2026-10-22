@@ -9,7 +9,7 @@ export const inventoryGitOptions: RunOptions = {
 export async function projectGit(cwd: string, args: string[], deadline = Date.now() + 3000): Promise<RunResult> {
   const remaining = deadline - Date.now();
   if (remaining <= 0) throw new Error("Project deadline exceeded");
-  return run("git", ["-c", "core.fsmonitor=false", ...args], { ...inventoryGitOptions, cwd, timeoutMs: remaining });
+  return run("git", ["--no-replace-objects", "-c", "core.fsmonitor=false", ...args], { ...inventoryGitOptions, cwd, timeoutMs: remaining });
 }
 
 export function gitLine(text: string): string { return text.replace(/\r?\n$/, ""); }

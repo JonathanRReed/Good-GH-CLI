@@ -9,7 +9,7 @@ import { acquireProcessLock, inspectProcessLock, recoverProcessLock } from "./pr
 import { parsePublicationIntent, type PublicationIntent } from "./publication-intent.ts";
 
 export type OperationId = string & { readonly __brand: "OperationId" };
-export type StepState = "pending" | "completed" | "failed" | "unknown";
+export type StepState = "pending" | "completed" | "failed" | "unknown" | "skipped" | "refused" | "uncertain";
 export type OperationStatus =
   | { state: "running" }
   | { state: "succeeded" }
@@ -70,7 +70,7 @@ const MAX_LIST_RESULTS = 100;
 const ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const COMMAND_PATTERN = /^[a-z][a-z0-9-]*(?: [a-z][a-z0-9-]*){0,5}$/i;
 const NAME_PATTERN = /^[^\0\r\n]{1,512}$/u;
-const STEP_STATES: readonly StepState[] = ["pending", "completed", "failed", "unknown"];
+const STEP_STATES: readonly StepState[] = ["pending", "completed", "failed", "unknown", "skipped", "refused", "uncertain"];
 const AI_PROVIDERS: readonly AIUsageReport["provider"][] = ["codex", "grok", "claude", "ollama"];
 const AI_USAGE_SCALARS = ["inputTokens", "outputTokens", "cachedInputTokens", "cacheWriteInputTokens", "costUsd"] as const;
 const AI_USAGE_SCALAR_KEYS = new Set<string>(AI_USAGE_SCALARS);

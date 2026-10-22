@@ -73,6 +73,52 @@ Commands that create, delete, merge, publish, rerun, or transfer data support a
 preview or explicit confirmation. Non-interactive runs must provide the matching
 flag. JSON mode does not auto-confirm.
 
+### Bulk destructive operations
+
+`ggh tidy` treats the preview as a fixed set of actions, not permission to find
+more things to delete. Each action carries canonical common-directory identity,
+checkout identity when relevant, exact refs and OIDs, destination, stash state,
+and a file-state fingerprint. Stable IDs and the plan digest bind approval to
+that set. A stale `--approve-plan` fails before cleanup; per-path ignored-file or
+unknown-provenance overrides require a new approved plan.
+
+A PR badge cannot prove integration. Tidy requires exact-tip ancestry and remote
+reachability, including detached HEADs. It keeps stashes at clone scope, dirty or
+ignored files, nested repositories, submodules, hidden index entries, shallow or
+grafted histories, locked checkouts, and uncertain state. Local ref deletion uses
+an expected-old-OID update. Remote deletion requires offline evidence of own-origin
+ownership, a fresh server OID check, and an expected-OID push lease to one pinned
+URL. No default preview contacts GitHub or a remote. `--fetch` explicitly updates
+remote-tracking refs before the preview, even with `--dry-run`.
+
+Host ownership grants no deletion authority. A T3, Claude, Cursor, or Codex
+checkout can be clean while a thread, terminal, provider session, or queued turn
+still uses it. Such checkouts are always manual candidates for the host's cleanup.
+Tidy does not read host transcripts, credentials, or databases to guess activity.
+Unknown provenance defaults to keep; observed host claims override any ggh label
+or user override.
+
+Git metadata pruning affects a whole clone. Tidy therefore refuses it if any
+prunable entry has unsafe or unknown state, an existing path, an unavailable
+volume root, a host claim, or unpublished HEAD. It verifies the registry and Git's
+prune dry-run again, preserving configured expiry with a three-month default.
+This operation never recursively removes an existing checkout.
+
+Per-common-directory process locks serialize tidy processes. They cannot lock
+out terminals, hosts, or other Git clients. Rechecks narrow races but cannot make
+filesystem deletion atomic with file creation. Remote leases and local ref
+compare-and-swap protect exact tips. Checkout removal retains Git's own final
+checks. Effects are journaled before starting, with unresolved execution marked
+uncertain. Ctrl-C stops the next action after recording the current outcome;
+a second interrupt or process death can leave an uncertain journal for inspection.
+Already completed actions are not rolled back.
+
+`ggh lost` is read-only. Its suggested commands are argv data, not automatically
+executed scripts. Local tracking refs cannot prove absence from unfetched remotes
+or PRs. Dirty host work means possible abandoned work, never a claim that the
+host session ended. Both commands report discovery gaps rather than interpreting
+missing evidence as permission to delete.
+
 ### Hosted AI disclosure
 
 Sanitization drops known sensitive files and redacts recognizable credentials.

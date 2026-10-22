@@ -1,3 +1,4 @@
+import { lostResultSchema, tidyResultSchema } from "./projects/tidy-schema.ts";
 import { projectsResultSchema } from "./projects/schema.ts";
 import { projectSyncResultSchema } from "./projects/sync-schema.ts";
 import type { ProjectSyncResult } from "./projects/sync.ts";
@@ -37,7 +38,7 @@ export function agentEnvelope(input: { command: string[]; result?: unknown; issu
   const path = input.command.join(" ");
   const result = typeof input.result === "object" && input.result !== null && !Array.isArray(input.result) ? input.result : undefined;
   const bulkSync = path === "sync" && isProjectSyncResult(input.result) ? input.result : undefined;
-  const workflow = Boolean(bulkSync) || path === "commit" || path === "pr create" || path === "repo create" || path.startsWith("stack ");
+  const workflow = Boolean(bulkSync) || path === "tidy" || path === "commit" || path === "pr create" || path === "repo create" || path.startsWith("stack ");
   const noOp = ["clone", "worktree remove", "worktree prune", "rename", "draft", "draft create", "undo", "discard", "sync", "squash", "operation resume"].includes(path);
   const managedStatus = result && "status" in result && ((workflow && ["partially_completed", "needs_input", "cancelled", "failed", "succeeded", "no_op"].includes(String(result.status))) || (noOp && result.status === "no_op")) ? result.status : undefined;
   const strings = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
@@ -49,7 +50,7 @@ export function agentEnvelope(input: { command: string[]; result?: unknown; issu
   const effects = {
     completed: operation?.steps.filter(step => step.state === "completed").map(step => step.name) ?? (workflow && result && "completed" in result ? strings(result.completed) : []),
     pending: operation?.steps.filter(step => step.state === "pending").map(step => step.name) ?? (workflow && result && "remaining" in result ? strings(result.remaining) : input.preview.length ? ["command_effects"] : []),
-    uncertain: operation?.steps.filter(step => step.state === "unknown" || step.state === "failed").map(step => step.name) ?? [],
+    uncertain: operation?.steps.filter(step => step.state === "unknown" || step.state === "failed" || step.state === "uncertain").map(step => step.name) ?? (path === "tidy" && result && "uncertain" in result ? strings(result.uncertain) : []),
   };
   effects.completed = [...new Set([...effects.completed, ...input.completedEffects ?? []])];
   effects.uncertain = [...new Set([...effects.uncertain, ...input.uncertainEffects ?? []])];
@@ -128,7 +129,7 @@ const workflowResultSchema = { type: "object", additionalProperties: true, prope
 const operationResultSchema = { type: "object", additionalProperties: true, properties: {
   schemaVersion: { const: 1 }, id: { type: "string" }, command: { type: "string" },
   status: { type: "object", properties: { state: { type: "string" } } },
-  steps: { type: "array", items: { type: "object", properties: { name: { type: "string" }, state: { enum: ["pending", "completed", "failed", "unknown"] } } } },
+  steps: { type: "array", items: { type: "object", properties: { name: { type: "string" }, state: { enum: ["pending", "completed", "failed", "unknown", "skipped", "refused", "uncertain"] } } } },
   resources: stringArraySchema,
 } };
 const nullableIntegerSchema = { type: ["integer", "null"] };
@@ -210,6 +211,8 @@ export const reviewResultSchema = {
   },
 };
 export const coreResultSchemas = {
+  tidy: { commandPaths: [["tidy"]], schema: tidyResultSchema },
+  lost: { commandPaths: [["lost"]], schema: lostResultSchema },
   review: { commandPaths: [["review"]], schema: reviewResultSchema },
   sync: { commandPaths: [["sync"]], schema: { anyOf: [projectSyncResultSchema,
     { type: "object", required: ["schemaVersion", "query", "candidates"], properties: { schemaVersion: { const: 1 }, query: { type: "string" }, candidates: { type: "array", items: { type: "object", required: ["name", "paths"], properties: { name: { type: "string" }, paths: stringArraySchema } } } } },

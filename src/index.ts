@@ -1,3 +1,5 @@
+import { registerTidyCommand } from "./commands/tidy.ts";
+import { registerLostCommand } from "./commands/lost.ts";
 import { registerProjectsCommand } from "./commands/projects.ts";
 import { registerGoCommand } from "./commands/go.ts";
 import { registerInitCommand } from "./commands/init.ts";
@@ -65,6 +67,8 @@ import { registerCommandOperations } from "./services/command-operations.ts";
  * Commands without an entry (including community plugins) keep the default group.
  */
 export const HELP_GROUPS: Record<string, string> = {
+  tidy: "Projects",
+  lost: "Projects",
   projects: "Projects",
   go: "Projects",
   init: "Setup",
@@ -136,6 +140,8 @@ export async function createProgram(): Promise<Command> {
   // Registration order is the order `ggh --help` prints them, so it runs from
   // "where am I" through the daily loop, then GitHub, then configuration.
   registerProjectsCommand(program);
+  registerTidyCommand(program);
+  registerLostCommand(program);
   registerGoCommand(program);
   registerInitCommand(program);
   registerStatusCommand(program);

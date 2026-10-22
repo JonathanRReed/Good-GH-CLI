@@ -4,7 +4,7 @@ import { cancelActiveSyncs } from "../src/services/projects/sync.ts";
 import { runCli } from "../src/index.ts";
 import { killAllChildren } from "../src/utils/exec.ts";
 import { restoreTerminal, finalizeJsonOutput } from "../src/utils/output.ts";
-import { recordCommandIssue, setFlags } from "../src/services/runtime.ts";
+import { recordCommandIssue, setFlags, requestCommandCancellation } from "../src/services/runtime.ts";
 import { finishCommandOperation } from "../src/services/command-operations.ts";
 
 let interrupted = false;
@@ -21,7 +21,8 @@ async function onInterrupt(signal: NodeJS.Signals): Promise<void> {
   process.stderr.write("\n\x1b[31m✖\x1b[0m  Cancelled.\n");
   recordCommandIssue({ status: "cancelled", message: "Cancelled." });
   restoreTerminal();
-  if (cancelActiveSyncs()) {
+  const syncCancelled = cancelActiveSyncs();
+  if (requestCommandCancellation() || syncCancelled) {
     process.exitCode = signal === "SIGTERM" ? 143 : 130;
     await cliRun;
     process.exit(signal === "SIGTERM" ? 143 : 130);
