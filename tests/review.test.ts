@@ -42,15 +42,20 @@ function threads(head: string, base: string) {
     pageInfo: { hasNextPage: false, endCursor: null },
   } } } } };
 }
-async function review(input: { parent: string; repo: string; base: string; head: string }, args: string[]) {
+async function review(input: { parent: string; repo: string; base: string; head: string; unsafeText?: string }, args: string[]) {
   const command = ["review", "42", ...args];
+  const discussion = threads(input.head, input.base);
+  if (input.unsafeText) for (const thread of discussion.data.repository.pullRequest.reviewThreads.nodes) for (const comment of thread.comments.nodes) {
+    comment.body = input.unsafeText; comment.author.login = input.unsafeText;
+  }
   return runFixture(command, { root, cwd: input.repo, responses: [
     { prefix: ["pr", "view", "42"], stdout: JSON.stringify({ number: 42, url: "https://github.com/fixture/repo/pull/42", headRefOid: input.head, baseRefOid: input.base }) },
-    { prefix: ["api", "graphql"], stdout: JSON.stringify(threads(input.head, input.base)) },
+    { prefix: ["api", "graphql"], stdout: JSON.stringify(discussion) },
   ], invoke: `
     process.env.XDG_CONFIG_HOME = ${JSON.stringify(input.parent)};
     process.env.GGH_REVIEW_EDITOR = 'missing-editor --wait';
     const { mock } = await import('bun:test');
+    if (${Boolean(input.unsafeText)}) mock.module(${JSON.stringify(new URL("../src/services/review/pager.ts", import.meta.url).href)}, () => ({detectReviewPager:()=> 'renderer',showReviewPager:async()=>{}}));
     const childProcess = await import('node:child_process');
     mock.module('node:child_process', () => ({ ...childProcess, spawn() { throw new Error('GUI launch forbidden'); }, execFile() { throw new Error('Editor materialization forbidden'); } }));
     const originalSpawn = Bun.spawn;
@@ -330,4 +335,16 @@ test("pipes a diff to inherited pager stdin", async () => {
   ` });
   expect(output.exitCode).toBe(0);
   expect(output.stdout).toBe("diff for pager\n");
+});
+
+test("incremental review human output strips commit and thread terminal controls", async () => {
+  const fixture = await repository();
+  const unsafeText = "visible\x1b[2J\x1b]0;forged\x07";
+  const head = await commit(fixture.repo, "change\n", unsafeText);
+  const output = await review({ ...fixture, head, unsafeText }, ["--pager", "--since", fixture.base]);
+  expect(output.exitCode, output.stderr).toBe(0);
+  expect(output.stdout).toContain("visible"); expect(output.stdout).not.toContain("\x1b"); expect(output.stdout).not.toContain("forged");
+  const raw = await review({ ...fixture, head, unsafeText }, ["--json", "--since", fixture.base]);
+  expect(JSON.parse(raw.stdout).since.commits[0].subject).toBe(unsafeText);
+  expect(JSON.parse(raw.stdout).since.threadsChanged.threads[0].comments[0]).toMatchObject({ body: unsafeText, author: { login: unsafeText } });
 });

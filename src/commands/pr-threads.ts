@@ -2,7 +2,7 @@ import type { Command } from "commander";
 import { getReviewThreads, reviewThreadsSince, type ReviewThreadsResult } from "../services/github/review-threads.ts";
 import { getFlags } from "../services/runtime.ts";
 import { parsePositiveSafeInteger } from "../utils/numeric-target.ts";
-import { data } from "../utils/output.ts";
+import { data, safeHumanText } from "../utils/output.ts";
 import { fail, failFromGitHub, jsonOut } from "../utils/ui.ts";
 
 export function formatReviewThreads(result: ReviewThreadsResult): string {
@@ -14,13 +14,13 @@ export function formatReviewThreads(result: ReviewThreadsResult): string {
   }
   const lines = [`PR #${result.number} ${result.headSha} (base ${result.baseSha})`];
   for (const [path, threads] of files) {
-    lines.push(`\n${path}`);
+    lines.push(`\n${safeHumanText(path)}`);
     for (const thread of threads) {
       const line = thread.line ?? thread.originalLine;
       const location = line === null ? "file" : thread.startLine === null ? `${line}` : `${thread.startLine}-${line}`;
-      lines.push(`  ${location} [${thread.isResolved ? "resolved" : "unresolved"}]${thread.isOutdated ? " [outdated]" : ""} ${thread.id}`);
+      lines.push(`  ${location} [${thread.isResolved ? "resolved" : "unresolved"}]${thread.isOutdated ? " [outdated]" : ""} ${safeHumanText(thread.id)}`);
       for (const comment of thread.comments) {
-        lines.push(`  @${comment.author?.login ?? "deleted"}${comment.outdated ? " [outdated]" : ""}${comment.bodyTruncated ? " [body truncated]" : ""}`, comment.body);
+        lines.push(`  @${safeHumanText(comment.author?.login ?? "deleted")}${comment.outdated ? " [outdated]" : ""}${comment.bodyTruncated ? " [body truncated]" : ""}`, safeHumanText(comment.body));
       }
     }
   }

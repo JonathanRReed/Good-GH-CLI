@@ -173,7 +173,7 @@ describe("indexed sync", () => {
     await git(local, "config", "remote.origin.uploadpack", quoteShellArgument(uploadPack));
     const result = await syncProjects([clone], { timeoutMs: 1000 });
     expect(result.clones[0]).toMatchObject({ outcome: "uncertain", fetches: [{ remote: "origin", outcome: "uncertain", message: expect.stringContaining("timed out") }], checkouts: [expect.objectContaining({ outcome: "skipped", reason: "fetch-failed" })] });
-    expect(await git(local, "rev-parse", "HEAD")).toBe(old); expect(existsSync(join(clone.commonDir, "ggh-sync.lock"))).toBe(false);
+    expect(await git(local, "rev-parse", "HEAD")).toBe(old); expect(existsSync(join(clone.commonDir, "ggh.lock"))).toBe(false);
   });
 
   it("treats a failed fast-forward as uncertain and never leaves a merge in progress", async () => {
@@ -230,7 +230,7 @@ describe("indexed sync", () => {
     ` });
     expect(result.exitCode, result.stderr).toBe(130); expect(result.stdout.trim().split("\n")).toHaveLength(1);
     expect(JSON.parse(result.stdout)).toMatchObject({ status: "partially_completed", effects: { completed: expect.arrayContaining([`fetch:${a.clone.commonDir}:origin`]), pending: expect.arrayContaining([`sync:${b.clone.commonDir}`]), uncertain: [] }, result: { cancelled: true, clones: [expect.any(Object), expect.objectContaining({ outcome: "skipped", reason: "cancelled" })] } });
-    expect(existsSync(join(a.clone.commonDir, "ggh-sync.lock"))).toBe(false);
+    expect(existsSync(join(a.clone.commonDir, "ggh.lock"))).toBe(false);
   });
 });
 

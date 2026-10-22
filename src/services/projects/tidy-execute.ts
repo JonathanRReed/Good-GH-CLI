@@ -1,17 +1,16 @@
-import { join } from "node:path";
 import { getConfig } from "../config.ts";
 import { acquireProcessLock } from "../process-lock.ts";
 import { startOperation, updateOperation, type StepState } from "../operations.ts";
 import { ExecError, run } from "../../utils/exec.ts";
-import { inventoryGitOptions } from "./git.ts";
-import { classifyTidyClone, directoryIdentity, remoteOwnership, tidyDigest, tidySnapshot, type TidyAction, type TidyPlan } from "./tidy-plan.ts";
+import { inventoryGitOptions, projectLockPath, projectNetworkOptions } from "./git.ts";
+import { checkoutFileState, classifyTidyClone, directoryIdentity, remoteOwnership, tidyDigest, tidySnapshot, type TidyAction, type TidyPlan } from "./tidy-plan.ts";
 import type { Clone } from "./types.ts";
 
 export interface TidyOutcome { id: string; kind: TidyAction["kind"]; commonDir: string; state: "completed" | "skipped" | "refused" | "failed" | "uncertain"; reason: string; operationId: string }
 export function assertTidyApproval(provided: string, plan: TidyPlan): void {
   if (!/^[a-f0-9]{64}$/.test(provided) || provided !== plan.snapshotId || tidySnapshot(plan) !== plan.snapshotId) throw new Error("Tidy snapshot does not match --approve-plan. Review a fresh --dry-run and approve its snapshotId.");
 }
-export function tidyLockPath(commonDir: string): string { return join(commonDir, "ggh-tidy.lock"); }
+export const tidyLockPath = projectLockPath;
 async function effect(action: TidyAction): Promise<void> {
   const cwd = action.proof.commonDir;
   const options = { ...inventoryGitOptions, cwd, timeoutMs: 30000 };
@@ -23,13 +22,15 @@ async function effect(action: TidyAction): Promise<void> {
     case "delete-remote-branch": {
       const owned = await remoteOwnership(cwd, action.branch);
       if (!owned || owned.destination !== action.destination || owned.login !== action.login) throw new Error("Remote ownership or destination changed");
-      const remote = await run("git", ["ls-remote", "--refs", "--", action.destination, `refs/heads/${action.branch}`], options);
+      const networkOptions = { ...projectNetworkOptions, cwd, timeoutMs: 30000 };
+      const remote = await run("git", ["ls-remote", "--refs", "--", action.destination, `refs/heads/${action.branch}`], networkOptions);
       if (remote.stdout.trim() !== `${action.tip}\trefs/heads/${action.branch}`) throw new Error("Remote tip changed after preview");
       // Send to the pinned URL, so a concurrent origin URL edit cannot redirect it.
-      await run("git", ["-c", "core.hooksPath=", "push", "--no-follow-tags", "--no-mirror", `--force-with-lease=refs/heads/${action.branch}:${action.tip}`, "--", action.destination, `:refs/heads/${action.branch}`], options);
+      await run("git", ["-c", "core.hooksPath=", "push", "--no-follow-tags", "--no-mirror", `--force-with-lease=refs/heads/${action.branch}:${action.tip}`, "--", action.destination, `:refs/heads/${action.branch}`], networkOptions);
       return;
     }
     case "remove-checkout":
+      if (await checkoutFileState(action.checkout, action.allowIgnored) !== action.fileState) throw new Error("Checkout file state changed after preview");
       await run("git", ["worktree", "remove", "--", action.checkout.path], options);
       return;
     case "prune-worktree-metadata":
@@ -70,7 +71,7 @@ export async function executeTidyPlan(plan: TidyPlan, clones: readonly Clone[], 
               try { await effect(action); state = "completed"; message = "Approved effect completed"; }
               catch (error) {
                 message = error instanceof Error ? error.message : "Effect failed";
-                state = /changed after preview|ownership or destination changed/.test(message) ? "refused" : /timed out|signal|killed/i.test(message) || (error instanceof ExecError && error.exitCode >= 128) || action.kind === "delete-remote-branch" ? "uncertain" : "failed";
+                state = /authentication failed|permission denied|could not read (?:username|password)|terminal prompts disabled|publickey/i.test(message) ? "refused" : /changed after preview|ownership or destination changed|Ignored files present/.test(message) ? "refused" : /timed out|signal|killed/i.test(message) || (error instanceof ExecError && error.exitCode >= 128) || action.kind === "delete-remote-branch" ? "uncertain" : "failed";
               }
             }
           } catch (error) { message = error instanceof Error ? error.message : "Cannot reverify proof"; }

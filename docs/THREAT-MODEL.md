@@ -30,7 +30,9 @@ code execution privileges.
 
 Repository names, branches, paths, issue text, and model output can contain
 hostile shell characters. The shared runner starts programs with argument
-arrays and no shell. The npm launcher follows the same rule on Windows.
+arrays and no shell. Human output strips terminal controls from repository
+and PR text; JSON retains the raw data. The npm launcher follows the same rule
+on Windows.
 
 ### Credential disclosure
 
@@ -84,13 +86,23 @@ that set. A stale `--approve-plan` fails before cleanup; per-path ignored-file o
 unknown-provenance overrides require a new approved plan.
 
 A PR badge cannot prove integration. Tidy requires exact-tip ancestry and remote
-reachability, including detached HEADs. It keeps stashes at clone scope, dirty or
-ignored files, nested repositories, submodules, hidden index entries, shallow or
+reachability, including detached HEADs. Publication proofs require remote refs
+no older than the user-owned tidy_max_fetch_age_days setting, default 30 days.
+Unknown fetch ages keep the candidate. Branch and checkout HEAD reflogs are
+checked for unpublished commits, including missing checkout metadata. Each scan
+reads at most 1,000 entries; a longer log keeps the candidate because older work
+is unknown. Lost reports commits reachable only through those reflogs.
+
+Tidy keeps stashes at clone scope, dirty or ignored files, nested repositories, submodules, hidden index entries, shallow or
 grafted histories, locked checkouts, and uncertain state. Local ref deletion uses
 an expected-old-OID update. Remote deletion requires offline evidence of own-origin
 ownership, a fresh server OID check, and an expected-OID push lease to one pinned
 URL. No default preview contacts GitHub or a remote. `--fetch` explicitly updates
-remote-tracking refs before the preview, even with `--dry-run`.
+remote-tracking refs before the preview, even with `--dry-run`. Fetches use explicit
+tracking-only refspecs and an empty refmap so mirror configuration cannot prune
+local branches or refs/ggh pins. SSH network operations retain agent access and
+force BatchMode to prevent password or passphrase prompts. Authentication denial
+is a refusal; interrupted or ambiguous network effects remain uncertain.
 
 Host ownership grants no deletion authority. A T3, Claude, Cursor, or Codex
 checkout can be clean while a thread, terminal, provider session, or queued turn
@@ -101,20 +113,26 @@ or user override.
 
 Git metadata pruning affects a whole clone. Tidy therefore refuses it if any
 prunable entry has unsafe or unknown state, an existing path, an unavailable
-volume root, a host claim, or unpublished HEAD. It verifies the registry and Git's
-prune dry-run again, preserving configured expiry with a three-month default.
+volume according to the mount table, a host claim, or unpublished HEAD. It
+verifies the registry and Git's prune dry-run again, preserving configured expiry with a three-month default.
 This operation never recursively removes an existing checkout.
 
-Per-common-directory process locks serialize tidy processes. They cannot lock
-out terminals, hosts, or other Git clients. Rechecks narrow races but cannot make
+Tidy, sync, and explicit cleanup fetches share <commonDir>/ggh.lock and wait
+up to 30 seconds for another ggh mutation. They cannot lock out terminals, hosts, or other Git clients. Rechecks narrow races but cannot make
 filesystem deletion atomic with file creation. Remote leases and local ref
-compare-and-swap protect exact tips. Checkout removal retains Git's own final
-checks. Effects are journaled before starting, with unresolved execution marked
-uncertain. Ctrl-C stops the next action after recording the current outcome;
+compare-and-swap protect exact tips. Worktree removal protects ignored files
+unless explicitly approved.
+Tidy repeats the approved file-state check immediately before invoking
+git worktree remove. Git retains its own dirty and untracked-file checks, but
+ignores ignored files: an ignored file created after the final probe and before
+Git removes the checkout can still be deleted. The Git CLI offers no atomic
+file-state check and removal, so this residual window remains.
+
+Effects are journaled before starting, with unresolved execution marked uncertain. Ctrl-C stops the next action after recording the current outcome;
 a second interrupt or process death can leave an uncertain journal for inspection.
 Already completed actions are not rolled back.
 
-`ggh lost` is read-only. Its suggested commands are argv data, not automatically
+`ggh lost` is read-only unless invoked with `--fetch`. Its suggested commands are argv data, not automatically
 executed scripts. Local tracking refs cannot prove absence from unfetched remotes
 or PRs. Dirty host work means possible abandoned work, never a claim that the
 host session ended. Both commands report discovery gaps rather than interpreting

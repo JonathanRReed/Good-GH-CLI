@@ -16,6 +16,7 @@ export interface GoodGhConfig {
   project_roots?: string[];
   project_exclude?: string[];
   project_scan_depth?: number;
+  tidy_max_fetch_age_days?: number;
   host_worktree_dirs?: { t3?: string; codex?: string; cursor?: string; claude?: string };
   go_default?: "cd" | "editor" | "t3";
   repo_create_confirm?: boolean;
@@ -47,6 +48,7 @@ export const DEFAULT_CONFIG: Required<GoodGhConfig> = {
   project_roots: [],
   project_exclude: [],
   project_scan_depth: 4,
+  tidy_max_fetch_age_days: 30,
   host_worktree_dirs: { t3: "~/.t3/worktrees" },
   go_default: "cd",
   repo_create_confirm: true,
@@ -97,6 +99,10 @@ export function validateConfigValue(key: string, raw: unknown): { value?: unknow
       return Array.isArray(raw) && raw.every((path: unknown) => typeof path === "string" && path.length > 0 && !path.includes("\0") && (key === "project_exclude" || isProjectRoot(path)))
         ? { value: raw }
         : { problem: key === "project_roots" ? "must be an array of absolute or ~/ paths" : "must be an array of paths or globs" };
+    case "tidy_max_fetch_age_days": {
+      const n = typeof raw === "number" ? raw : typeof raw === "string" && /^\d+$/.test(raw) ? Number(raw) : NaN;
+      return Number.isSafeInteger(n) && n >= 1 && n <= 3650 ? { value: n } : { problem: "must be an integer between 1 and 3650" };
+    }
     case "project_scan_depth": {
       const n = typeof raw === "number" ? raw : typeof raw === "string" && /^\d+$/.test(raw) ? Number(raw) : NaN;
       return Number.isInteger(n) && n >= 0 && n <= 8 ? { value: n } : { problem: "must be an integer between 0 and 8" };

@@ -34,5 +34,7 @@ export async function deleteGoneBranch(branch: string, base: string, force = fal
   const proof = await classifyBranchDeletion(branch, base, cwd);
   if (proof.outcome === "keep" && !(force && proof.reason === "unmerged")) throw new Error(`Keep ${branch}: ${proof.reason}`);
   if (expected && (!("tip" in proof) || proof.tip !== expected.tip || proof.baseTip !== expected.baseTip || proof.commonDir !== expected.commonDir)) throw new Error(`Keep ${branch}: deletion proof changed`);
-  await run("git", ["branch", force ? "-D" : "-d", "--", branch], { ...inventoryGitOptions, cwd });
+  if (!("tip" in proof)) throw new Error(`Keep ${branch}: missing proven tip`);
+  if ((await worktreeList(cwd, inventoryGitOptions)).some(checkout => checkout.branch === branch)) throw new Error(`Keep ${branch}: checked-out`);
+  await run("git", ["-c", "core.hooksPath=", "update-ref", "--no-deref", "-d", `refs/heads/${branch}`, proof.tip], { ...inventoryGitOptions, cwd });
 }

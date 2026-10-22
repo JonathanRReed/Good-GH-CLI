@@ -244,22 +244,29 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.lost.items[] [oneOf 1].newestDate` | string | yes |  |  |
 | `result.lost.items[] [oneOf 1].oldestDate` | string | yes |  |  |
 | `result.lost.items[] [oneOf 2]` | varies | no |  |  |
-| `result.lost.items[] [oneOf 2].kind` | `"stash"` | no |  |  |
-| `result.lost.items[] [oneOf 2].count` | integer | yes |  |  |
-| `result.lost.items[] [oneOf 2].oldestDate` | string | yes |  |  |
-| `result.lost.items[] [oneOf 2].stashes` | array | yes |  |  |
-| `result.lost.items[] [oneOf 2].stashes[]` | object | no |  |  |
-| `result.lost.items[] [oneOf 2].stashes[].ref` | string | yes |  |  |
-| `result.lost.items[] [oneOf 2].stashes[].oid` | string | yes |  |  |
-| `result.lost.items[] [oneOf 2].stashes[].date` | string | yes |  |  |
-| `result.lost.items[] [oneOf 2].stashes[].message` | string | yes |  |  |
+| `result.lost.items[] [oneOf 2].kind` | `"reflog-only"` | no |  |  |
+| `result.lost.items[] [oneOf 2].branch` | string / null | yes |  |  |
+| `result.lost.items[] [oneOf 2].commits` | array | yes |  |  |
+| `result.lost.items[] [oneOf 2].commits[]` | string | no |  |  |
+| `result.lost.items[] [oneOf 2].scannedEntries` | integer | yes |  |  |
+| `result.lost.items[] [oneOf 2].truncated` | boolean | yes |  |  |
 | `result.lost.items[] [oneOf 3]` | varies | no |  |  |
-| `result.lost.items[] [oneOf 3].kind` | `"dirty-host-checkout"` | no |  |  |
-| `result.lost.items[] [oneOf 3].reason` | string | yes |  |  |
-| `result.lost.items[] [oneOf 3].host` | string | yes |  |  |
+| `result.lost.items[] [oneOf 3].kind` | `"stash"` | no |  |  |
+| `result.lost.items[] [oneOf 3].count` | integer | yes |  |  |
+| `result.lost.items[] [oneOf 3].oldestDate` | string | yes |  |  |
+| `result.lost.items[] [oneOf 3].stashes` | array | yes |  |  |
+| `result.lost.items[] [oneOf 3].stashes[]` | object | no |  |  |
+| `result.lost.items[] [oneOf 3].stashes[].ref` | string | yes |  |  |
+| `result.lost.items[] [oneOf 3].stashes[].oid` | string | yes |  |  |
+| `result.lost.items[] [oneOf 3].stashes[].date` | string | yes |  |  |
+| `result.lost.items[] [oneOf 3].stashes[].message` | string | yes |  |  |
 | `result.lost.items[] [oneOf 4]` | varies | no |  |  |
-| `result.lost.items[] [oneOf 4].kind` | `"broken-gitdir"` | no |  |  |
+| `result.lost.items[] [oneOf 4].kind` | `"dirty-host-checkout"` | no |  |  |
 | `result.lost.items[] [oneOf 4].reason` | string | yes |  |  |
+| `result.lost.items[] [oneOf 4].host` | string | yes |  |  |
+| `result.lost.items[] [oneOf 5]` | varies | no |  |  |
+| `result.lost.items[] [oneOf 5].kind` | `"broken-gitdir"` | no |  |  |
+| `result.lost.items[] [oneOf 5].reason` | string | yes |  |  |
 | `result.plan` | object | yes |  |  |
 | `result.plan.audit` | object | no |  |  |
 | `result.plan.audit.state` | `"completed"` | yes |  |  |
@@ -424,22 +431,29 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.items[] [oneOf 1].newestDate` | string | yes |  |  |
 | `result.items[] [oneOf 1].oldestDate` | string | yes |  |  |
 | `result.items[] [oneOf 2]` | varies | no |  |  |
-| `result.items[] [oneOf 2].kind` | `"stash"` | no |  |  |
-| `result.items[] [oneOf 2].count` | integer | yes |  |  |
-| `result.items[] [oneOf 2].oldestDate` | string | yes |  |  |
-| `result.items[] [oneOf 2].stashes` | array | yes |  |  |
-| `result.items[] [oneOf 2].stashes[]` | object | no |  |  |
-| `result.items[] [oneOf 2].stashes[].ref` | string | yes |  |  |
-| `result.items[] [oneOf 2].stashes[].oid` | string | yes |  |  |
-| `result.items[] [oneOf 2].stashes[].date` | string | yes |  |  |
-| `result.items[] [oneOf 2].stashes[].message` | string | yes |  |  |
+| `result.items[] [oneOf 2].kind` | `"reflog-only"` | no |  |  |
+| `result.items[] [oneOf 2].branch` | string / null | yes |  |  |
+| `result.items[] [oneOf 2].commits` | array | yes |  |  |
+| `result.items[] [oneOf 2].commits[]` | string | no |  |  |
+| `result.items[] [oneOf 2].scannedEntries` | integer | yes |  |  |
+| `result.items[] [oneOf 2].truncated` | boolean | yes |  |  |
 | `result.items[] [oneOf 3]` | varies | no |  |  |
-| `result.items[] [oneOf 3].kind` | `"dirty-host-checkout"` | no |  |  |
-| `result.items[] [oneOf 3].reason` | string | yes |  |  |
-| `result.items[] [oneOf 3].host` | string | yes |  |  |
+| `result.items[] [oneOf 3].kind` | `"stash"` | no |  |  |
+| `result.items[] [oneOf 3].count` | integer | yes |  |  |
+| `result.items[] [oneOf 3].oldestDate` | string | yes |  |  |
+| `result.items[] [oneOf 3].stashes` | array | yes |  |  |
+| `result.items[] [oneOf 3].stashes[]` | object | no |  |  |
+| `result.items[] [oneOf 3].stashes[].ref` | string | yes |  |  |
+| `result.items[] [oneOf 3].stashes[].oid` | string | yes |  |  |
+| `result.items[] [oneOf 3].stashes[].date` | string | yes |  |  |
+| `result.items[] [oneOf 3].stashes[].message` | string | yes |  |  |
 | `result.items[] [oneOf 4]` | varies | no |  |  |
-| `result.items[] [oneOf 4].kind` | `"broken-gitdir"` | no |  |  |
+| `result.items[] [oneOf 4].kind` | `"dirty-host-checkout"` | no |  |  |
 | `result.items[] [oneOf 4].reason` | string | yes |  |  |
+| `result.items[] [oneOf 4].host` | string | yes |  |  |
+| `result.items[] [oneOf 5]` | varies | no |  |  |
+| `result.items[] [oneOf 5].kind` | `"broken-gitdir"` | no |  |  |
+| `result.items[] [oneOf 5].reason` | string | yes |  |  |
 
 ## review
 

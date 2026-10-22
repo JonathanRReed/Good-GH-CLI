@@ -3,6 +3,7 @@
  * Depends on exec/branch/stack only.
  */
 
+import { safeTrackingFetch } from "../projects/git.ts";
 import { run } from "../../utils/exec.ts";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
@@ -67,7 +68,8 @@ export async function pullRebase(cwd = process.cwd()): Promise<void> {
 
 
 export async function fetchPrune(cwd = process.cwd()): Promise<void> {
-  await execGitWithRetry(["fetch", "--prune"], { cwd });
+  const deadline = Date.now() + 30000;
+  for (const remote of await getRemotes(cwd)) await safeTrackingFetch(cwd, remote, deadline);
 }
 
 

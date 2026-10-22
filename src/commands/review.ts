@@ -1,3 +1,4 @@
+import { safeHumanText } from "../utils/output.ts";
 import { Command } from "commander";
 import { requireGitRepo } from "../services/git.ts";
 import { requireAuth } from "../services/github/client.ts";
@@ -36,14 +37,14 @@ export function registerReviewCommand(program: Command): void {
         data(`PR #${number} at ${result.headSha}\n${result.checkoutPath}`);
         if (result.since) {
           data(`Changes since ${result.since.fromHead}${result.since.rewritten ? " [history rewritten]" : " [previous head is an ancestor]"}`);
-          for (const commit of result.since.commits) data(`${commit.sha.slice(0, 12)} ${commit.subject}`);
+          for (const commit of result.since.commits) data(`${commit.sha.slice(0, 12)} ${safeHumanText(commit.subject)}`);
           data(`Changed files: ${files.length}`);
-          for (const file of files) data(file);
+          for (const file of files) data(safeHumanText(file));
           if (result.since.ambiguity) p.log.warn(result.since.ambiguity);
-          if (result.since.rangeDiff) data(result.since.rangeDiff);
+          if (result.since.rangeDiff) data(safeHumanText(result.since.rangeDiff));
           for (const thread of result.since.threadsChanged.threads) {
-            data(`Thread ${thread.id} ${thread.path}:${thread.line ?? thread.originalLine ?? ""}`);
-            for (const comment of thread.comments) data(`${comment.author?.login ?? "unknown"}: ${comment.body}`);
+            data(`Thread ${thread.id} ${safeHumanText(thread.path)}:${thread.line ?? thread.originalLine ?? ""}`);
+            for (const comment of thread.comments) data(`${safeHumanText(comment.author?.login ?? "unknown")}: ${safeHumanText(comment.body)}`);
           }
         }
         if (result.marked) data("Marked locally as inspected. No GitHub approval was submitted.");
