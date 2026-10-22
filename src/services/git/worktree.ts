@@ -1,3 +1,4 @@
+import { projectPath } from "../projects/paths.ts";
 import { recordCompletedEffect } from "../runtime.ts";
 import { getGitPath } from "./paths.ts";
 import { markGghCheckout } from "./provenance.ts";
@@ -64,7 +65,7 @@ export async function worktreeList(cwd = process.cwd(), options: Omit<RunOptions
       locked: false, lockReason: null, prunable: false, pruneReason: null,
     };
     for (const field of block.split("\0")) {
-      if (field.startsWith("worktree ")) entry.path = field.slice(9);
+      if (field.startsWith("worktree ")) entry.path = projectPath(field.slice(9));
       else if (field.startsWith("HEAD ")) entry.head = field.slice(5);
       else if (field.startsWith("branch ")) entry.branch = field.slice(7).replace(/^refs\/heads\//, "");
       else if (field === "detached") entry.detached = true;
