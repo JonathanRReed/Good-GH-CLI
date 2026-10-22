@@ -133,7 +133,8 @@ it("keeps machine status local by default and returns upstream and operation sta
     expect(result.calls).toEqual([]);
     expect(result.providerCalls).toEqual([]);
     const parsed = JSON.parse(result.stdout);
-    expect((flag === "--agent" ? parsed.result : parsed).repository).toMatchObject({branch:"main",upstream:null,detached:false,operation:null,conflicts:0});
+    if (flag === "--agent") expect(parsed.result).toMatchObject({branch:"main",head:expect.any(String)});
+    else expect(parsed.repository).toMatchObject({branch:"main",upstream:null,detached:false,operation:null,conflicts:0});
     if (flag === "--agent") expect(result.stdout.trim().split("\n")).toHaveLength(1);
   }
 });
@@ -222,7 +223,7 @@ it("reports exact local counts, upstream drift, detached HEAD, and linked-worktr
   const operationPath = (await git(["rev-parse","--path-format=absolute","--git-path","MERGE_HEAD"],target)).stdout.trim();
   writeFileSync(operationPath,head+"\n");
   result = await runFixture(["status","--agent"],{root,cwd:target});
-  expect(JSON.parse(result.stdout).result.repository).toMatchObject({branch:null,detached:true,upstream:null,operation:"merge"});
+  expect(JSON.parse(result.stdout).result).toMatchObject({branch:null,head,operation:"merge"});
   expect(result.calls).toEqual([]);
   rmSync(operationPath);
 });
@@ -247,7 +248,7 @@ it("publishes the machine status, run, merge, and opt-in flag contracts", async 
   const result = await runFixture(["agent","schema"],{root,cwd:repo});
   expect(result.exitCode).toBe(0);
   const schema = JSON.parse(result.stdout);
-  expect(schema.coreResultSchemas.status.schema.properties.repository.required).toContain("operation");
+  expect(schema.coreResultSchemas.status.schema.properties.operation.default).toBeNull();
   expect(schema.coreResultSchemas.run.schema.anyOf[1].required).toContain("logStatus");
   expect(schema.coreResultSchemas.merge.schema.properties.outcome.enum).toEqual(["merged","queued","auto_merge_enabled","unknown"]);
   expect(schema.inputs).toContainEqual(expect.objectContaining({path:["worktree","add"],options:expect.arrayContaining([expect.objectContaining({long:"--copy-env"})])}));

@@ -37,12 +37,14 @@ export function ciResponses(specimen: Specimen): ReplayResponse[] {
 export function statusResponses(specimen: Specimen): ReplayResponse[] {
   const fields = recorded(`${specimen.name}-state-porcelain`).trim().split("\n");
   return [
+    { command: "git", prefix: ["config", "--null", "--get-regexp"], stdout: "branch.main.remote\norigin\0branch.main.merge\nrefs/heads/main\0" },
+    { command: "git", prefix: ["remote"], stdout: "origin\n" },
     { command: "git", prefix: ["rev-parse", "--is-inside-work-tree"], stdout: "true\n" },
     { command: "git", prefix: ["symbolic-ref", "-q", "HEAD"], stdout: "refs/heads/main\n" },
     { command: "git", prefix: ["branch", "--show-current"], stdout: "main\n" },
     { command: "git", prefix: ["-c", "core.quotepath=false", "status", "--porcelain=v1", "-z", "-uall"], stdout: "" },
     { command: "git", prefix: ["rev-parse", "--show-toplevel"], stdout: fixtureDirectory + "\n" },
-    { command: "git", prefix: ["status", "--porcelain=v2", "--branch", "-z", "--untracked-files=no"], stdout: fields.join("\0") + "\0" },
+    { command: "git", prefix: ["status", "--porcelain=v2", "--branch", "-z", "-uall"], stdout: fields.join("\0") + "\0" },
     { command: "git", prefix: ["rev-parse", "--absolute-git-dir"], stdout: join(fixtureDirectory, ".recorded-git") + "\n" },
   ];
 }

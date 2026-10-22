@@ -63,16 +63,20 @@
           "pattern": "main"
         },
         {
+          "label": "HEAD identity",
+          "pattern": "afdac65e0f80c0ccf9e8909da97c411567908b57"
+        },
+        {
           "label": "tracking branch",
           "pattern": "origin/main"
         },
         {
           "label": "ahead/behind",
-          "pattern": "# branch\\.ab \\+0 -0|\"ahead\":0,\"behind\":0"
+          "pattern": "# branch\\.ab \\+0 -0|^(?!.*\"(?:ahead|behind)\":)[\\s\\S]+$"
         },
         {
           "label": "clean checkout",
-          "pattern": "^# branch\\.ab \\+0 -0\\n?$|\"staged\":0,\"unstaged\":0,\"untracked\":0,\"conflicts\":0"
+          "pattern": "^# branch\\.ab \\+0 -0\\n?$|^(?!.*\"(?:changes|staged|unstaged|untracked|conflicts)\":)[\\s\\S]+$"
         }
       ],
       "nativeCommands": [
@@ -89,10 +93,12 @@
       "ggh": {
         "recall": 1,
         "missing": [],
-        "bytes": 331,
-        "tokens": 82.75,
+        "bytes": 181,
+        "tokens": 45.25,
         "toolCalls": 1,
-        "subprocessCalls": 7,
+        "byteRatio": 1.4958677685950412,
+        "maxByteRatio": 1.5,
+        "subprocessCalls": 5,
         "exitCode": 0,
         "unexpected": [],
         "stderr": ""
@@ -200,16 +206,20 @@
           "pattern": "main"
         },
         {
+          "label": "HEAD identity",
+          "pattern": "58173d0ebc1838579e3c331e0a47e365904a6456"
+        },
+        {
           "label": "tracking branch",
           "pattern": "origin/main"
         },
         {
           "label": "ahead/behind",
-          "pattern": "# branch\\.ab \\+0 -0|\"ahead\":0,\"behind\":0"
+          "pattern": "# branch\\.ab \\+0 -0|^(?!.*\"(?:ahead|behind)\":)[\\s\\S]+$"
         },
         {
           "label": "clean checkout",
-          "pattern": "^# branch\\.ab \\+0 -0\\n?$|\"staged\":0,\"unstaged\":0,\"untracked\":0,\"conflicts\":0"
+          "pattern": "^# branch\\.ab \\+0 -0\\n?$|^(?!.*\"(?:changes|staged|unstaged|untracked|conflicts)\":)[\\s\\S]+$"
         }
       ],
       "nativeCommands": [
@@ -226,10 +236,12 @@
       "ggh": {
         "recall": 1,
         "missing": [],
-        "bytes": 334,
-        "tokens": 83.5,
+        "bytes": 181,
+        "tokens": 45.25,
         "toolCalls": 1,
-        "subprocessCalls": 7,
+        "byteRatio": 1.4958677685950412,
+        "maxByteRatio": 1.5,
+        "subprocessCalls": 5,
         "exitCode": 0,
         "unexpected": [],
         "stderr": ""
