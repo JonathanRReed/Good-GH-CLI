@@ -72,3 +72,5 @@ Branch `feat/v0.6-projects`. Loop started 2026-10-22 ("until the new version of 
 
 - 2026-10-22: independent code review (SWE-2, GLM-5.3; implementer was GPT-6.1 Sol). Consensus critical: reflog-only commits lost by tidy branch delete / worktree remove, invisible to lost (both proved). SWE-2 critical: --fetch prune deletes local refs on mirror/backup refspecs (proved). GLM critical: Codex worktrees undetected + clone-level ggh.created stamps foreign linked worktrees as ggh → tidy removed a live Codex worktree (proved). Warnings: worktree remove deletes ignored .env; SSH env stripped for remote deletes and --fetch; branch -D without CAS; stale-fetch proofs; mount detection; unsanitized subjects/bodies; split locks. Fix rounds r1 (SWE-2 set + reflog) and r2 (host provenance) running.
 
+- 2026-10-22: review fixes r1 merged (952 pass). GLM's reflog repro rerun against merged code: tidy keeps the checkout ('reflog holds 1 unpublished commits'), lost reports it, commit survives gc --prune=now. GLM #3 covered: network fetch allowlist keeps SSH agent/askpass/GH tokens.
+
