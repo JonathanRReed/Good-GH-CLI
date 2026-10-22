@@ -5,6 +5,21 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Changed
+
+- Compact `status --agent` changes into XY/path tuples, including rename sources
+  and conflict codes. Preserve submodule markers separately. Add `--full` for raw
+  porcelain-v2 records and publish both shapes through `ggh agent schema`.
+- Benchmark 5- and 25-path dirty repositories against native porcelain-v2 and v1,
+  with per-path evidence checks and measured stdout bytes.
+
+### Fixed
+
+- Report completed review checkout, fetch, ref and ledger effects in agent output,
+  including effects completed before a later failure. Report clone, project index
+  and configuration writes, editor/T3 launches, and single-repository sync effects.
+- Keep single-repository `sync --dry-run` from fetching or pruning remote refs.
+
 ### Added
 
 - Add `ggh review <pr>` with safe reusable checkouts, detached GUI editors,

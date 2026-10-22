@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { shellInit } from "../src/commands/init.ts";
 import { createProjectsFixture, measureProjects } from "../scripts/bench-projects.ts";
 import { fixtureRoot, runFixture } from "./cli-fixture.ts";
@@ -109,6 +110,58 @@ describe("go resolution and output", () => {
     const entry = new URL("../src/index.ts", import.meta.url).href;
     const result = await runFixture([], { root, config: { project_roots: [repos], host_worktree_dirs: {} }, invoke: `process.env.VISUAL=${JSON.stringify(`${quoteShellArgument(editor)} --wait`)}; const {runCli}=await import(${JSON.stringify(entry)}); await runCli(['bun','ggh','go','editor','--editor']);` });
     expect(result.exitCode).toBe(0); expect(JSON.parse(readFileSync(trace, "utf8"))).toEqual(["--wait", path]);
+  });
+});
+
+describe("agent mutation effects", () => {
+  it("reports roots and index writes, resets between invocations, and leaves dry runs untouched", async () => {
+    const path = await repo("effects");
+    const commands = [
+      ["projects", "roots", "add", repos], ["projects", "roots", "list"],
+      ["projects", "register", path], ["projects", "forget", path],
+      ["projects", "exclude", path], ["projects", "roots", "remove", repos],
+    ];
+    const result = await runFixture([], { root, invoke: `
+      const {runCli} = await import(${JSON.stringify(new URL("../src/index.ts", import.meta.url).href)});
+      for (const args of ${JSON.stringify(commands)}) await runCli(['bun','ggh',...args,'--agent']);
+    ` });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.trim().split("\n").map(line => JSON.parse(line).effects.completed)).toEqual([
+      ["projects_roots_updated"], [], ["projects_index_updated"], ["projects_index_updated"],
+      ["projects_index_updated", "projects_exclusions_updated"], ["projects_roots_updated"],
+    ]);
+    for (const args of commands.filter(args => args.at(-1) !== "list")) {
+      const dry = await cli([...args, "--agent", "--dry-run"]);
+      expect(dry.exitCode).toBe(1);
+      expect(JSON.parse(dry.stdout)).toMatchObject({ error: { code: "invalid_arguments" }, effects: { completed: [] } });
+    }
+  });
+
+  for (const target of ["editor", "t3"]) it(`reports ${target} launches`, async () => {
+    const path = await repo(target);
+    const result = await runFixture([], { root, config: { project_roots: [repos], host_worktree_dirs: {} }, invoke: `
+      process.env.VISUAL = 'ggh-fixture-editor';
+      const spawn = Bun.spawn;
+      const launches = [];
+      Bun.spawn = (argv, options) => {
+        if (['ggh-fixture-editor','t3'].includes(argv[0])) {
+          launches.push(argv);
+          return {pid:0,stdout:new Blob([]).stream(),stderr:new Blob([]).stream(),exited:Promise.resolve(0),kill(){},stdin:null};
+        }
+        return spawn(argv,options);
+      };
+      // Discover a t3 CLI without relying on the machine's installed tools.
+      const {mock} = await import('bun:test');
+      const exec = await import(${JSON.stringify(new URL("../src/utils/exec.ts", import.meta.url).href)});
+      mock.module(${JSON.stringify(fileURLToPath(new URL("../src/utils/exec.ts", import.meta.url)))}, () => ({...exec, commandExists: command => command === 't3'}));
+      const {runCli} = await import(${JSON.stringify(new URL("../src/index.ts", import.meta.url).href)});
+      await runCli(['bun','ggh','go',${JSON.stringify(path)},'--${target}','--agent']);
+      console.log(JSON.stringify(launches));
+    ` });
+    expect(result.exitCode, result.stderr).toBe(0);
+    const [opened, launches] = result.stdout.trim().split("\n").map(line => JSON.parse(line));
+    expect(opened.effects.completed).toEqual(["projects_index_updated", `${target}_opened`]);
+    expect(launches).toEqual([[target === "editor" ? "ggh-fixture-editor" : "t3", path]]);
   });
 });
 

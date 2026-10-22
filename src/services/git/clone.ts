@@ -2,6 +2,7 @@ import { lstatSync, mkdirSync, readdirSync, realpathSync, rmSync } from "node:fs
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { recordCompletedEffect } from "../runtime.ts";
 import type { CloneMode } from "../config.ts";
 import { run } from "../../utils/exec.ts";
 import { execGitWithRetry, NON_INTERACTIVE_ENV } from "./exec.ts";
@@ -262,6 +263,7 @@ export async function clone(repoUrl: string, destination: string, mode: CloneMod
     await execGitWithRetry(["config", "--local", "ggh.created", "true"], { cwd: destination });
     await execGitWithRetry(["config", "--local", "ggh.createdAt", new Date().toISOString()], { cwd: destination });
     complete = true;
+    recordCompletedEffect("repository_cloned");
     return { alreadyCloned: false, fallbackUsed, protocol };
   } finally {
     try { cleanup(); } finally { settle(); activeClones.delete(controller); }

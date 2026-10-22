@@ -37,6 +37,25 @@ async function cli(clones: IndexedClone[], args: string[], responses?: Parameter
     invoke: `const {updateProjectIndex}=await import(${JSON.stringify(indexModule)}); await updateProjectIndex(index=>({...index,clones:${JSON.stringify(clones)}})); const {runCli}=await import(${JSON.stringify(entry)}); await runCli(['bun','ggh',...${JSON.stringify(args)}]);` });
 }
 
+it("single-repo sync reports fetch and prune effects and skips dry-run writes", async () => {
+  const { local } = await fixture();
+  const result = await runFixture(["sync", "--agent", "--yes"], { root, cwd: local });
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout).effects.completed).toContain("refs_fetched_pruned");
+  const fetchHead = readFileSync(join(local, ".git", "FETCH_HEAD"), "utf8");
+  const dry = await runFixture(["sync", "--agent", "--yes", "--dry-run"], { root, cwd: local });
+  expect(dry.exitCode).toBe(0);
+  expect(JSON.parse(dry.stdout)).toMatchObject({ status: "planned", effects: { completed: [] } });
+  expect(readFileSync(join(local, ".git", "FETCH_HEAD"), "utf8")).toBe(fetchHead);
+});
+
+it("reports uncertain refs when fetch fails after it may have applied updates", async () => {
+  const { local } = await fixture();
+  await git(local, "remote", "set-url", "origin", join(root, "missing.git"));
+  const result = await runFixture(["sync", "--agent", "--yes"], { root, cwd: local });
+  expect(JSON.parse(result.stdout).effects).toMatchObject({ completed: [], uncertain: ["refs_fetched_pruned"] });
+});
+
 describe("indexed sync", () => {
   it("fetches once per clone and updates live worktrees without switching branches or pruning local branches", async () => {
     const { local, seed, clone } = await fixture(); const other = join(root, "other");
@@ -233,7 +252,10 @@ describe("gone branch deletion proof", () => {
     expect(await classifyBranchDeletion("gone", "main", local)).toMatchObject({ outcome: "keep", reason: "checked-out" });
     await expect(deleteGoneBranch("gone", "main", true, local)).rejects.toThrow("checked-out");
     await git(local, "worktree", "remove", other);
-    await deleteGoneBranch("gone", "main", false, local); expect(await git(local, "branch", "--list", "gone")).toBe("");
+    const result = await runFixture(["sync", "--agent", "--yes"], { root, cwd: local });
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout).effects.completed).toEqual(["refs_fetched_pruned", "branch_deleted:gone"]);
+    expect(await git(local, "branch", "--list", "gone")).toBe("");
   });
 
   it("refuses deletion when the approved tip changes", async () => {

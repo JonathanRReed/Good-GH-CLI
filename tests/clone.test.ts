@@ -236,6 +236,17 @@ describe("clone discovery", () => {
   });
 });
 
+test("clone reports creation once and no effects for reuse or dry run", async () => {
+  const destination = join(root, "effect-clone");
+  for (const dry of [true, false, false]) {
+    const out = await runFixture(["clone", url, "--to", destination, "--agent", ...(dry ? ["--dry-run"] : [])], { root });
+    expect(out.exitCode, out.stderr).toBe(0);
+    const value = JSON.parse(out.stdout);
+    expect(value.effects.completed).toEqual(!dry && !value.result.alreadyCloned ? ["repository_cloned"] : []);
+    if (dry) expect(existsSync(destination)).toBe(false);
+  }
+});
+
 describe("clone process lifecycle", () => {
   const modulePath = join(import.meta.dir, "../src/services/git/clone.ts");
 

@@ -1,3 +1,4 @@
+import { recordCompletedEffect } from "../runtime.ts";
 import { getGitPath } from "./paths.ts";
 /**
  * Worktree management. Depends on exec/branch/stack only.
@@ -107,9 +108,13 @@ export async function checkoutForReview(
       }
       const status = await run("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all"], { cwd: target });
       if (status.stdout) throw new Error(`Review checkout '${target}' is dirty. Commit, stash, or remove its changes before retrying.`);
-      await run("git", ["-c", "core.hooksPath=", "checkout", "--detach", branch], { cwd: target });
+      if (tree.head !== branch) {
+        await run("git", ["-c", "core.hooksPath=", "checkout", "--detach", branch], { cwd: target });
+        recordCompletedEffect("review_checkout_updated");
+      }
     } else {
       await run("git", ["-c", "core.hooksPath=", "worktree", "add", "--detach", "--", target, branch], { cwd: root });
+      recordCompletedEffect("review_checkout_created");
     }
     return { copiedEnvFiles: [] };
   }

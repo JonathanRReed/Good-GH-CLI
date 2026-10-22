@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { projectPath } from "../services/projects/discovery.ts";
 import { getConfig } from "../services/config.ts";
-import { getFlags } from "../services/runtime.ts";
+import { getFlags, recordCompletedEffect } from "../services/runtime.ts";
 import { refreshProjectIndex } from "../services/projects/index-store.ts";
 import { readCloneStatus } from "../services/projects/status.ts";
 import { renderProjectCard } from "../services/projects/view.ts";
@@ -56,8 +56,13 @@ export function registerGoCommand(program: Command): void {
       const path = checkout.path;
       const target = options.print ? "cd" : options.editor ? "editor" : options.t3 ? "t3" : getConfig().go_default ?? "cd";
       if (!options.print && !getFlags().json) renderProjectCard({ clone, status: await readCloneStatus(clone) }, undefined, true, { wide: options.wide });
-      if (target === "editor") await openProjectEditor(path);
-      else if (target === "t3") await openProjectT3(path);
+      if (target === "editor") {
+        await openProjectEditor(path);
+        recordCompletedEffect("editor_opened");
+      } else if (target === "t3") {
+        await openProjectT3(path);
+        recordCompletedEffect("t3_opened");
+      }
       if (jsonOut({ schemaVersion: 1, path, target })) return;
       // A valid path suffix prevents command substitution stripping path newlines.
       data(options.shell ? `${path}/.` : path);
