@@ -6,6 +6,7 @@ import { recordCompletedEffect } from "../runtime.ts";
 import type { CloneMode } from "../config.ts";
 import { run } from "../../utils/exec.ts";
 import { execGitWithRetry, NON_INTERACTIVE_ENV } from "./exec.ts";
+import { markGghCheckout } from "./provenance.ts";
 
 export type CloneProtocol = "ssh" | "https" | "http" | "git" | "file";
 export interface CloneTransport {
@@ -261,6 +262,7 @@ export async function clone(repoUrl: string, destination: string, mode: CloneMod
       protocol = "https";
     }
     if (signal.aborted) throw new CloneCancelledError();
+    await markGghCheckout(destination);
     await execGitWithRetry(["config", "--local", "ggh.created", "true"], { cwd: destination });
     await execGitWithRetry(["config", "--local", "ggh.createdAt", new Date().toISOString()], { cwd: destination });
     complete = true;

@@ -3,6 +3,8 @@ import { relative } from "node:path";
 import { p } from "../../utils/ui.ts";
 import { stripAnsi, terminalText } from "../../utils/output.ts";
 import { within } from "./discovery.ts";
+import { getConfig } from "../config.ts";
+import { checkoutHost } from "./hosts.ts";
 import type { RemoteField, RemoteRepository, UnclonedResult } from "./remote-types.ts";
 import type { CloneStatus, CommitSummary, FieldState, IndexedClone } from "./types.ts";
 
@@ -93,7 +95,10 @@ export function formatProjects(rows: ProjectRow[], options: ProjectViewOptions =
     const primary = row.clone.checkouts.find(checkout => checkout.gitDir === row.clone.commonDir) ?? row.clone.checkouts[0];
     const status = row.status.checkouts.find(checkout => checkout.path === primary?.path);
     const hosts = new Map<string, number>();
-    for (const checkout of row.clone.checkouts.filter(checkout => checkout !== primary)) hosts.set(checkout.createdBy, (hosts.get(checkout.createdBy) ?? 0) + 1);
+    for (const checkout of row.clone.checkouts.filter(checkout => checkout !== primary)) {
+      const host = checkoutHost(checkout.path, getConfig()) ?? checkout.createdBy;
+      hosts.set(host, (hosts.get(host) ?? 0) + 1);
+    }
     return [row.clone.displayName, primary ? branch(primary) : "-", stateSummary(row), status ? drift(status.upstream) : "?", unpublished(row.status), show(row.status.stashes, String), [...hosts].map(([host, count]) => `${count} ${host === "unknown" ? "other" : host}`).join(", ") || "-", show(row.status.lastCommit, age), ...(options.remote ? [remoteSummary(row.remote), remoteAge(row.remote)] : [])];
   })], options, options.remote ? 8 : -1);
   if (options.remote) {
@@ -127,7 +132,7 @@ export function formatProjectCard(row: ProjectRow, history?: ProjectHistory, bri
       }
       if (state.operation.state === "ok" && state.operation.value) flags.push(state.operation.value);
     }
-    return [shortPath(checkout.path), branch(checkout), state ? dirtySummary(state.dirty) : "?", state ? drift(state.upstream) : "?", checkout.createdBy, flags.join(", ")];
+    return [shortPath(checkout.path), branch(checkout), state ? dirtySummary(state.dirty) : "?", state ? drift(state.upstream) : "?", checkoutHost(checkout.path, getConfig()) ?? checkout.createdBy, flags.join(", ")];
   });
   lines.push(...table([["Checkout", "Branch", "S/U/N/C", "↑/↓", "Host", "State"], ...checkouts], options));
   lines.push(`Unpublished: ${unpublished(status)}  Stashes: ${show(status.stashes, String)}${status.newestStash.state === "ok" && status.newestStash.value ? `  ${status.newestStash.value}` : ""}`);

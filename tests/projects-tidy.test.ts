@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, rmSync, utimesSync, writeFileSync } from "node:f
 import { join } from "node:path";
 import { getConfig } from "../src/services/config.ts";
 import { discoverProjects } from "../src/services/projects/discovery.ts";
+import { checkoutForReview } from "../src/services/git/worktree.ts";
 import { buildTidyPlan, volumeAvailable, type TidyPlan } from "../src/services/projects/tidy-plan.ts";
 import { executeTidyPlan, tidyLockPath } from "../src/services/projects/tidy-execute.ts";
 import { renderTidyPlan } from "../src/commands/tidy.ts";
@@ -25,7 +26,7 @@ async function clones() { return (await discoverProjects({ config: config() })).
 async function plan(options: Parameters<typeof buildTidyPlan>[1] = {}) { return buildTidyPlan(await clones(), options, config()); }
 async function apply(snapshot: TidyPlan) { return executeTidyPlan(snapshot, await clones(), { approvedSnapshot: snapshot.snapshotId, config: config() }); }
 async function tree(name: string, where = join(root, name), detached = false) {
-  await git("worktree", "add", ...detached ? ["--detach", where, "HEAD"] : ["-b", name, where, "HEAD"]);
+  await checkoutForReview(detached ? "HEAD" : name, where, { cwd: repo, baseBranch: "HEAD", detached });
   return where;
 }
 beforeEach(async () => {
@@ -120,7 +121,8 @@ describe("tidy checkout authority and files", () => {
     const snapshot = await plan(); expect(snapshot.clones[0]?.hostManual).toContainEqual(expect.objectContaining({ target: path, host: "t3" })); expect(snapshot.clones[0]?.actions).toEqual([]);
   });
   it("requires exact unknown-owner approval without authorizing other unknown checkouts", async () => {
-    await git("config", "--unset", "ggh.created"); const a = await tree("unknown-a"); const b = await tree("unknown-b");
+    const a = join(root, "unknown-a"); const b = join(root, "unknown-b");
+    await git("worktree", "add", "-b", "unknown-a", a); await git("worktree", "add", "-b", "unknown-b", b);
     expect((await plan()).clones[0]?.actions).toEqual([]);
     const snapshot = await plan({ allowUnknown: [a] });
     expect(snapshot.clones[0]?.actions).toMatchObject([{ kind: "remove-checkout", checkout: { path: a } }]);
