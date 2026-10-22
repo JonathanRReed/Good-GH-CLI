@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runFixture } from "./cli-fixture.ts";
@@ -90,6 +90,47 @@ beforeEach(() => {
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 describe("stack recovery", () => {
+  it("does not expose an unwritten stack lock to a contender", async () => {
+    git("init", "-b", "main");
+    const stackModule = new URL("../src/services/git/stack.ts", import.meta.url).href;
+    const result = await runFixture([], { root, cwd: root, invoke: `
+      const fs = await import('node:fs/promises');
+      const originalOpen = fs.open;
+      const { mock } = await import('bun:test');
+      const writing = Promise.withResolvers();
+      const resume = Promise.withResolvers();
+      let paused = false;
+      mock.module('node:fs/promises', () => ({ ...fs, open: async (...args) => {
+        const file = await originalOpen(...args);
+        if (paused) return file;
+        paused = true;
+        return new Proxy(file, { get(target, key) {
+          if (key === 'writeFile') return async (...values) => {
+            writing.resolve();
+            await resume.promise;
+            return target.writeFile(...values);
+          };
+          const value = Reflect.get(target, key);
+          return typeof value === 'function' ? value.bind(target) : value;
+        }});
+      }}));
+      const { acquireStackOperationLock } = await import(${JSON.stringify(stackModule)});
+      const settle = promise => promise.then(release => ({ release }), error => ({ error: String(error) }));
+      const first = settle(acquireStackOperationLock(${JSON.stringify(root)}, 'first'));
+      let second;
+      try {
+        await writing.promise;
+        second = await settle(acquireStackOperationLock(${JSON.stringify(root)}, 'second'));
+      } finally { resume.resolve(); }
+      const results = [await first, second];
+      try { console.log(JSON.stringify(results.map(result => result.error ?? 'acquired'))); }
+      finally { for (const result of results) if (result.release) await result.release(); }
+    ` });
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual([expect.stringContaining("Another stack command is active"), "acquired"]);
+    expect(readdirSync(join(root, ".git", "ggh-stack-recovery"))).toEqual([]);
+  });
+
   it("serializes concurrent stack commands and leaves stale lock cleanup explicit", async () => {
     setupStack();
     const attempts = await Promise.allSettled([
