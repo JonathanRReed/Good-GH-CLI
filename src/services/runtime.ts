@@ -118,3 +118,12 @@ export function resetFlags(): void {
 export function isNonInteractive(): boolean {
   return flags.noInput || flags.json || !process.stdin.isTTY;
 }
+
+// Bulk operations finish the current guarded effect and stop before the next.
+let commandCancellation: (() => void) | undefined;
+export function setCommandCancellation(handler: (() => void) | undefined): void { commandCancellation = handler; }
+export function requestCommandCancellation(): boolean {
+  if (!commandCancellation) return false;
+  commandCancellation();
+  return true;
+}
