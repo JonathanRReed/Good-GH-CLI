@@ -34,3 +34,5 @@ Branch `feat/v0.6-projects`. Loop started 2026-10-22 ("until the new version of 
 
 - 2026-10-22: 2A sync --all merged (Ran 773 tests, 0 fail). Not run against the owner's real repos (would fast-forward working copies without approval); covered by bare-remote tests.
 
+- 2026-10-22: 2C projects --remote merged (799 pass). LIVE FAILURE on real ~/Downloads: first aliased GraphQL batch timed out (cold 14 s); one failure marked all 73 repos unavailable, and the failure was cached (warm: 0 requests, still unavailable). Fixtures never time out. Fix lane 2C.2 started.
+
