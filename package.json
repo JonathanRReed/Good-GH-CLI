@@ -38,6 +38,7 @@
     "bin",
     "dist",
     "src",
+    "skills/ggh",
     "README.md",
     "LICENSE",
     "CHANGELOG.md",
@@ -55,6 +56,7 @@
     "compile": "bun build bin/ggh.ts --compile --no-compile-autoload-dotenv --no-compile-autoload-bunfig --minify --outfile ggh",
     "package:macos": "bun run scripts/package-macos.ts",
     "man": "bun run scripts/man.ts",
+    "skill:reference": "bun run scripts/gen-skill-reference.ts",
     "test:audit": "python3 scripts/audit-regressions.py",
     "bench:agent": "bun run bench/agent/benchmark.ts"
   },

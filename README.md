@@ -582,6 +582,33 @@ GGH_NO_PLUGINS=1 ggh plugin remove <name> -y
 
 For GitHub Enterprise, sign in with `gh auth login --hostname ghe.example.com`, then set `GH_HOST=ghe.example.com`. Check the host and account with `ggh status`.
 
+## For agents
+
+Read the [ggh skill](skills/ggh/SKILL.md) for Claude Code, Codex, T3 Code and Cursor.
+The [generated reference](skills/ggh/reference.md) lists command inputs and result
+fields from `ggh agent schema`.
+
+```bash
+ggh agent skill                         # Print the skill
+ggh agent skill --install claude --dry-run --agent
+ggh agent skill --install claude         # Confirm installation in ~/.claude/skills/ggh
+ggh agent skill --install codex --yes --agent # Install in ~/.agents/skills/ggh
+ggh agent skill --install t3 --agent     # Explain provider skill directories
+ggh agent skill --install ./my-skills/ggh --dry-run --agent
+```
+
+Explicit paths name the final skill directory. Installation copies both skill
+files. It requires confirmation or `--yes`, leaves identical files alone, and
+refuses differing files without `--force`. Force still requires confirmation.
+`--dry-run` writes nothing. Agent output reports completed and pending effects.
+
+Use `--agent` for managed commands. Prefer native Git for plain log/diff/blame or
+a small porcelain-v1 dirty check. The [benchmark](bench/agent/README.md) records
+both ggh and native wins. Commit the reviewed index only; this version's commit
+command does not accept `--approve-plan`. Use the dry-run snapshot flow for PR
+publication. After creating a PR, the calling agent must register its URL with
+the host, such as T3 Code's `link_pull_request`. ggh does not register it.
+
 ## Scripting
 
 These shared flags apply where the command advertises them:

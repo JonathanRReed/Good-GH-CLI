@@ -13,7 +13,7 @@ LICDIR = $(DESTDIR)$(PREFIX)/share/licenses/good-gh-cli
 BUILD = build/ggh
 DIST = dist/ggh.js
 SOURCES = $(shell find src bin -type f -name '*.ts')
-BUILD_INPUTS = $(SOURCES) package.json bun.lock Makefile
+BUILD_INPUTS = $(SOURCES) $(wildcard skills/ggh/*.md) package.json bun.lock Makefile
 
 .PHONY: all build build-lean man completions completions-lean install install-lean uninstall check clean
 
