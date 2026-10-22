@@ -77,6 +77,13 @@ function prunableGitDir(path: string, commonDir: string): string {
   return commonDir;
 }
 
+// Git can report the common directory as the main worktree when reached via a
+// linked checkout. A normal .git directory belongs to its parent working tree.
+export function mainWorktreePath(commonDir: string, tree: { path: string; isBare: boolean }): string {
+  const path = projectPath(tree.path);
+  return !tree.isBare && path === commonDir && basename(commonDir) === ".git" ? projectPath(dirname(commonDir)) : path;
+}
+
 export interface DiscoveryOptions {
   config?: GoodGhConfig;
   registered?: string[];
@@ -180,8 +187,8 @@ export async function discoverProjects(options: DiscoveryOptions = {}): Promise<
         return name ? [{ name, url: redactRemoteUrl(url), repo: remoteIdentity(url) }] : [];
       });
       const checkouts: Checkout[] = [];
-      for (const tree of trees) {
-        const path = projectPath(tree.path);
+      for (const [index, tree] of trees.entries()) {
+        const path = index === 0 ? mainWorktreePath(commonDir, tree) : projectPath(tree.path);
         if (projectExcluded(path, excluded, roots)) continue;
         const createdBy = checkoutCreator(path, config, created);
         let gitDir: string;
