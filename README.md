@@ -38,6 +38,43 @@ bun link
 ggh status
 ```
 
+## Clone
+
+```bash
+cd ~/Downloads
+ggh clone owner/repo         # Alias: ggh get
+ggh clone                   # Pick from your repos, organizations, and stars
+ggh clone project-name      # Search all sources and GitHub
+ggh get owner/repo --to ~/work/repo
+ggh clone owner/repo --ask
+ggh clone owner/repo --fast  # Blobless; --blobless also works
+ggh clone owner/repo --shallow
+ggh clone owner/repo --protocol ssh
+ggh clone owner/repo --dry-run --agent
+```
+
+Clones go into `$PWD/<repo-name>`. Set `ggh config set clone_root ~/work` to use
+another root. `--to` chooses the exact destination, and `--ask` prompts for it.
+The destination appears before cloning and in JSON and agent results.
+Noninteractive calls use the configured clone mode, defaulting to standard.
+`--ask` requires an interactive terminal.
+
+Discovery paginates up to 1,000 repositories per source, with a combined limit
+of 1,000 organization repositories. Lists use the host and account cache;
+`--refresh` reloads them. Ambiguous noninteractive searches return candidates
+with destinations so callers can choose an exact `OWNER/REPO`.
+
+An existing clone with the same origin is reused. Other non-empty destinations
+are refused. Successful clones receive local `ggh.created` and `ggh.createdAt`
+Git config markers. Failed or cancelled clones remove only the destination
+directory created by that invocation.
+
+Progress marks a clone stalled after 20 silent seconds and keeps waiting.
+Ctrl-C cancels. SSH authentication or host-key failures retry once over HTTPS
+only when ggh derived the URL. Explicit URLs and `--protocol ssh` suppress
+fallback. Custom hosts and ports are preserved, URL credentials are redacted
+from diagnostics, and Git credential prompts are disabled.
+
 ## Commits
 
 ```bash
@@ -218,7 +255,7 @@ ggh alias --remove ci
 
 | Command | Use |
 | --- | --- |
-| `ggh clone` | Search and clone; supports `--fast`, `--shallow`, and `-d` |
+| `ggh clone`, `ggh get` | Search and clone with `--to`, `--ask`, `--fast`, `--shallow`, and `--agent` |
 | `ggh repo` | View, create, fork, edit, rename, archive, delete, or sync repositories |
 | `ggh release` | Browse, create, view, download, upload, or delete releases |
 | `ggh changelog v1.0.0` | Write a generated changelog to `CHANGELOG.md` |

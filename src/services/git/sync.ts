@@ -6,7 +6,6 @@
 import { run } from "../../utils/exec.ts";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
-import type { CloneMode } from "../config.ts";
 import { execGitWithRetry } from "./exec.ts";
 import { getCurrentBranch, getRemoteTrackingBranch, getRemotes, getRepoRoot, hasBranch, isDetachedHead, resolveBranchRef } from "./branch.ts";
 import { getBranchMergeBase } from "./stack.ts";
@@ -209,25 +208,6 @@ export async function detectComparisonBase(cwd = process.cwd()): Promise<string>
   return resolveBranchRef(await detectPullRequestBase(cwd), cwd);
 }
 
-
-
-export async function clone(
-  repoUrl: string,
-  destination: string,
-  mode: CloneMode = "standard",
-  cwd = process.cwd(),
-): Promise<void> {
-  const args = ["clone"];
-
-  if (mode === "blobless") {
-    args.push("--filter=blob:none");
-  } else if (mode === "shallow") {
-    args.push("--depth", "1");
-  }
-
-  args.push("--", repoUrl, destination);
-  await execGitWithRetry(args, { cwd, stdio: "inherit" });
-}
 
 
 export async function resolveConflict(

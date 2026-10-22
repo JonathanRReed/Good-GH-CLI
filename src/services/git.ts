@@ -1,3 +1,4 @@
+export { clone } from "./git/clone.ts";
 import { run } from "../utils/exec.ts";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -42,7 +43,6 @@ export { checkoutForReview, worktreeAdd, worktreeList, worktreeRemove } from "./
 export type { StashEntry } from "./git/stash.ts";
 export { stashDiff, stashDrop, stashList, stashPop, stashPush } from "./git/stash.ts";
 export {
-  clone,
   countUniqueCommits,
   deleteLocalBranch,
   detectDefaultBranch,

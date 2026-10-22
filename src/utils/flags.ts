@@ -5,7 +5,7 @@ import { p, pc } from "./ui.ts";
 
 /** Commands that can emit structured data instead of a rendered view. */
 export const JSON_CAPABLE = new Set([
-  "commit", "operation",
+  "clone", "commit", "operation",
   "status", "pr", "checks", "log", "stash", "worktree", "config",
   "release", "issue", "run", "repo", "stack", "sync", "changelog", "api",
   "workflow", "label", "gist", "search", "secret", "variable", "notifications",

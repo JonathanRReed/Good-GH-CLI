@@ -1,5 +1,17 @@
 import type { OperationRecord } from "./operations.ts";
 import type { CommandIssue } from "./runtime.ts";
+import type { CloneMode } from "./config.ts";
+import type { CloneProtocol } from "./git/clone.ts";
+
+export interface CloneResult {
+  version: 1;
+  destination: string;
+  repo: string;
+  mode: CloneMode;
+  protocol: CloneProtocol;
+  fallbackUsed: boolean;
+  alreadyCloned: boolean;
+}
 
 export type AgentErrorCode = "invalid_arguments" | "missing_input" | "confirmation_required" | "authentication_required" | "provider_unavailable" | "cancelled" | "partial_completion" | "operation_failed" | "outcome_uncertain";
 export type RequiredInput = { name: string; description: string; alternatives?: string[] };
@@ -22,7 +34,7 @@ export function agentEnvelope(input: { command: string[]; result?: unknown; issu
   const path = input.command.join(" ");
   const result = typeof input.result === "object" && input.result !== null && !Array.isArray(input.result) ? input.result : undefined;
   const workflow = path === "commit" || path === "pr create" || path === "repo create" || path.startsWith("stack ");
-  const noOp = ["worktree remove", "worktree prune", "rename", "draft", "draft create", "undo", "discard", "sync", "squash", "operation resume"].includes(path);
+  const noOp = ["clone", "worktree remove", "worktree prune", "rename", "draft", "draft create", "undo", "discard", "sync", "squash", "operation resume"].includes(path);
   const managedStatus = result && "status" in result && ((workflow && ["partially_completed", "needs_input", "cancelled", "failed", "succeeded", "no_op"].includes(String(result.status))) || (noOp && result.status === "no_op")) ? result.status : undefined;
   const strings = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 
@@ -133,4 +145,16 @@ export const coreResultSchemas = {
   operationList: { commandPaths: [["operation", "list"]], schema: { type: "array", items: operationResultSchema } },
   operationView: { commandPaths: [["operation", "view"]], schema: operationResultSchema },
   reviewThreads: { commandPaths: [["pr", "threads"]], schema: reviewThreadsResultSchema },
+  clone: { commandPaths: [["clone"]], version: 1, schema: {
+    anyOf: [
+      { type: "object", required: ["version", "destination", "repo", "mode", "protocol", "fallbackUsed", "alreadyCloned"], properties: {
+        version: { const: 1 }, destination: { type: "string" }, repo: { type: "string" },
+        mode: { enum: ["standard", "blobless", "shallow"] }, protocol: { enum: ["ssh", "https", "http", "git", "file"] },
+        fallbackUsed: { type: "boolean" }, alreadyCloned: { type: "boolean" }, status: { enum: ["no_op", "failed", "cancelled"] },
+      } },
+      { type: "object", required: ["version", "candidates"], properties: {
+        version: { const: 1 }, candidates: { type: "array", items: { type: "object", required: ["repo", "destination"], properties: { repo: { type: "string" }, destination: { type: "string" } } } },
+      } },
+    ],
+  } },
 };

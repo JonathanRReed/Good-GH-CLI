@@ -114,7 +114,7 @@ describe("project .ggh.json", () => {
         ai_provider: "ollama",
         ai_fallback: false,
         commit_style: "concise",
-        default_clone_dir: "/tmp/evil",
+        clone_root: "/tmp/evil",
         first_run_completed: true,
         hosted_ai_consent: true,
         bogus: 1,
@@ -128,8 +128,8 @@ describe("project .ggh.json", () => {
       "ai_fallback",
       "ai_provider",
       "bogus",
+      "clone_root",
       "codex_model",
-      "default_clone_dir",
       "first_run_completed",
       "hosted_ai_consent",
     ]);
@@ -137,7 +137,7 @@ describe("project .ggh.json", () => {
     const config = getConfig(repo);
     expect(config.ai_provider).toBe(DEFAULT_CONFIG.ai_provider);
     expect(config.commit_style).toBe("concise");
-    expect(config.default_clone_dir).toBe(DEFAULT_CONFIG.default_clone_dir);
+    expect(config.clone_root).toBe(DEFAULT_CONFIG.clone_root);
   });
 
   it("cannot redirect a user's local-only AI choice to a hosted provider", () => {
@@ -182,6 +182,16 @@ describe("project .ggh.json", () => {
 });
 
 describe("validateConfigValue", () => {
+  it("validates clone roots and resolves user and environment values", () => {
+    for (const value of [home, "~", "~/repos"]) expect(validateConfigValue("clone_root", value)).toEqual({ value });
+    for (const value of ["", ".", "relative", "~someone/repos", "/bad\npath", "/bad\0path"]) expect(validateConfigValue("clone_root", value).problem).toBeDefined();
+    saveConfig({ clone_root: home });
+    expect(getConfig().clone_root).toBe(home);
+    process.env.GGH_CLONE_ROOT = "~/other";
+    expect(getConfig().clone_root).toBe("~/other");
+    expect(getConfigWithSources().find(source => source.key === "clone_root")?.source).toBe("env");
+  });
+
   it("coerces booleans and integers from strings", () => {
     expect(validateConfigValue("ai_enabled", "on").value).toBe(true);
     expect(validateConfigValue("ai_fallback", "false").value).toBe(false);
