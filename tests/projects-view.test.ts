@@ -88,8 +88,26 @@ it("renders remote counts, failing checks, age, unavailable reasons and width li
   expect(card).not.toContain("\u001b");
   for (const width of [40,80,100,160]) for (const formatted of [formatProjects([row],{width,remote:true}),formatProjectCard(row,undefined,false,{width,remote:true})]) expect(formatted.every(line=>Bun.stringWidth(line)+3<=width)).toBe(true);
   const remote = row.remote[0]; if (!remote) throw new Error("fixture"); remote.defaultCi = {state:"unavailable",reason:"Reserve reached"};
-  expect(formatProjects([row],{wide:true,remote:true})[1]).toContain("unavailable");
+  expect(formatProjects([row],{wide:true,remote:true}).at(-1)).toBe("remote unavailable for 1 repos: Reserve reached");
   expect(formatProjectCard(row,undefined,false,{wide:true,remote:true})).toContain("defaultCi: Reserve reached");
   expect(formatProjects([fixture()],{wide:true,remote:true})[1]).toContain("pending");
   expect(formatProjects([fixture()],{wide:true})[0]).not.toContain("Remote");
+});
+
+it("renders failed remote rows as a dash and preserves remote counts at width 140", () => {
+  const failed = fixture();
+  failed.remote = [{repo:{host:'github.com',owner:'fixture',name:'project'},login:'fixture',authored:{state:'unavailable',reason:'deadline'},reviewRequested:{state:'unavailable',reason:'deadline'}}];
+  const lines = formatProjects([failed], {width:140,remote:true});
+  expect(lines[1]).toMatch(/—\s+-$/);
+  expect(lines.join('\n')).not.toContain('? ?');
+  expect(lines.at(-1)).toBe('remote unavailable for 1 repos: deadline');
+  const partial = failed.remote[0]; if (!partial) throw new Error("fixture");
+  partial.archived = ok(false);
+  expect(formatProjects([failed], {width:140,remote:true})[1]).toMatch(/—\s+\S+$/);
+  const good = fixture();
+  good.clone.displayName = 'project-name'.repeat(10);
+  good.remote = [{repo:{host:'github.com',owner:'fixture',name:'good'},login:'fixture',authored:ok({count:12,pullRequests:[]}),reviewRequested:ok(5)}];
+  const compact = formatProjects([good], {width:140,remote:true});
+  expect(compact[1]).toContain('PR 12 review 5');
+  expect(compact.every(line=>Bun.stringWidth(line)+3<=140)).toBe(true);
 });

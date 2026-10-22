@@ -5,14 +5,26 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Fixed
+
+- Recover `projects --remote` batches after timeouts and transient GitHub errors
+  by splitting failed batches, continuing other repos, and enforcing a 20-second
+  remote deadline with foreground rate-limit protection.
+- Group PR searches, fetch checks for only the latest three PRs per repository,
+  and request only the last commit's check state. Bound pagination and query cost.
+- Cache successful remote fields per host, login, and repository. Retry failures
+  immediately and preserve each field's age and five-minute expiry.
+- Render unavailable remote rows as `—`, summarize reasons in one footer, and
+  preserve the Remote column when fitting the table to the terminal.
+
 ### Added
 
 - Add `ggh projects --remote` and bare `ggh --remote` with PR counts, review
   requests, archive and fork flags, remote age, and context-card PR lists and CI.
-- Deduplicate remote identities across clones, batch 25 repositories per GraphQL
-  query, serialize requests per host, and preserve foreground quota and retry
-  delays by host and login. Return partial fields with unavailable reasons.
-- Cache remote results privately for five minutes with `--refresh` to bypass.
+- Deduplicate remote identities across clones, batch metadata and grouped PR
+  searches by query cost, serialize requests per host, and preserve foreground
+  quota and retry delays by host and login. Return partial fields with reasons.
+- Cache successful remote fields privately for five minutes with `--refresh` to bypass.
   Add `--uncloned` for owned repositories without local clones, with bounded
   pagination, counts and the ten most recently pushed repositories.
 - Show local terminal rows before remote requests. Extend projects JSON and the

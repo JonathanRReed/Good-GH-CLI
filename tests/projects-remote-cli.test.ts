@@ -13,9 +13,10 @@ beforeEach(async () => {
 afterEach(() => rmSync(root, {recursive:true, force:true}));
 const data = {
   r0: { defaultBranchRef:{name:"main",target:{oid:"abc1234567",statusCheckRollup:{state:"SUCCESS"}}}, isArchived:true,isFork:true,parent:{nameWithOwner:"upstream/example"},viewerPermission:"WRITE" },
-  p0: {issueCount:2,nodes:[{number:7,title:"Fix CI",headRefName:"fix-ci",reviewDecision:"REVIEW_REQUIRED",commits:{nodes:[{commit:{statusCheckRollup:{state:"FAILURE"}}}]}}]},
-  v0: {issueCount:1},
+  authored: {issueCount:2,pageInfo:{hasNextPage:false,endCursor:null},nodes:[7,8].map(number=>({id:String(number),repository:{nameWithOwner:"fixture/example"},number,title:"Fix CI",headRefName:"fix-ci",reviewDecision:"REVIEW_REQUIRED",commits:{nodes:[{commit:{statusCheckRollup:{state:"FAILURE"}}}]}}))},
+  reviewRequested: {issueCount:1,pageInfo:{hasNextPage:false,endCursor:null},nodes:[{repository:{nameWithOwner:"fixture/example"}}]},
   viewer: {repositories:{nodes:[{nameWithOwner:"fixture/example",pushedAt:null},{nameWithOwner:"fixture/uncloned",pushedAt:null}],pageInfo:{hasNextPage:false,endCursor:null}}},
+  nodes:[7,8].map(number=>({id:String(number),reviewDecision:'REVIEW_REQUIRED',commits:{nodes:[{commit:{statusCheckRollup:{state:'FAILURE'}}}]}})),
   rateLimit:{remaining:5000,resetAt:"2099-01-01T00:00:00.000Z",cost:2},
 };
 function cli(args: string[], invoke?: string) { return runFixture(args, {root,config:{project_roots:[repos],host_worktree_dirs:{}},responses:[{prefix:["api","graphql"],stdout:JSON.stringify({data})}],invoke}); }
@@ -26,9 +27,9 @@ it("adds remote fields to bare, projects, JSON and agent calls without writing t
     expect(receipt.stdout.trim().split("\n")).toHaveLength(1);
     const json = JSON.parse(receipt.stdout); const result = json.result ?? json;
     const project = result.project ?? result.projects[0];
-    expect(project.remote[0]).toMatchObject({repo:{host:"github.com",owner:"fixture",name:"example"},authored:{state:"ok",value:{count:2,pullRequests:[{number:7}]}},defaultCi:{state:"ok",value:"SUCCESS"}});
-    expect(result.remote).toMatchObject({requests:1,cost:2,uncloned:[]});
-    expect(receipt.calls.filter(call => call[0] !== "auth")).toHaveLength(1);
+    expect(project.remote[0]).toMatchObject({repo:{host:"github.com",owner:"fixture",name:"example"},authored:{state:"ok",value:{count:2,pullRequests:[{number:7},{number:8}]}},defaultCi:{state:"ok",value:"SUCCESS"}});
+    expect(result.remote).toMatchObject({requests:2,cost:4,uncloned:[]});
+    expect(receipt.calls.filter(call => call[0] !== "auth")).toHaveLength(2);
     expect(receipt.inputs[0]?.text).toContain("query");
     expect(receipt.inputs[0]?.text).not.toContain("mutation");
   }
@@ -42,7 +43,7 @@ it("makes --uncloned imply --remote and excludes the local clone", async () => {
   const receipt = await cli(["--uncloned","--agent"]);
   expect(receipt.exitCode,receipt.stderr).toBe(0);
   const result = JSON.parse(receipt.stdout).result;
-  expect(result.remote).toMatchObject({requests:2,cost:4,uncloned:[{count:{state:"ok",value:1},repositories:{state:"ok",value:[{nameWithOwner:"fixture/uncloned"}]}}]});
+  expect(result.remote).toMatchObject({requests:3,cost:6,uncloned:[{count:{state:"ok",value:1},repositories:{state:"ok",value:[{nameWithOwner:"fixture/uncloned"}]}}]});
 });
 it("renders local rows before starting auth or GraphQL even with no status cache", async () => {
   const entry = new URL("../src/index.ts", import.meta.url).href;

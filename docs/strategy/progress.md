@@ -36,3 +36,5 @@ Branch `feat/v0.6-projects`. Loop started 2026-10-22 ("until the new version of 
 
 - 2026-10-22: 2C projects --remote merged (799 pass). LIVE FAILURE on real ~/Downloads: first aliased GraphQL batch timed out (cold 14 s); one failure marked all 73 repos unavailable, and the failure was cached (warm: 0 requests, still unavailable). Fixtures never time out. Fix lane 2C.2 started.
 
+
+- 2026-10-22: 2C.2 isolated fix lane groups PR searches, limits check reads to the latest three PRs per repo, bisects transient failures, enforces a 20-second remote deadline, and caches only successful fields per host/login/repo. Unavailable rows show a dash and one reason footer. Gates: typecheck, lint, 816 pass / 1 skip / 0 fail. Live read-only Downloads pair: 73 clones, 35 distinct remotes across 69 clones; 4 clones without recognized remotes. Cold 8.527 s / 2 requests / cost 2; warm 2.574 s / 0 requests / cost 0. All 35 remotes complete, no unavailable reasons. The cold target of about 5 seconds remains unmet. [Query, cache, rendering and live receipts](projects-remote-verification.md).

@@ -77,6 +77,7 @@ export async function showProjects(query?: string, options: ProjectViewOptions =
     renderProjectCard(row, history, false, options);
     if (remote) for (const line of formatUncloned(remote.uncloned, options)) p.log.message(line);
   } else {
+    const pendingRemote = options.remote && flags.json ? readProjectRemotes(index.clones, options) : undefined;
     const statuses = await readProjectStatuses(index.clones);
     await writeProjectStatusCache(projectStatusScope(index, getConfig()), statuses);
     const rows: ProjectRow[] = sortProjects(index.clones.flatMap((clone, i) => { const status = statuses[i]; return status ? [{ clone, status }] : []; }));
@@ -87,7 +88,7 @@ export async function showProjects(query?: string, options: ProjectViewOptions =
       cachedLines = previewHeight(formatProjects(visible, options));
       renderProjects(visible, options);
     }
-    const remote = options.remote ? await readProjectRemotes(index.clones, options) : undefined;
+    const remote = pendingRemote ? await pendingRemote : options.remote ? await readProjectRemotes(index.clones, options) : undefined;
     if (remote) attachRemotes(rows, remote);
     if (jsonOut({ schemaVersion: 1, updatedAt: index.updatedAt, projects: rows.map(projectPayload), coverage: index.coverage, ...(remote ? { remote: remoteMetadata(remote) } : {}) })) return;
     if (cachedLines) clearPreview(cachedLines);

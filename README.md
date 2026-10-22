@@ -53,16 +53,19 @@ requests, archive and fork flags, and remote age. Context cards list up to three
 authored PRs with their branches, checks and review decisions, plus default-branch
 CI. Terminal runs show local status before waiting for GitHub.
 
-Requests use serialized GraphQL batches of 25 repositories, with a ten-second
-batch timeout, at most 40 requests per host per run, and a 500-point foreground
-reserve. Every query reads its rate-limit cost and remaining quota. Reset times
-and retry delays persist across invocations for the same host and login;
-`--refresh` bypasses result caching but keeps those limits. Failed or inaccessible
-fields report `unavailable` with a reason instead of becoming zero counts.
+Requests serialize per host and group metadata and PR searches by query cost,
+with up to 100 repository identities per batch. Timeouts and transient GitHub
+errors split batches and retry only those repos. A 20-second remote deadline,
+200-request cap per host, and 500-point foreground reserve bound the work. Every
+query reads its rate-limit cost and remaining quota. Reset times and retry delays
+persist for the same host and login; `--refresh` keeps those limits. Failed fields
+retain reasons in JSON. The table shows a dash and one reason footer.
 
-Remote snapshots live in the private ggh cache for five minutes, scoped to the
-host, login, repository set and requested fields. Environment tokens bypass result
-caching because two tokens for one login can grant different access. GraphQL reads
+Successful remote fields live in the private ggh cache for five minutes, keyed by
+host, login and repository. Partial successes are reused across repo sets, and
+failures are retried on the next run. Each field retains its original age and
+expiry. Environment tokens bypass result caching because two tokens for one
+login can grant different access. GraphQL reads
 use the TTL cache; ETag revalidation applies to REST GETs, not these queries.
 `--uncloned` implies `--remote` and enumerates owned repositories, excludes every
 indexed local remote, and shows the ten most recently pushed. Enumeration stops at
