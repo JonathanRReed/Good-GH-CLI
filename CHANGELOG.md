@@ -11,6 +11,9 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   tuicr/delta terminal fallbacks, explicit private inspection marks, incremental
   review with rewritten-history detection, and versioned JSON/agent results.
 
+- Add 20 offline exact-scope fixtures for commit, amend, squash, split and push,
+  with staged-tree checks, local remotes and interrupted split recovery.
+
 - Extend `ggh clone` with alias `get`, `clone_root`, `--to`, `--ask`, paginated
   account, organization, and star discovery, and versioned agent results.
 - Verify origin identity before reusing a clone and write local provenance
@@ -38,6 +41,20 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   agent output, a versioned result schema, and a read-only MCP tool.
 
 ### Fixed
+
+- Reduce clean `status --agent` output to 181 bytes in both benchmark captures,
+  including the full HEAD OID. Document compact defaults in the agent schema,
+  preserve porcelain-v2 conflict and path records, and enforce the 1.5x byte gate.
+- Bind commits to the previewed HEAD, branch and index. Preserve partial staging
+  with a private index, reject stale previews, and retain recovery checkpoints.
+- Reject hook-added commit contents before publication or later split groups.
+  Keep rejected commits under local recovery refs and preserve hook worktree edits.
+- Recheck the squash index and move only its expected tip. Preserve the original
+  history under a recovery ref. Allow message-only amend on a clean index.
+- Publish complete stack-lock owner metadata atomically so concurrent commands
+  cannot mistake an initializing lock for corrupt recovery state.
+- Pin pushes to one source OID and destination branch. Disable matching, mirror
+  and follow-tags scope expansion; use exact OID leases for forced updates.
 
 - Pin PR merges to the reviewed head SHA, with `--match-head-commit` for an
   explicit override. Re-read GitHub state and report merged, queued,

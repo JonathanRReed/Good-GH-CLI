@@ -47,9 +47,10 @@ for (const specimen of specimens) {
     } else if (kind === "status") {
       expected = [
         { label: "branch", pattern: "main" },
+        { label: "HEAD identity", pattern: /# branch\.oid ([a-f0-9]+)/.exec(recorded(`${specimen.name}-state-porcelain`))![1]! },
         { label: "tracking branch", pattern: "origin/main" },
-        { label: "ahead/behind", pattern: '# branch\\.ab \\+0 -0|"ahead":0,"behind":0' },
-        { label: "clean checkout", pattern: '^# branch\\.ab \\+0 -0\\n?$|"staged":0,"unstaged":0,"untracked":0,"conflicts":0' },
+        { label: "ahead/behind", pattern: '# branch\\.ab \\+0 -0|^(?!.*"(?:ahead|behind)":)[\\s\\S]+$' },
+        { label: "clean checkout", pattern: '^# branch\\.ab \\+0 -0\\n?$|^(?!.*"(?:changes|staged|unstaged|untracked|conflicts)":)[\\s\\S]+$' },
       ];
       nativeOutput = recorded(`${specimen.name}-state-porcelain`);
       commands = ["git status --porcelain=v2 --branch"];
@@ -69,12 +70,9 @@ for (const specimen of specimens) {
       command = ["run", String(specimen.run), "-R", specimen.repo, "--agent"];
     }
     const out = await replayCli(command, kind === "status" ? statusResponses(specimen) : ciResponses(specimen));
-    // Normalize the checkout path only; every other output byte comes from the current CLI.
-    const envelope = JSON.parse(out.stdout);
-    if (kind === "status" && envelope.result?.repository) envelope.result.repository.root = `/recorded/${specimen.name}`;
-    const output = kind === "status" ? JSON.stringify(envelope) + "\n" : out.stdout;
+    const output = out.stdout;
     const native = metrics(nativeOutput, expected, commands.length);
-    const ggh = { ...metrics(output, expected, 1), subprocessCalls: out.calls.length, exitCode: out.exitCode, unexpected: out.unexpected, stderr: out.stderr };
+    const ggh = { ...metrics(output, expected, 1), ...(kind === "status" ? { byteRatio: Buffer.byteLength(output) / native.bytes, maxByteRatio: 1.5 } : {}), subprocessCalls: out.calls.length, exitCode: out.exitCode, unexpected: out.unexpected, stderr: out.stderr };
     results.push({ case: `${specimen.name}-${kind}`, question: kind === "ci" ? "Why did CI fail at this PR head?" : kind === "status" ? "Which branch and tracking branch, what drift, and is it clean?" : "Which run/jobs failed and what did the failed steps print?", expectedEvidence: expected, nativeCommands: commands, gghCommand: `ggh ${command.join(" ")}`, native, ggh });
   }
 }
@@ -82,7 +80,7 @@ const artifact = { schemaVersion: 1, fixtureRevision: "agent-pain-2026-10-22", t
 writeFileSync(join(import.meta.dir, "results.json"), JSON.stringify(artifact, null, 2) + "\n");
 console.table(results.map(row => ({ case: row.case, "native bytes": row.native.bytes, "ggh bytes": row.ggh.bytes, "native ~tokens": row.native.tokens, "ggh ~tokens": row.ggh.tokens, "native recall": `${row.native.recall * 100}%`, "ggh recall": `${row.ggh.recall * 100}%`, "native calls": row.native.toolCalls, "ggh calls": row.ggh.toolCalls })));
 console.log(artifact.tokenMetric);
-if (results.some(row => row.ggh.recall < 1 || row.native.recall < 1 || row.ggh.recall < row.native.recall || row.ggh.exitCode !== 0 || row.ggh.unexpected.length || row.ggh.stderr)) {
+if (results.some(row => row.ggh.recall < 1 || row.native.recall < 1 || row.ggh.recall < row.native.recall || row.ggh.exitCode !== 0 || row.ggh.unexpected.length || row.ggh.stderr || (row.ggh.byteRatio !== undefined && row.ggh.byteRatio > 1.5))) {
   console.error("Agent evidence gate failed. See bench/agent/results.json.");
   process.exitCode = 1;
 }

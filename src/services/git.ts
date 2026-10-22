@@ -1,6 +1,6 @@
 export { clone } from "./git/clone.ts";
 import { run } from "../utils/exec.ts";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import type { ChangedFile } from "../utils/diff.ts";
 
@@ -67,6 +67,7 @@ import {
   getRepoRoot,
   isDetachedHead,
 } from "./git/branch.ts";
+import { getGitPath } from "./git/paths.ts";
 import { getBranchMergeBase, setBranchMergeBase } from "./git/stack.ts";
 
 export interface GitStatusResult {
@@ -586,26 +587,30 @@ export async function getSquashPreview(count: number, cwd = process.cwd()): Prom
 export async function squashCommits(
   count: number,
   cwd = process.cwd(),
-  expected?: Pick<SquashPreview, "head" | "branch">,
+  expected?: Pick<SquashPreview, "head" | "branch"> & { indexBytes?: Buffer },
 ): Promise<{ previousMessages: string[]; stagedCount: number; recoveryRef: string }> {
   const preview = await getSquashPreview(count, cwd);
-  const status = await getStatus(cwd);
-  if (status.hasChanges) throw new Error("Squash requires a clean index and working tree. Preserve your uncommitted changes first.");
-  if (status.branch !== preview.branch || (expected && (preview.head !== expected.head || preview.branch !== expected.branch))) {
-    throw new Error("Repository changed while preparing the squash. Nothing was rewritten; retry after inspecting git status.");
+  const indexPath = await getGitPath("index", cwd);
+  const lockPath = `${indexPath}.lock`;
+  const lock = openSync(lockPath, "wx", 0o600);
+  try {
+    const status = await getStatus(cwd);
+    if (status.hasChanges) throw new Error("Squash requires a clean index and working tree. Preserve your uncommitted changes first.");
+    if (status.branch !== preview.branch || (expected && (preview.head !== expected.head || preview.branch !== expected.branch || (expected.indexBytes && !readFileSync(indexPath).equals(expected.indexBytes))))) {
+      throw new Error("Repository or index changed while preparing the squash. Nothing was rewritten; retry after inspecting git status.");
+    }
+    const recoveryRef = `refs/ggh/squash/${preview.head}`;
+    await execGitWithRetry(["update-ref", recoveryRef, preview.head], { cwd });
+    const ref = status.isDetached ? "HEAD" : `refs/heads/${preview.branch}`;
+    // Move only the previewed tip, with an expected-OID compare-and-swap.
+    // The held index lock protects staged content until the history step ends.
+    await execGitWithRetry(preview.base
+      ? ["update-ref", "-m", "ggh squash", ref, preview.base, preview.head]
+      : ["update-ref", "-d", ref, preview.head], { cwd });
+    return { previousMessages: preview.previousMessages, stagedCount: (await getStatus(cwd)).staged.length, recoveryRef };
+  } finally {
+    closeSync(lock); if (existsSync(lockPath)) unlinkSync(lockPath);
   }
-  // Keep the original history reachable even if a hook rejects the new commit.
-  const recoveryRef = `refs/ggh/squash/${preview.head}`;
-  await execGitWithRetry(["update-ref", recoveryRef, preview.head], { cwd });
-  if (preview.base) {
-    await execGitWithRetry(["reset", "--soft", preview.base], { cwd });
-  } else {
-    // Leave the symbolic HEAD attached to its now-unborn branch. The complete
-    // original tree stays staged for the new root commit.
-    await execGitWithRetry(["update-ref", "-d", "HEAD", preview.head], { cwd });
-  }
-  const after = await getStatus(cwd);
-  return { previousMessages: preview.previousMessages, stagedCount: after.staged.length, recoveryRef };
 }
 
 export async function commit(

@@ -25,7 +25,7 @@ export interface AgentEnvelope {
   result?: unknown;
   error?: { code: AgentErrorCode; message: string; retryability: "after_input" | "after_inspection" | "never" };
   requiredInputs?: RequiredInput[];
-  effects: { completed: string[]; pending: string[]; uncertain: string[] };
+  effects?: { completed: string[]; pending: string[]; uncertain: string[] };
   operationId?: string;
   resources?: string[];
 }
@@ -59,21 +59,23 @@ export function agentEnvelope(input: { command: string[]; result?: unknown; issu
     contract: "ggh.agent", version: 1, command: input.command, status,
     ...(input.result !== undefined ? { result: input.result } : {}),
     ...(failed ? { error: { code, message: issue?.message ?? "Command did not complete.", retryability: ["invalid_arguments", "missing_input", "confirmation_required", "authentication_required"].includes(code) ? "after_input" : "after_inspection" } satisfies AgentEnvelope["error"] } : {}),
-    ...(issue?.requiredInputs ? { requiredInputs: issue.requiredInputs } : {}), effects,
+    ...(issue?.requiredInputs ? { requiredInputs: issue.requiredInputs } : {}),
+    ...(path === "status" && !operation && !Object.values(effects).some(items => items.length) ? {} : { effects }),
     ...(operation ? { operationId: operation.id, resources: operation.resources } : workflow && result ? { ...("operationId" in result && typeof result.operationId === "string" ? { operationId: result.operationId } : {}), ...("resources" in result ? { resources: strings(result.resources) } : {}) } : {}),
   };
 }
 
 export const envelopeSchema = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
-  type: "object", required: ["contract", "version", "command", "status", "effects"],
+  type: "object", required: ["contract", "version", "command", "status"],
+  allOf: [{ if: { properties: { command: { const: ["status"] } } }, else: { required: ["effects"] } }],
   properties: {
     contract: { const: "ggh.agent" }, version: { const: 1 }, command: { type: "array", items: { type: "string" } },
     status: { enum: ["succeeded", "planned", "no_op", "needs_input", "cancelled", "failed", "partially_completed"] },
     result: { description: "Command-specific payload. Detailed result schemas are not yet guaranteed." },
     error: { type: "object", required: ["code", "message", "retryability"], properties: { code: { enum: ["invalid_arguments", "missing_input", "confirmation_required", "authentication_required", "provider_unavailable", "cancelled", "partial_completion", "operation_failed", "outcome_uncertain"] }, message: { type: "string" }, retryability: { enum: ["after_input", "after_inspection", "never"] } } },
     requiredInputs: { type: "array", items: { type: "object", required: ["name", "description"], properties: { name: { type: "string" }, description: { type: "string" }, alternatives: { type: "array", items: { type: "string" } } } } },
-    effects: { type: "object", required: ["completed", "pending", "uncertain"], properties: Object.fromEntries(["completed", "pending", "uncertain"].map(key => [key, { type: "array", items: { type: "string" } }])) },
+    effects: { description: "Omitted only for read-only status when all arrays are empty; defaults to completed: [], pending: [], uncertain: [].", type: "object", required: ["completed", "pending", "uncertain"], properties: Object.fromEntries(["completed", "pending", "uncertain"].map(key => [key, { type: "array", items: { type: "string" } }])) },
     operationId: { type: "string" }, resources: { type: "array", items: { type: "string" } },
   },
 };
@@ -174,12 +176,18 @@ export const coreResultSchemas = {
   projects: { commandPaths: [["projects"]], includesSubcommands: true, schema: projectsResultSchema },
   go: { commandPaths: [["go"]], schema: { type: "object", required: ["schemaVersion"], properties: { schemaVersion: { const: 1 }, path: { type: "string" }, target: { enum: ["cd", "editor", "t3"] }, query: { type: "string" }, candidates: { type: "array", items: { type: "object" } } }, anyOf: [{ required: ["path", "target"] }, { required: ["query", "candidates"] }] } },
   coverage: "Partial field schemas. Optional fields vary by outcome. Other command result payloads are not yet specified.",
-  status: { commandPaths: [["status"]], schema: { type: "object", required: ["repository"], properties: {
-    repository: { type: ["object", "null"], required: ["root", "branch", "detached", "upstream", "ahead", "behind", "staged", "unstaged", "untracked", "conflicts", "operation"], properties: {
-      root: { type: "string" }, branch: { type: ["string", "null"] }, detached: { type: "boolean" }, upstream: { type: ["string", "null"] },
-      ...Object.fromEntries(["ahead", "behind", "staged", "unstaged", "untracked", "conflicts"].map(key => [key, { type: "integer", minimum: 0 }])),
-      operation: { enum: [null, "rebase", "merge", "cherry-pick", "revert", "sequencer", "bisect"] },
-    } }, pullRequest: { type: ["object", "null"] }, github: { type: "object" }, ai: { type: "object" },
+  status: { commandPaths: [["status"]], schema: { type: ["object", "null"], description: "Agent result only. Null outside a repository. Legacy --json retains result.repository with explicit counts.", required: ["branch", "head"], properties: {
+    root: { type: "string", description: "Absolute checkout root. Omitted only when equal to the invocation cwd." },
+    branch: { type: ["string", "null"], description: "Null means detached HEAD." },
+    head: { type: ["string", "null"], description: "Full HEAD object ID; null for an unborn branch." },
+    upstream: { type: ["string", "null"], default: null },
+    ...Object.fromEntries(["ahead", "behind", "staged", "unstaged", "untracked", "conflicts"].map(key => [key, { type: "integer", minimum: 0, default: 0 }])),
+    operation: { enum: [null, "rebase", "merge", "cherry-pick", "revert", "sequencer", "bisect"], default: null },
+    changes: { type: "array", items: { type: "string" }, default: [], description: "Lossless porcelain-v2 -z records without headers or trailing NUL. Rename source is the next element; unmerged records retain all conflict stages. No path quoting." },
+    base: { type: ["string", "null"], default: null, description: "Explicit gh-merge-base, or null when none is recorded." },
+    push: { type: ["string", "null"], description: "Publish target. Omitted when equal to upstream; null means no destination." },
+    fetchedAt: { type: ["string", "null"], default: null, description: "Local FETCH_HEAD mtime in ISO 8601; not proof of remote freshness. No network probe." },
+    pullRequest: { type: ["object", "null"] }, github: { type: "object" }, ai: { type: "object" },
   } } },
   run: { commandPaths: [["run"]], schema: { anyOf: [{ type: "array", items: { type: "object" } }, { type: "object", required: ["run", "jobs", "log", "logStatus"], properties: {
     run: { type: "object", not: { required: ["jobs"] } }, jobs: { type: "array", items: { type: "object" } }, log: { type: ["string", "null"] },

@@ -1,9 +1,10 @@
 import { Command } from "commander";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { branchSettings, pushTarget } from "../services/git/push-target.ts";
 import { run } from "../utils/exec.ts";
 import { getFlags } from "../services/runtime.ts";
-import { checkSubmodules, getAheadBehind, getAheadOfDefault, getRepoRoot, getStatus, worktreeList } from "../services/git.ts";
+import { checkSubmodules, getAheadBehind, getAheadOfDefault, getRepoRoot, getRemotes, getStatus, worktreeList } from "../services/git.ts";
 import { getActivePullRequest, getGitHubAuthStatus, type GitHubAccount } from "../services/github.ts";
 import { getConfig } from "../services/config.ts";
 import { buildAttemptChain, getStatusProviders, getProviderById, PROVIDER_ORDER } from "../services/ai/index.ts";
@@ -180,15 +181,36 @@ async function renderStatus(options?: { remote?: boolean; providers?: boolean })
 }
 
 async function renderMachineStatus(options?: { remote?: boolean; providers?: boolean }): Promise<void> {
+  const agent = getFlags().agent;
   const [gitStatus, root, branchInfo, gitDir] = await Promise.all([
-    getStatus(), getRepoRoot().catch(() => ""),
-    run("git", ["status", "--porcelain=v2", "--branch", "-z", "--untracked-files=no"], { reject: false }),
+    agent ? Promise.resolve(null) : getStatus(), getRepoRoot().catch(() => ""),
+    run("git", ["status", "--porcelain=v2", "--branch", "-z", agent ? "-uall" : "--untracked-files=no"], { reject: false }),
     run("git", ["rev-parse", "--absolute-git-dir"], { reject: false }),
   ]);
+  if (root && branchInfo.exitCode !== 0) throw new Error(branchInfo.stderr || "Cannot read Git status.");
+  let branch: string | null = null;
+  let head: string | null = null;
+  const changes: string[] = [];
+  const counts = { staged: 0, unstaged: 0, untracked: 0, conflicts: 0 };
+  let renameSource = false;
   let upstream: string | null = null;
   let ahead = 0;
   let behind = 0;
   for (const field of branchInfo.stdout.split("\0")) {
+    if (!field) continue;
+    if (renameSource) { changes.push(field); renameSource = false; continue; }
+    if (field.startsWith("# branch.head ")) branch = field.slice(14) === "(detached)" ? null : field.slice(14);
+    if (field.startsWith("# branch.oid ")) head = field.slice(13) === "(initial)" ? null : field.slice(13);
+    if (!field.startsWith("# ")) {
+      changes.push(field);
+      if (field.startsWith("? ")) counts.untracked++;
+      else if (field.startsWith("u ")) counts.conflicts++;
+      else if (/^[12] /.test(field)) {
+        if (field[2] !== ".") counts.staged++;
+        if (field[3] !== ".") counts.unstaged++;
+        renameSource = field.startsWith("2 ");
+      }
+    }
     if (field.startsWith("# branch.upstream ")) upstream = field.slice(18);
     const ab = /^# branch\.ab \+(\d+) -(\d+)$/.exec(field);
     if (ab) { ahead = Number(ab[1]); behind = Number(ab[2]); }
@@ -201,14 +223,34 @@ async function renderMachineStatus(options?: { remote?: boolean; providers?: boo
   ] as const) {
     if (directory && existsSync(join(directory, file))) { operation = name; break; }
   }
+  const probes = {
+    ...(options?.remote ? { pullRequest: await getActivePullRequest().catch(() => null), github: await getGitHubAuthStatus() } : {}),
+    ...(options?.providers ? { ai: { enabled: getConfig().ai_enabled, providers: (await getStatusProviders()).map(provider => provider.id) } } : {}),
+  };
+  if (agent) {
+    if (!root) { jsonOut(null); return; }
+    const [settings, remotes] = await Promise.all([branchSettings(root), getRemotes(root)]);
+    const remote = branch ? pushTarget(branch, remotes, settings) : null;
+    const destination = remote ? remote.remote === "." ? remote.branch : `${remote.remote}/${remote.branch}` : null;
+    const base = branch ? settings.get(`branch.${branch}.gh-merge-base`) : undefined;
+    const fetchPath = join(directory, "FETCH_HEAD");
+    jsonOut({
+      ...(root !== process.cwd() ? { root } : {}), branch, head,
+      ...(upstream ? { upstream } : {}), ...(ahead ? { ahead } : {}), ...(behind ? { behind } : {}),
+      ...Object.fromEntries(Object.entries(counts).filter(([, count]) => count !== 0)),
+      ...(operation ? { operation } : {}), ...(changes.length ? { changes } : {}),
+      ...(base ? { base } : {}), ...(destination !== upstream ? { push: destination } : {}),
+      ...(existsSync(fetchPath) ? { fetchedAt: statSync(fetchPath).mtime.toISOString() } : {}), ...probes,
+    });
+    return;
+  }
   const result = {
-    repository: gitStatus.isRepo ? {
+    repository: gitStatus?.isRepo ? {
       root, branch: gitStatus.isDetached ? null : gitStatus.branch, detached: Boolean(gitStatus.isDetached),
       upstream, ahead, behind, staged: gitStatus.staged.length, unstaged: gitStatus.unstaged.length,
       untracked: gitStatus.untracked.length, conflicts: gitStatus.conflicts.length, operation,
     } : null,
-    ...(options?.remote ? { pullRequest: await getActivePullRequest().catch(() => null), github: await getGitHubAuthStatus() } : {}),
-    ...(options?.providers ? { ai: { enabled: getConfig().ai_enabled, providers: (await getStatusProviders()).map(provider => provider.id) } } : {}),
+    ...probes,
   };
   jsonOut(result);
 }

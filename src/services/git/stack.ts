@@ -5,7 +5,7 @@ import { assertWindowsPrivateDirectory } from "../private-storage.ts";
 
 import { run } from "../../utils/exec.ts";
 import { existsSync, readFileSync } from "node:fs";
-import { lstat, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
+import { link, lstat, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { execGitWithRetry } from "./exec.ts";
@@ -170,8 +170,16 @@ export async function acquireStackOperationLock(
   const directory = await recoveryDirectory(cwd);
   const path = join(directory, "operation.lock");
   const token = randomUUID();
-  let handle;
-  try { handle = await open(path, "wx", 0o600); }
+  const temp = join(directory, `.operation-${token}.tmp`);
+  const record: StackLockRecord = { schemaVersion: 1, pid: process.pid, token, command, startedAt: new Date().toISOString() };
+  const handle = await open(temp, "wx", 0o600);
+  let writeError: unknown;
+  try { await handle.writeFile(`${JSON.stringify(record)}\n`, "utf8"); await handle.sync(); }
+  catch (error) { writeError = error; }
+  finally { await handle.close(); }
+  if (writeError !== undefined) { await unlink(temp).catch(() => undefined); throw writeError; }
+  // Publish complete owner metadata exclusively. Contenders never see an empty record.
+  try { await link(temp, path); }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
     const info = await lstat(path).catch(() => null);
@@ -193,13 +201,7 @@ export async function acquireStackOperationLock(
       ? `Another stack command is active with PID ${pid}. Wait for it to finish. If it is stuck, inspect ${path} before removing it.`
       : `A stale stack lock for PID ${pid} remains. Verify that process is gone, then remove ${path} to recover.`, { cause: error });
   }
-
-  const record: StackLockRecord = { schemaVersion: 1, pid: process.pid, token, command, startedAt: new Date().toISOString() };
-  let writeError: unknown;
-  try { await handle.writeFile(`${JSON.stringify(record)}\n`, "utf8"); await handle.sync(); }
-  catch (error) { writeError = error; }
-  finally { await handle.close(); }
-  if (writeError !== undefined) { await unlink(path).catch(() => undefined); throw writeError; }
+  finally { await unlink(temp).catch(() => undefined); }
 
   return async () => {
     let raw: unknown;

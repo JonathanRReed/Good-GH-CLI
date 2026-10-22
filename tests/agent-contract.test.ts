@@ -115,7 +115,7 @@ describe("agent contract", () => {
   });
 
   test("unknown failures retain uncertainty even with raw result data", () => {
-    expect(agentEnvelope({ command: ["api"], result: { status: "succeeded" }, failed: true, dryRun: false, preview: [] }).effects.uncertain).not.toEqual([]);
+    expect(agentEnvelope({ command: ["api"], result: { status: "succeeded" }, failed: true, dryRun: false, preview: [] }).effects?.uncertain).not.toEqual([]);
   });
 
   test("discovers actual command paths and keeps native escapes unmanaged", async () => {
