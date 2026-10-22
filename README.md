@@ -340,7 +340,8 @@ ggh discard --all --dry-run
 `ggh.agent` envelope. With `--agent`, read `status`, `error.code`,
 `error.retryability`, `requiredInputs`, and `effects` before continuing. Detailed
 result schemas cover the core workflows; other `result` payloads remain
-command-specific. Agent output is compact JSON. Native `git`, `gh`, and
+command-specific. Read-only status may omit `effects` when all arrays are empty.
+Agent output is compact JSON. Native `git`, `gh`, and
 `--` escapes keep their native streams and exit codes. MCP and shell completion
 use their own protocols and reject `--agent`.
 
@@ -348,6 +349,10 @@ use their own protocols and reject `--agent`.
 checkout root, branch, upstream, ahead/behind counts, staged/unstaged/untracked
 and conflict counts, detached state, and operation in progress. Add `--remote`
 for GitHub authentication and PR checks, or `--providers` for AI provider checks.
+Agent status uses a flat result with full `head` OID and lossless porcelain-v2
+`changes`. Omitted counts mean zero, omitted `root` means cwd, and omitted
+`operation` means null. `ggh agent schema` defines all defaults, comparison base,
+push destination and local fetch timestamp. Legacy `--json` remains nested.
 `ggh run <id> --json` and `--agent` return one `jobs` array alongside `run`,
 `log`, and `logStatus`. Failed logs are fetched before output; expired or
 inaccessible logs have `logStatus: "unavailable"`.
