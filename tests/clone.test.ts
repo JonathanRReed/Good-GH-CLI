@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
@@ -334,19 +334,34 @@ describe("clone process lifecycle", () => {
 
   test("cleanup refuses a destination replaced while cloning", async () => {
     const destination = join(root, "replaced");
-    const controller = new AbortController();
-    let replaced = false;
-    await expect(clone(url, destination, "standard", root, {
-      signal: controller.signal,
-      onProgress: () => {
-        if (replaced) return;
-        replaced = true;
-        renameSync(destination, `${destination}-original`);
-        mkdirSync(destination);
-        writeFileSync(join(destination, "keep"), "pre-existing replacement");
-        controller.abort();
-      },
-    })).rejects.toThrow("cancelled");
+    const result = await runFixture([], { root, invoke: `
+      const { clone } = await import(${JSON.stringify(modulePath)});
+      const { renameSync, mkdirSync, writeFileSync } = await import('node:fs');
+      const { join } = await import('node:path');
+      const spawn = Bun.spawn.bind(Bun);
+      Bun.spawn = (args, options) => {
+        if (args[0] === 'git' && args[1] === 'clone') {
+          return spawn([process.execPath, '-e', "process.stderr.write('Cloning fixture\\n'); setInterval(() => {}, 1000);"], options);
+        }
+        return spawn(args, options);
+      };
+      const destination = ${JSON.stringify(destination)};
+      const controller = new AbortController();
+      let replaced = false;
+      try { await clone(${JSON.stringify(url)}, destination, 'standard', process.cwd(), {
+        signal: controller.signal,
+        onProgress: () => {
+          if (replaced) return;
+          replaced = true;
+          renameSync(destination, destination + '-original');
+          mkdirSync(destination);
+          writeFileSync(join(destination, 'keep'), 'pre-existing replacement');
+          controller.abort();
+        },
+      }); } catch(error) { console.log(JSON.stringify({ message: error.message, replaced })); }
+    ` });
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({ message: "Clone cancelled.", replaced: true });
     expect(readFileSync(join(destination, "keep"), "utf8")).toBe("pre-existing replacement");
   });
 
