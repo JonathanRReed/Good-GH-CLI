@@ -13,11 +13,11 @@ Branch `feat/v0.6-projects`. Loop started 2026-10-22 ("until the new version of 
 ## Phases
 | Phase | Scope | Status |
 |---|---|---|
-| 0 | P0 fixes: merge head pin + honest outcomes; safe checkout path (no .env copy); worktree removal recheck; `worktree list --porcelain -z` parser; env allowlist; agent envelope diet (status, run) | done (c0bec09 merged; verified on source CLI) |
-| 1 | (all lanes merged: 1A projects, 1A.2 real-data fixes, 1B clone, 1C ci why, 1D threads) Identity + discovery + index; `ggh` / `projects`; `clone` extensions (alias `get`); `go` + `init <shell>`. Parallel: `ci why` prototype + benchmark harness; lossless review-thread reads | pending |
-| 2 | `sync --all`; `tidy` with deletion proofs; `lost`; `tidy --audit`; `projects --remote` | pending |
-| 3 | Compact status; preflight fixtures; skill pack; `review --editor` + ledger | 3A review + 3B status/preflight merged; skill pack + agent polish after Phase 2 |
-| 4 | Cuts; README rewrite around projects; release prep (no publication without approval) | pending |
+| 0 | P0 fixes: merge head pin + honest outcomes; safe checkout path (no .env copy); worktree removal recheck; `worktree list --porcelain -z` parser; env allowlist; agent envelope diet (status, run) | done |
+| 1 | (all lanes merged: 1A projects, 1A.2 real-data fixes, 1B clone, 1C ci why, 1D threads) Identity + discovery + index; `ggh` / `projects`; `clone` extensions (alias `get`); `go` + `init <shell>`. Parallel: `ci why` prototype + benchmark harness; lossless review-thread reads | done |
+| 2 | `sync --all`; `tidy` with deletion proofs; `lost`; `tidy --audit`; `projects --remote` | done |
+| 3 | Compact status; preflight fixtures; skill pack; `review --editor` + ledger | done |
+| 4 | Cuts; README rewrite around projects; release prep (no publication without approval) | done |
 
 ## Log
 - 2026-10-22: branch created; strategy docs saved.
@@ -76,3 +76,4 @@ Branch `feat/v0.6-projects`. Loop started 2026-10-22 ("until the new version of 
 
 - 2026-10-22: review fixes r2 merged (960 pass, bench pass, smoke 10/10, bundle 676,372/714,271). GLM's Codex repro rerun: NOT REPRODUCED (codex worktree host-owned, no actions, still exists). Integration: two r1 tests built worktrees with raw git add; r2 correctly classifies them unknown, so fixtures now mark them ggh-created to keep exercising the reflog and ignored-file guards.
 
+- 2026-10-22: Final read-only real-data check on 9b3741c: tidy 40 lines (14 branch deletes across 5 clones, 188 agent worktrees left to hosts), lost 62 lines, projects 89 lines. Only fingerprint change was a T3 Code checkpoint ref (refs/t3/orchestration-v2/checkpoints/...) written by a live T3 thread in inkling during the run; ggh never writes refs/t3. Shipping: merge to main, push, cleanup, install.
