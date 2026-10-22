@@ -111,7 +111,35 @@ export const reviewThreadsResultSchema = {
     } },
   },
 };
+const truncationSchema = { type: "object", additionalProperties: false, required: ["bytesTotal", "bytesShown"], properties: {
+  bytesTotal: { type: "integer", minimum: 0 }, bytesShown: { type: "integer", minimum: 0 },
+} };
+export const ciEvidenceResultSchema = {
+  type: "object", additionalProperties: false,
+  required: ["schemaVersion", "headSha", "runs", "failures", "unavailable"],
+  properties: {
+    schemaVersion: { const: 1 }, headSha: { type: "string" },
+    pr: { type: "object", additionalProperties: false, required: ["number", "url"], properties: { number: { type: "integer" }, url: { type: "string" } } },
+    runs: { type: "array", items: { type: "object", additionalProperties: false, required: ["id", "url", "workflow", "conclusion", "sha", "stale"], properties: {
+      id: { type: "integer" }, url: { type: "string" }, workflow: { type: "string" }, conclusion: { type: "string" }, sha: { type: "string" }, stale: { type: "boolean" },
+    } } },
+    failures: { type: "array", items: { type: "object", additionalProperties: false,
+      required: ["job", "step", "url", "annotations", "evidence", "logSource", "truncated", "annotationsTruncated"], properties: {
+        job: { type: "string" }, step: { type: "string" }, url: { type: "string" },
+        logSource: { enum: ["failed-step", "full-job"] }, truncated: truncationSchema, annotationsTruncated: truncationSchema,
+        annotations: { type: "array", items: { type: "object", additionalProperties: false, required: ["path", "startLine", "endLine", "level", "title", "message", "rawDetails"], properties: {
+          path: { type: "string" }, startLine: { type: "integer" }, endLine: { type: "integer" }, level: { type: "string" }, title: { type: "string" }, message: { type: "string" }, rawDetails: { type: "string" },
+        } } },
+        evidence: { type: "array", items: { type: "object", additionalProperties: false, required: ["line", "text"], properties: { line: { type: "integer", minimum: 1 }, text: { type: "string" } } } },
+      },
+    } },
+    unavailable: { type: "array", items: { type: "object", additionalProperties: false, required: ["source", "reason"], properties: {
+      source: { type: "string" }, reason: { type: "string" }, runId: { type: "integer" }, job: { type: "string" },
+    } } },
+  },
+};
 export const coreResultSchemas = {
+  ciWhy: { commandPaths: [["ci", "why"]], schema: ciEvidenceResultSchema },
   coverage: "Partial field schemas. Optional fields vary by outcome. Other command result payloads are not yet specified.",
   status: { commandPaths: [["status"]], schema: { type: "object", required: ["repository"], properties: {
     repository: { type: ["object", "null"], required: ["root", "branch", "detached", "upstream", "ahead", "behind", "staged", "unstaged", "untracked", "conflicts", "operation"], properties: {
