@@ -7,6 +7,15 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add `ggh sync --all` and `ggh sync <project...>` over the project index, with
+  bounded clone concurrency, per-clone deadlines, one fetch per remote, and
+  fast-forward-only checkout updates. Skip unsafe and host-owned checkouts.
+- Report bulk-sync outcomes in human output and a compact versioned JSON/agent
+  schema. Ctrl-C stops scheduling and preserves a partial report. Remote fork
+  default-branch sync requires `--fork-upstream` and confirmation.
+- Guard single-repo sync cleanup against unpublished commits, checked-out
+  branches, and changed deletion proofs, including when `--force` is used.
+
 - Extend `ggh clone` with alias `get`, `clone_root`, `--to`, `--ask`, paginated
   account, organization, and star discovery, and versioned agent results.
 - Verify origin identity before reusing a clone and write local provenance

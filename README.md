@@ -357,6 +357,42 @@ ggh alias ci "commit --pr --yes"
 ggh alias --remove ci
 ```
 
+## Sync
+
+```bash
+ggh sync                        # Current repo: fetch, prune, and clean up gone branches
+ggh sync --all                  # Every clone in the project index
+ggh sync api web                # Indexed names, paths, or fuzzy matches, like go
+ggh sync --all --concurrency 4 --timeout 120000
+ggh sync api --include-host-worktrees
+ggh sync my-fork --fork-upstream --yes --agent
+```
+
+Run `ggh projects` to populate the index. Bulk sync reads that index, fetches each
+remote once per clone, and fast-forwards each eligible checkout to its own
+upstream. It never switches branches, rebases, pushes, or deletes local branches.
+Ambiguous project names require selection or an exact checkout path.
+
+Dirty, detached, busy, diverged, locked, and upstreamless checkouts are skipped
+with a reason. Agent-host worktree directories are skipped unless you pass
+`--include-host-worktrees`. The timeout covers an entire clone, and at most four
+clones run at once by default. Fetches disable credential prompts and use SSH
+BatchMode. Failed fetches prevent checkout updates for that clone.
+
+`--fork-upstream` also runs `gh repo sync` for each selected fork's default branch.
+The confirmation names the remote targets. Non-interactive use requires `--yes`.
+This is the only bulk-sync option that mutates a remote repository.
+
+`--json` emits a compact result with `schemaVersion: 1`; `--agent` wraps it in the
+agent envelope. `ggh agent schema` describes both. Results include each clone,
+remote fetch, and checkout, with old and new commit IDs for fast-forwards.
+Ctrl-C stops new work, lets in-flight commands finish within their deadlines,
+and reports completed and pending effects. Earlier updates remain applied.
+
+Plain `ggh sync` keeps its single-repo cleanup. Even with `--force`, it keeps
+branches checked out in any worktree and branches containing commits unreachable
+from every remote-tracking ref. Unknown deletion proof also means keep.
+
 ## Other GitHub commands
 
 | Command | Use |
