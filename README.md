@@ -17,6 +17,10 @@ ggh                         # All indexed local projects
 ggh projects                # Same table
 ggh projects Good-GH-CLI     # Checkouts, unpublished work, stashes, history
 ggh projects --agent         # Compact, versioned JSON; no network
+ggh --remote                 # Add GitHub PR counts, review requests and CI
+ggh projects Good-GH-CLI --remote  # Authored PRs and default-branch checks
+ggh projects --remote --refresh   # Bypass the five-minute remote cache
+ggh projects --uncloned       # Also count owned repos without local clones
 ggh go Good-GH-CLI           # Context on stderr, path on stdout
 ggh go Good-GH-CLI --editor  # VISUAL, EDITOR, code, cursor, or zed
 ggh go Good-GH-CLI --t3      # Probe an installed T3 launcher
@@ -41,6 +45,34 @@ clone. Unknown and failed fields stay visible. Unpublished counts include every
 local branch and detached checkout HEAD, measured against all remote-tracking refs.
 Merged branches require a known remote default branch. Nothing fetches or reads
 host transcripts. Discovery reports unreadable and depth-limited paths.
+
+`--remote` uses your active `gh` account on each remote host. Independent clones
+share one remote lookup; fork and upstream repositories remain separate. The table
+shows authored open PR counts, failed checks among the three displayed PRs, review
+requests, archive and fork flags, and remote age. Context cards list up to three
+authored PRs with their branches, checks and review decisions, plus default-branch
+CI. Terminal runs show local status before waiting for GitHub.
+
+Requests use serialized GraphQL batches of 25 repositories, with a ten-second
+batch timeout, at most 40 requests per host per run, and a 500-point foreground
+reserve. Every query reads its rate-limit cost and remaining quota. Reset times
+and retry delays persist across invocations for the same host and login;
+`--refresh` bypasses result caching but keeps those limits. Failed or inaccessible
+fields report `unavailable` with a reason instead of becoming zero counts.
+
+Remote snapshots live in the private ggh cache for five minutes, scoped to the
+host, login, repository set and requested fields. Environment tokens bypass result
+caching because two tokens for one login can grant different access. GraphQL reads
+use the TTL cache; ETag revalidation applies to REST GETs, not these queries.
+`--uncloned` implies `--remote` and enumerates owned repositories, excludes every
+indexed local remote, and shows the ten most recently pushed. Enumeration stops at
+1,000 repositories or the request budget; incomplete counts remain unavailable.
+Organization repositories are not included. Nothing fetches local Git refs.
+
+JSON and agent results put remote fields under each clone's `remote` array, with
+`state`, `value` and `observedAt` for successful fields. Unavailable fields carry a
+`reason` and, when known, `retryAt`. Top-level `remote` metadata reports GraphQL
+request count, cost and uncloned results. `ggh agent schema` describes these fields.
 
 The private index lives at `<configDir>/projects.json`. It stores checkout metadata
 and redacted remote URLs, never status. Missing clones remain flagged for one

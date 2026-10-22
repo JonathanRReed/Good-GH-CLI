@@ -7,6 +7,17 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add `ggh projects --remote` and bare `ggh --remote` with PR counts, review
+  requests, archive and fork flags, remote age, and context-card PR lists and CI.
+- Deduplicate remote identities across clones, batch 25 repositories per GraphQL
+  query, serialize requests per host, and preserve foreground quota and retry
+  delays by host and login. Return partial fields with unavailable reasons.
+- Cache remote results privately for five minutes with `--refresh` to bypass.
+  Add `--uncloned` for owned repositories without local clones, with bounded
+  pagination, counts and the ten most recently pushed repositories.
+- Show local terminal rows before remote requests. Extend projects JSON and the
+  agent schema with remote field freshness, request counts and rate-limit costs.
+
 - Add `ggh review <pr>` with safe reusable checkouts, detached GUI editors,
   tuicr/delta terminal fallbacks, explicit private inspection marks, incremental
   review with rewritten-history detection, and versioned JSON/agent results.
