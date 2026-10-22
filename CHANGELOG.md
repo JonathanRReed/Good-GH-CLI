@@ -5,6 +5,28 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## 0.6.0-beta.1 - Unreleased
 
+### Fixed
+
+- Keep SSH agent authentication available during tidy remote-branch deletion,
+  disable interactive SSH prompts, and report authentication denial as refused.
+- Serialize tidy, sync, and cleanup fetches with one lock per clone. Sync waits
+  up to 30 seconds for another mutation.
+
+### Security
+
+- Restrict fetch pruning to remote-tracking refs, including mirror and bare
+  clones, preserving unpublished branches and ggh review pins.
+- Protect ignored files during worktree removal and repeat tidy's file-state
+  check immediately before removal.
+- Delete gone branches with an expected-old-OID check so concurrent ref movement
+  cannot discard unpublished work.
+- Keep tidy candidates with unpublished branch or checkout HEAD reflog commits.
+  Scan at most 1,000 entries, keep longer logs, and report reflog-only work in lost.
+- Require publication proofs fetched within tidy_max_fetch_age_days, default 30.
+  Keep unknown fetch ages and missing checkouts on uncertain or unmounted volumes.
+- Strip terminal controls from human commit, branch, and PR-thread output while
+  preserving raw JSON.
+
 ### Added
 
 - Make bare `ggh` a local projects table. Add bounded discovery, separate clone

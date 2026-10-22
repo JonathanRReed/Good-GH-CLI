@@ -64,6 +64,8 @@ git -C "$seed" commit -m initial >/dev/null
 git -C "$seed" remote add origin "file://$remote"
 git -C "$seed" push -u origin main >/dev/null 2>&1
 git clone "file://$remote" "$repos/example" >/dev/null 2>&1
+# Publication proofs need a recorded fetch, which clone does not always create.
+git -C "$repos/example" fetch origin >/dev/null 2>&1
 git -C "$repos/example" branch merged-candidate
 git -C "$repos/example" switch -c unpublished >/dev/null 2>&1
 git -C "$repos/example" commit --allow-empty -m 'local unpublished work' >/dev/null
