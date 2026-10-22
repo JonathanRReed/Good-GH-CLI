@@ -1,3 +1,4 @@
+import { projectsResultSchema } from "./projects/schema.ts";
 import type { OperationRecord } from "./operations.ts";
 import type { CommandIssue } from "./runtime.ts";
 
@@ -112,6 +113,8 @@ export const reviewThreadsResultSchema = {
   },
 };
 export const coreResultSchemas = {
+  projects: { commandPaths: [["projects"]], includesSubcommands: true, schema: projectsResultSchema },
+  go: { commandPaths: [["go"]], schema: { type: "object", required: ["schemaVersion"], properties: { schemaVersion: { const: 1 }, path: { type: "string" }, target: { enum: ["cd", "editor", "t3"] }, query: { type: "string" }, candidates: { type: "array", items: { type: "object" } } }, anyOf: [{ required: ["path", "target"] }, { required: ["query", "candidates"] }] } },
   coverage: "Partial field schemas. Optional fields vary by outcome. Other command result payloads are not yet specified.",
   status: { commandPaths: [["status"]], schema: { type: "object", required: ["repository"], properties: {
     repository: { type: ["object", "null"], required: ["root", "branch", "detached", "upstream", "ahead", "behind", "staged", "unstaged", "untracked", "conflicts", "operation"], properties: {
