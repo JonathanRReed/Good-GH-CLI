@@ -1,3 +1,4 @@
+import { availableParallelism } from "node:os";
 import { run, type RunOptions, type RunResult } from "../../utils/exec.ts";
 
 // Inventory must neither inherit another checkout's GIT_DIR nor refresh indexes.
@@ -13,7 +14,7 @@ export async function projectGit(cwd: string, args: string[], deadline = Date.no
 
 export function gitLine(text: string): string { return text.replace(/\r?\n$/, ""); }
 
-export async function projectPool<T, R>(items: readonly T[], worker: (item: T) => Promise<R>, concurrency = 8): Promise<R[]> {
+export async function projectPool<T, R>(items: readonly T[], worker: (item: T) => Promise<R>, concurrency = Math.min(16, availableParallelism())): Promise<R[]> {
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 64) throw new Error("Project workers must be between 1 and 64.");
   const results: R[] = [];
   let index = 0;

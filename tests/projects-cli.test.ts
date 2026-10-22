@@ -20,14 +20,14 @@ function cli(args: string[]) { return runFixture(args, { root, config: { project
 
 describe("projects entry point", () => {
   it("bare ggh lists projects with diagnostics only on stderr", async () => {
-    const path = await repo("example"); const result = await cli([]);
-    expect(result.exitCode).toBe(0); expect(result.stdout).toBe(""); expect(result.stderr).toContain("example"); expect(result.stderr).toContain(path); expect(result.stderr).not.toContain("Usage:"); expect(result.calls).toEqual([]); expect(result.providerCalls).toEqual([]);
+    await repo("example"); const result = await cli([]);
+    expect(result.exitCode).toBe(0); expect(result.stdout).toBe(""); expect(result.stderr).toContain("example"); expect(result.stderr).toContain("main"); expect(result.stderr).not.toContain("Usage:"); expect(result.calls).toEqual([]); expect(result.providerCalls).toEqual([]);
   });
   it("keeps explicit help and exposes versioned compact JSON/agent projects", async () => {
     await repo("example");
-    for (const args of [["--json"], ["projects", "--json"], ["--agent"], ["projects", "--agent"]]) {
+    for (const args of [["--json"], ["projects", "--json"], ["--agent"], ["projects", "--agent"], ["--wide", "--json"]]) {
       const result = await cli(args); expect(result.exitCode).toBe(0);
-      expect(result.stdout.trim().split("\n")).toHaveLength(1);
+      expect(result.stdout.trim().split("\n")).toHaveLength(1); expect(result.stdout).not.toContain("\n  ");
       const value = JSON.parse(result.stdout); const payload = args.includes("--agent") ? value.result : value;
       expect(payload).toMatchObject({ schemaVersion: 1, projects: [{ name: "example", checkouts: [{ branch: "main" }], stashes: { state: "ok", value: 0 } }] });
       expect(result.calls).toEqual([]); expect(result.providerCalls).toEqual([]);

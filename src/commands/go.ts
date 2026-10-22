@@ -41,11 +41,12 @@ export async function openProjectT3(path: string): Promise<void> {
 
 export function registerGoCommand(program: Command): void {
   program.command("go <query>").description("Find a project and print its path or open it")
+    .option("--wide", "Show full checkout details")
     .option("--print", "Print only the checkout path")
     .option("--editor", "Open in VISUAL, EDITOR, code, cursor, or zed")
     .option("--t3", "Open with an installed T3 CLI or URL scheme")
     .addOption(new Option("--shell", "Use the newline-safe shell path protocol").hideHelp())
-    .action(async (query: string, options: { print?: boolean; editor?: boolean; t3?: boolean; shell?: boolean }) => {
+    .action(async (query: string, options: { print?: boolean; editor?: boolean; t3?: boolean; shell?: boolean; wide?: boolean }) => {
       if ([options.print, options.editor, options.t3].filter(Boolean).length > 1 || options.shell && (!options.print || getFlags().json)) { fail("Choose one of --print, --editor, or --t3. --shell requires --print without JSON.", { code: "invalid_arguments" }); return; }
       const index = await refreshProjectIndex();
       const clone = await selectProject(index.clones, query); if (!clone) return;
@@ -54,7 +55,7 @@ export function registerGoCommand(program: Command): void {
       if (!checkout) { fail("Project has no available checkout. Refresh projects after mounting or restoring it."); return; }
       const path = checkout.path;
       const target = options.print ? "cd" : options.editor ? "editor" : options.t3 ? "t3" : getConfig().go_default ?? "cd";
-      if (!options.print && !getFlags().json) renderProjectCard({ clone, status: await readCloneStatus(clone) }, undefined, true);
+      if (!options.print && !getFlags().json) renderProjectCard({ clone, status: await readCloneStatus(clone) }, undefined, true, { wide: options.wide });
       if (target === "editor") await openProjectEditor(path);
       else if (target === "t3") await openProjectT3(path);
       if (jsonOut({ schemaVersion: 1, path, target })) return;

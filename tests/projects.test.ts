@@ -277,3 +277,71 @@ describe("local project status", () => {
     expect(projectPath(repos)).toBe(repos);
   });
 });
+
+it("matches batched unpublished counts to per-tip Git walks across merges and detached worktrees", async () => {
+  const main = await repo("graph");
+  const base = await git(main, "rev-parse", "HEAD");
+  await git(main, "update-ref", "refs/remotes/origin/main", base);
+  await git(main, "checkout", "-b", "left");
+  await git(main, "commit", "--allow-empty", "-m", "left");
+  await git(main, "checkout", "-b", "right", base);
+  await git(main, "commit", "--allow-empty", "-m", "right");
+  await git(main, "merge", "--no-ff", "left", "-m", "merge");
+  await git(main, "branch", "no-upstream");
+  const detached = join(root, "graph-detached");
+  await git(main, "worktree", "add", "--detach", detached);
+  await git(detached, "commit", "--allow-empty", "-m", "detached");
+  const clone = (await discoverProjects({ config: config() })).clones[0];
+  if (!clone) throw new Error("Missing fixture");
+  const status = await readCloneStatus(clone);
+  if (status.unpublished.state !== "ok") throw new Error(JSON.stringify(status.unpublished));
+  expect(status.unpublished.value).toHaveLength(5);
+  for (const ref of status.unpublished.value) expect(ref.commits).toBe(Number(await git(main, "rev-list", "--count", ref.ref, "--not", "--remotes")));
+  await git(main, "update-ref", "refs/remotes/other/right", "right");
+  const refreshed = await readCloneStatus(clone);
+  if (refreshed.unpublished.state !== "ok") throw new Error("Missing refreshed counts");
+  for (const ref of refreshed.unpublished.value) expect(ref.commits).toBe(Number(await git(main, "rev-list", "--count", ref.ref, "--not", "--remotes")));
+});
+
+it("starts each queued checkout deadline when its own status work starts", async () => {
+  if (process.platform === "win32" || !commandExists("sh")) return;
+  const main = await repo("queued");
+  for (let i = 0; i < 2; i++) await git(main, "worktree", "add", "-b", `linked-${i}`, join(root, `linked-${i}`));
+  const clone = (await discoverProjects({ config: config() })).clones[0];
+  if (!clone) throw new Error("Missing fixture");
+  const binary = Bun.which("git"); if (!binary) throw new Error("Missing Git");
+  const bin = join(root, "bin"); mkdirSync(bin);
+  writeFileSync(join(bin, "git"), `#!/bin/sh\ncase "$*" in *"status --porcelain"*) sleep 0.2;; esac\nexec ${quoteShellArgument(binary)} "$@"\n`); chmodSync(join(bin, "git"), 0o700);
+  const previous = process.env.PATH;
+  process.env.PATH = `${bin}:${previous}`;
+  try {
+    const start = performance.now();
+    const status = await readCloneStatus(clone, { deadlineMs: 500, workers: 1 });
+    expect(performance.now() - start).toBeGreaterThan(500);
+    expect(status.checkouts).toHaveLength(3);
+    expect(status.checkouts.every(checkout => checkout.dirty.state === "ok")).toBe(true);
+  } finally { process.env.PATH = previous; }
+});
+
+it("reads shared refs and stashes once for a clone with several linked checkouts", async () => {
+  if (process.platform === "win32" || !commandExists("sh")) return;
+  const main = await repo("shared");
+  for (let i = 0; i < 3; i++) await git(main, "worktree", "add", "-b", `shared-${i}`, join(root, `shared-${i}`));
+  writeFileSync(join(main, "saved.txt"), "stash"); await git(main, "add", "."); await git(main, "stash", "push", "-m", "saved");
+  const clone = (await discoverProjects({ config: config() })).clones[0];
+  if (!clone) throw new Error("Missing fixture");
+  const binary = Bun.which("git"); if (!binary) throw new Error("Missing Git");
+  const bin = join(root, "bin"); mkdirSync(bin); const trace = join(root, "git-calls");
+  writeFileSync(join(bin, "git"), `#!/bin/sh\nprintf '%s\\n' "$*" >> ${quoteShellArgument(trace)}\nexec ${quoteShellArgument(binary)} "$@"\n`); chmodSync(join(bin, "git"), 0o700);
+  const previous = process.env.PATH; process.env.PATH = `${bin}:${previous}`;
+  try {
+    const status = await readCloneStatus(clone);
+    expect(status.stashes).toMatchObject({ state: "ok", value: 1 });
+    expect(status.checkouts).toHaveLength(4);
+    const calls = readFileSync(trace, "utf8").trim().split("\n");
+    expect(calls.filter(line => line.includes(" for-each-ref "))).toHaveLength(1);
+    expect(calls.filter(line => line.includes(" rev-list "))).toHaveLength(1);
+    expect(calls.filter(line => line.includes(" stash list "))).toHaveLength(1);
+    expect(calls.filter(line => line.includes(" status "))).toHaveLength(4);
+  } finally { process.env.PATH = previous; }
+});
