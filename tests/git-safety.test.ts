@@ -49,7 +49,7 @@ describe("git safety behaviours", () => {
     rmSync(repo, { recursive: true, force: true });
   });
 
-  it("sync refuses to delete a gone branch with unique commits without --force", async () => {
+  it("sync keeps unpublished gone branches even with --force", async () => {
     const remote = realpathSync(mkdtempSync(join(tmpdir(), "ggh-safety-remote-")));
     const git = (args: string[]) => execa("git", args, { cwd: repo });
     try {
@@ -72,7 +72,7 @@ describe("git safety behaviours", () => {
 
       const { exitCode, stderr } = await runCli(["sync", "--yes"], repo);
       expect(exitCode).toBe(0);
-      expect(stderr).toContain("unpushed/unmerged commit(s)");
+      expect(stderr).toContain("unpublished");
 
       const stillGone = await getGoneBranches(repo);
       expect(stillGone).toContain("stale");
@@ -80,7 +80,7 @@ describe("git safety behaviours", () => {
       const force = await runCli(["sync", "--yes", "--force"], repo);
       expect(force.exitCode).toBe(0);
       const afterForce = await getGoneBranches(repo);
-      expect(afterForce).not.toContain("stale");
+      expect(afterForce).toContain("stale");
     } finally {
       rmSync(remote, { recursive: true, force: true });
     }

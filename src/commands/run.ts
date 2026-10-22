@@ -140,7 +140,22 @@ export function registerRunCommand(program: Command): void {
       return;
     }
 
-    if (jsonOut(detail)) return;
+    if (getFlags().json) {
+      let log: string | null = null;
+      let logStatus: "available" | "unavailable" | "not_applicable" = "not_applicable";
+      let logError: string | undefined;
+      if (detail.run.conclusion === "failure" || detail.jobs.some(job => job.conclusion === "failure")) {
+        try {
+          log = await getFailedRunLog(id);
+          logStatus = log.trim() ? "available" : "unavailable";
+        } catch (err) {
+          logStatus = "unavailable";
+          logError = err instanceof Error ? err.message : String(err);
+        }
+      }
+      jsonOut({ ...detail, log, logStatus, ...(logError ? { logError } : {}) });
+      return;
+    }
 
     const { run, jobs } = detail;
     p.log.step(`${pc.bold(run.workflowName)} ${pc.dim("·")} ${run.displayTitle}`);

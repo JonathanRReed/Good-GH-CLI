@@ -63,6 +63,28 @@ function getTools(): McpTool[] {
       },
     },
     {
+      name: "ggh_pr_threads",
+      description: "Read full pull request review threads with resolution state and revision SHAs",
+      annotations: { readOnlyHint: true },
+      inputSchema: {
+        type: "object",
+        properties: {
+          number: { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER, description: "PR number (omit for current branch)" },
+          state: { type: "string", enum: ["unresolved", "all"], description: "Default unresolved" },
+          since: { type: "string", description: "ISO timestamp or returned cursor" },
+          maxBody: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER, description: "Explicit body character limit" },
+        },
+      },
+      handler: async (args) => {
+        const { getReviewThreads } = await import("../services/github/review-threads.ts");
+        return getReviewThreads(typeof args.number === "number" ? args.number : undefined, {
+          unresolved: args.state !== "all",
+          since: typeof args.since === "string" ? args.since : undefined,
+          maxBody: typeof args.maxBody === "number" ? args.maxBody : undefined,
+        });
+      },
+    },
+    {
       name: "ggh_pr_list",
       description: "List open pull requests in the current repository",
       inputSchema: {

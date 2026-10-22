@@ -41,7 +41,7 @@ describe.skipIf(process.platform === "win32" || !Bun.which("make"))("Makefile pa
     try {
       copyFileSync(join(import.meta.dir, "..", "Makefile"), join(root, "Makefile"));
       utimesSync(join(root, "Makefile"), 1000000000, 1000000000);
-      const inputs = ["bin/ggh.ts", "src/services/git/split.ts", "scripts/man.ts", "package.json", "bun.lock"];
+      const inputs = ["bin/ggh.ts", "src/services/git/split.ts", "scripts/man.ts", "skills/ggh/SKILL.md", "skills/ggh/reference.md", "package.json", "bun.lock"];
       for (const file of [...inputs, "build/ggh", "man/ggh.1"]) {
         const path = join(root, file);
         mkdirSync(dirname(path), { recursive: true });
@@ -57,7 +57,7 @@ describe.skipIf(process.platform === "win32" || !Bun.which("make"))("Makefile pa
       };
       expect(plan("build")).not.toContain("--compile");
       expect(plan("man")).not.toContain("bun run man");
-      for (const input of ["src/services/git/split.ts", "package.json", "bun.lock"]) {
+      for (const input of ["src/services/git/split.ts", "skills/ggh/SKILL.md", "skills/ggh/reference.md", "package.json", "bun.lock"]) {
         expect(plan("build", input)).toContain("--compile");
         expect(plan("man", input)).toContain("bun run man");
       }

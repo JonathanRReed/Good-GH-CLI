@@ -147,6 +147,7 @@ export async function getPullRequestChecks(cwd = process.cwd()): Promise<CheckRu
 
 export interface PullRequestDetail extends PullRequestItem {
   body: string;
+  headRefOid: string;
   isDraft: boolean;
   baseRefName: string;
   additions: number;
@@ -158,7 +159,7 @@ export interface PullRequestDetail extends PullRequestItem {
 }
 
 const PR_VIEW_FIELDS =
-  "number,title,body,author,headRefName,baseRefName,state,url,isDraft,additions,deletions,changedFiles,mergeable,reviewDecision,labels";
+  "number,title,body,author,headRefName,headRefOid,baseRefName,state,url,isDraft,additions,deletions,changedFiles,mergeable,reviewDecision,labels";
 
 
 export async function viewPullRequest(
@@ -178,7 +179,10 @@ export async function viewPullRequest(
 }
 
 
+export type MergeOutcome = "merged" | "queued" | "auto_merge_enabled" | "unknown";
+
 export interface MergeOptions {
+  matchHeadCommit: string;
   method: "merge" | "squash" | "rebase";
   deleteBranch?: boolean;
   auto?: boolean;
@@ -188,13 +192,14 @@ export interface MergeOptions {
 
 
 export async function mergePullRequest(
-  prNumber: number | undefined,
+  prNumber: number,
   options: MergeOptions,
   cwd = process.cwd(),
-): Promise<string> {
-  const args = ["pr", "merge", ...(prNumber ? [String(prNumber)] : [])];
-  args.push(`--${options.method}`);
-  if (options.deleteBranch) args.push("--delete-branch");
+): Promise<{ outcome: MergeOutcome; cleanupError?: string }> {
+  if (!/^[a-f0-9]{40}$/i.test(options.matchHeadCommit)) {
+    throw new Error("A full reviewed head SHA is required. Refresh the PR and retry.");
+  }
+  const args = ["pr", "merge", ...(prNumber ? [String(prNumber)] : []), `--${options.method}`, "--match-head-commit", options.matchHeadCommit];
   if (options.auto) args.push("--auto");
   if (options.subject) args.push("--subject", options.subject);
   let input: string | undefined;
@@ -203,15 +208,47 @@ export async function mergePullRequest(
     input = options.body;
   }
   try {
-    const { stdout, stderr } = await gh(args, { cwd, input });
-    return (stdout || stderr).trim();
+    await gh(args, { cwd, input });
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (/head.*(?:does not match|doesn't match|changed|modified|mismatch)|expected.*(?:head|oid)|head.*expected/i.test(message)) {
+      throw new GitHubError("unknown", "PR head changed since review. Review the new head and retry with its SHA.");
+    }
     throw classifyGitHubError(err, "merge pull request");
   } finally {
     invalidateCache("pr-list:");
   }
+
+  const outcome = await readMergeOutcome(prNumber, cwd);
+  if (outcome === "merged" && options.deleteBranch) {
+    try {
+      // gh skips merging an already merged PR and performs its branch cleanup.
+      await gh(["pr", "merge", ...(prNumber ? [String(prNumber)] : []), `--${options.method}`, "--match-head-commit", options.matchHeadCommit, "--delete-branch"], { cwd });
+    } catch (err) {
+      return { outcome, cleanupError: `PR merged, but branch cleanup failed: ${err instanceof Error ? err.message : String(err)}` };
+    }
+  }
+  return { outcome };
 }
 
+async function readMergeOutcome(prNumber: number, cwd: string): Promise<MergeOutcome> {
+  try {
+    const { stdout } = await gh(["pr", "view", ...(prNumber ? [String(prNumber)] : []), "--json", "state,mergedAt,autoMergeRequest,mergeStateStatus"], { cwd });
+    const state = JSON.parse(stdout);
+    if (state?.state === "MERGED" && state.mergedAt) return "merged";
+    if (state?.state !== "OPEN") return "unknown";
+    // gh pr view does not expose mergeQueueEntry; query it separately.
+    const { stdout: queueJson } = await ghApi(["graphql", "-f", "query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){mergeQueueEntry{id}}}}", "-F", "owner={owner}", "-F", "name={repo}", "-F", `number=${prNumber}`], { cwd });
+    const queue = JSON.parse(queueJson);
+    const pr = queue?.data?.repository?.pullRequest;
+    if (queue.errors || !pr || !("mergeQueueEntry" in pr)) return "unknown";
+    if (pr.mergeQueueEntry?.id) return "queued";
+    if (state.autoMergeRequest) return "auto_merge_enabled";
+    return "unknown";
+  } catch {
+    return "unknown";
+  }
+}
 
 export async function setPullRequestState(
   action: "ready" | "close" | "reopen",

@@ -311,6 +311,8 @@ function toFailure(attempt: AIAttempt, err: unknown): AIAttemptFailure {
 
 export interface FallbackOptions {
   explicitProvider?: ConfigAIProvider;
+  /** Only the metadata audit may invoke AI during a tidy dry run. */
+  metadataAudit?: boolean;
   /**
    * Called after each failed attempt, with the next attempt that will be tried
    * (undefined when the chain is exhausted). Lets the CLI narrate the fallback.
@@ -332,7 +334,7 @@ export async function runAIWithFallback<T>(
   task: (provider: AIProvider, model: string) => Promise<T>,
   options: FallbackOptions = {},
 ): Promise<AIRunResult<T>> {
-  if (getFlags().aiDisabled || getFlags().dryRun) {
+  if (getFlags().aiDisabled || (getFlags().dryRun && !options.metadataAudit)) {
     throw new Error("AI invocation is disabled for this operation (--no-ai, -m, or --dry-run).");
   }
   const timeoutMs = getConfig().ai_timeout_ms || DEFAULT_AI_TIMEOUT_MS;

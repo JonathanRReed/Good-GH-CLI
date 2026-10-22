@@ -44,6 +44,8 @@ export function getFinishedOperation(): OperationRecord | undefined { return fin
 let jsonEmitted = false;
 let issue: CommandIssue | undefined;
 let preview: string[] = [];
+let completedEffects = new Set<string>();
+let uncertainEffects = new Set<string>();
 let deferJson = false;
 let pendingJson: { value: unknown } | undefined;
 let emittedJson: { value: unknown } | undefined;
@@ -56,6 +58,8 @@ export function resetCommandOutput(): void {
   jsonEmitted = false;
   issue = undefined;
   preview = [];
+  completedEffects = new Set();
+  uncertainEffects = new Set();
   deferJson = false;
   pendingJson = undefined;
   emittedJson = undefined;
@@ -86,6 +90,10 @@ export function recordCommandIssue(value: CommandIssue): void {
   if (!issue || value.code || value.status === "cancelled") issue = value;
 }
 export function getCommandIssue(): CommandIssue | undefined { return issue; }
+export function recordCompletedEffect(effect: string): void { completedEffects.add(effect); }
+export function getCompletedEffects(): string[] { return [...completedEffects]; }
+export function recordUncertainEffect(effect: string): void { uncertainEffects.add(effect); }
+export function getUncertainEffects(): string[] { return [...uncertainEffects]; }
 export function recordPreview(action: string): void { preview.push(action); }
 export function getPreview(): readonly string[] { return preview; }
 
@@ -117,4 +125,13 @@ export function resetFlags(): void {
  */
 export function isNonInteractive(): boolean {
   return flags.noInput || flags.json || !process.stdin.isTTY;
+}
+
+// Bulk operations finish the current guarded effect and stop before the next.
+let commandCancellation: (() => void) | undefined;
+export function setCommandCancellation(handler: (() => void) | undefined): void { commandCancellation = handler; }
+export function requestCommandCancellation(): boolean {
+  if (!commandCancellation) return false;
+  commandCancellation();
+  return true;
 }

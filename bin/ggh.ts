@@ -1,8 +1,10 @@
 #!/usr/bin/env bun
+import { cancelActiveClones } from "../src/services/git/clone.ts";
+import { cancelActiveSyncs } from "../src/services/projects/sync.ts";
 import { runCli } from "../src/index.ts";
 import { killAllChildren } from "../src/utils/exec.ts";
 import { restoreTerminal, finalizeJsonOutput } from "../src/utils/output.ts";
-import { recordCommandIssue, setFlags } from "../src/services/runtime.ts";
+import { recordCommandIssue, setFlags, requestCommandCancellation } from "../src/services/runtime.ts";
 import { finishCommandOperation } from "../src/services/command-operations.ts";
 
 let interrupted = false;
@@ -19,8 +21,19 @@ async function onInterrupt(signal: NodeJS.Signals): Promise<void> {
   process.stderr.write("\n\x1b[31m✖\x1b[0m  Cancelled.\n");
   recordCommandIssue({ status: "cancelled", message: "Cancelled." });
   restoreTerminal();
+  const syncCancelled = cancelActiveSyncs();
+  if (requestCommandCancellation() || syncCancelled) {
+    process.exitCode = signal === "SIGTERM" ? 143 : 130;
+    await cliRun;
+    process.exit(signal === "SIGTERM" ? 143 : 130);
+  }
+  const cancelledClone = await cancelActiveClones();
   await killAllChildren();
   process.exitCode = signal === "SIGTERM" ? 143 : 130;
+  if (cancelledClone) {
+    await cliRun;
+    process.exit(process.exitCode);
+  }
   await finishCommandOperation();
   finalizeJsonOutput();
   process.exit(process.exitCode);
@@ -40,6 +53,7 @@ async function onClosedPipe(): Promise<void> {
   if (pipeClosed) return;
   pipeClosed = true;
   restoreTerminal();
+  await cancelActiveClones();
   await killAllChildren();
   process.exitCode = 0;
   setFlags({ json: false });
@@ -51,6 +65,7 @@ async function onFailure(err: unknown): Promise<void> {
   if (err instanceof Error && "code" in err && err.code === "EPIPE") return onClosedPipe();
   if (pipeClosed) return;
   restoreTerminal();
+  await cancelActiveClones();
   await killAllChildren();
   console.error(err instanceof Error ? err.message : String(err));
   recordCommandIssue({ status: "failed", message: err instanceof Error ? err.message : String(err) });
@@ -63,4 +78,4 @@ async function onFailure(err: unknown): Promise<void> {
 process.on("SIGPIPE", () => { void onClosedPipe(); });
 process.stdout.on("error", (error) => { void onFailure(error); });
 
-runCli(process.argv).catch(onFailure);
+const cliRun = runCli(process.argv).catch(onFailure);

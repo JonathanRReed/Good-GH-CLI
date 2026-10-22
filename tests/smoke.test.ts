@@ -51,7 +51,6 @@ describe("CLI smoke tests", () => {
       "pr",
       "sync",
       "squash",
-      "release",
       "checks",
       "discard",
       "rename",

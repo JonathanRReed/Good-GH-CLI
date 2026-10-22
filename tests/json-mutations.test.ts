@@ -45,49 +45,6 @@ describe("JSON results for mutations", () => {
     expect(JSON.parse(drop.stdout)).toMatchObject({ action: "drop", ref: "stash@{0}" });
   });
 
-  it("returns workflow action and workflow id", async () => {
-    for (const action of ["run", "enable", "disable"] as const) {
-      const result = await runFixture(["workflow", action, "17", "--yes", "--json"], {
-        root,
-        cwd: repo,
-        responses: [{ prefix: ["workflow", action, "17"] }],
-      });
-      expect(result.exitCode).toBe(0);
-      expect(JSON.parse(result.stdout)).toMatchObject({ action, workflowId: "17" });
-      expect(result.calls).toContainEqual(["workflow", action, "17"]);
-    }
-  });
-
-  it("returns release target and requested asset paths", async () => {
-    const result = await runFixture(["release", "upload", "v1.2.3", "dist/app.zip", "dist/checksum.txt", "--json"], {
-      root,
-      cwd: repo,
-      responses: [{ prefix: ["release", "upload", "v1.2.3"] }],
-    });
-    expect(result.exitCode).toBe(0);
-    expect(JSON.parse(result.stdout)).toMatchObject({
-      action: "upload",
-      tag: "v1.2.3",
-      files: ["dist/app.zip", "dist/checksum.txt"],
-    });
-
-    const download = await runFixture(["release", "download", "v1.2.3", "--dir", "artifacts", "--pattern", "*.zip", "--json"], {
-      root,
-      cwd: repo,
-      responses: [{ prefix: ["release", "download", "v1.2.3"] }],
-    });
-    expect(download.exitCode).toBe(0);
-    expect(JSON.parse(download.stdout)).toMatchObject({ action: "download", tag: "v1.2.3", dir: "artifacts", pattern: "*.zip" });
-
-    const deletion = await runFixture(["release", "delete", "v1.2.3", "--yes", "--json"], {
-      root,
-      cwd: repo,
-      responses: [{ prefix: ["release", "delete", "v1.2.3"] }],
-    });
-    expect(deletion.exitCode).toBe(0);
-    expect(JSON.parse(deletion.stdout)).toMatchObject({ action: "delete", tag: "v1.2.3" });
-  });
-
   it("returns issue action and issue target", async () => {
     for (const action of ["lock", "unlock", "pin", "unpin"] as const) {
       const result = await runFixture(["issue", action, "31", "--yes", "--json"], {

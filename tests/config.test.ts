@@ -6,6 +6,7 @@ import {
   DEFAULT_CONFIG,
   getConfig,
   getConfigPath,
+  getConfigDir,
   getConfigWithSources,
   getProjectConfig,
   sanitizeConfig,
@@ -17,7 +18,7 @@ import {
 // developer's real ~/.config/good-gh/config.json.
 let home: string;
 let previousXdg: string | undefined;
-const envKeys = Object.keys(DEFAULT_CONFIG).map((k) => `GGH_${k.toUpperCase()}`);
+const envKeys = [...Object.keys(DEFAULT_CONFIG).map((k) => `GGH_${k.toUpperCase()}`), "GGH_CONFIG_DIR"];
 const previousEnv: Record<string, string | undefined> = {};
 
 beforeEach(() => {
@@ -41,6 +42,27 @@ afterEach(() => {
 });
 
 describe("config service", () => {
+  it("isolates ggh config without changing gh's XDG auth directory", () => {
+    const ghDir = join(home, "gh");
+    mkdirSync(ghDir);
+    writeFileSync(join(ghDir, "hosts.yml"), "auth fixture\n");
+    const override = join(home, "isolated ggh");
+    process.env.GGH_CONFIG_DIR = override;
+    expect(getConfigDir()).toBe(override);
+    saveConfig({ ai_enabled: false });
+    expect(getConfigPath()).toBe(join(override, "config.json"));
+    expect(JSON.parse(readFileSync(getConfigPath(), "utf8"))).toEqual({ ai_enabled: false });
+    expect(process.env.XDG_CONFIG_HOME).toBe(home);
+    expect(readFileSync(join(ghDir, "hosts.yml"), "utf8")).toBe("auth fixture\n");
+    delete process.env.GGH_CONFIG_DIR;
+    expect(getConfigPath()).toBe(join(home, "good-gh", "config.json"));
+  });
+
+  it("uses XDG when GGH_CONFIG_DIR is empty", () => {
+    process.env.GGH_CONFIG_DIR = "";
+    expect(getConfigDir()).toBe(join(home, "good-gh"));
+  });
+
   it("provides config path under XDG_CONFIG_HOME/good-gh", () => {
     expect(getConfigPath()).toBe(join(home, "good-gh", "config.json"));
   });
@@ -114,7 +136,7 @@ describe("project .ggh.json", () => {
         ai_provider: "ollama",
         ai_fallback: false,
         commit_style: "concise",
-        default_clone_dir: "/tmp/evil",
+        clone_root: "/tmp/evil",
         first_run_completed: true,
         hosted_ai_consent: true,
         bogus: 1,
@@ -128,8 +150,8 @@ describe("project .ggh.json", () => {
       "ai_fallback",
       "ai_provider",
       "bogus",
+      "clone_root",
       "codex_model",
-      "default_clone_dir",
       "first_run_completed",
       "hosted_ai_consent",
     ]);
@@ -137,7 +159,7 @@ describe("project .ggh.json", () => {
     const config = getConfig(repo);
     expect(config.ai_provider).toBe(DEFAULT_CONFIG.ai_provider);
     expect(config.commit_style).toBe("concise");
-    expect(config.default_clone_dir).toBe(DEFAULT_CONFIG.default_clone_dir);
+    expect(config.clone_root).toBe(DEFAULT_CONFIG.clone_root);
   });
 
   it("cannot redirect a user's local-only AI choice to a hosted provider", () => {
@@ -182,6 +204,16 @@ describe("project .ggh.json", () => {
 });
 
 describe("validateConfigValue", () => {
+  it("validates clone roots and resolves user and environment values", () => {
+    for (const value of [home, "~", "~/repos"]) expect(validateConfigValue("clone_root", value)).toEqual({ value });
+    for (const value of ["", ".", "relative", "~someone/repos", "/bad\npath", "/bad\0path"]) expect(validateConfigValue("clone_root", value).problem).toBeDefined();
+    saveConfig({ clone_root: home });
+    expect(getConfig().clone_root).toBe(home);
+    process.env.GGH_CLONE_ROOT = "~/other";
+    expect(getConfig().clone_root).toBe("~/other");
+    expect(getConfigWithSources().find(source => source.key === "clone_root")?.source).toBe("env");
+  });
+
   it("coerces booleans and integers from strings", () => {
     expect(validateConfigValue("ai_enabled", "on").value).toBe(true);
     expect(validateConfigValue("ai_fallback", "false").value).toBe(false);

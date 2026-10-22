@@ -47,31 +47,6 @@ describe("JSON for successful actions and no-ops", () => {
     expect(JSON.parse(clone.stdout)).toMatchObject({ action: "clone", nameWithOwner: "owner/project" });
   });
 
-  it("returns JSON for label and gist mutations", async () => {
-    for (const [action, args] of [
-      ["create", ["label", "create", "bug", "--yes", "--json"]],
-      ["edit", ["label", "edit", "bug", "--description", "Fixed", "--yes", "--json"]],
-      ["delete", ["label", "delete", "bug", "--yes", "--json"]],
-    ] as const) {
-      const result = await runFixture([...args], {
-        root,
-        cwd: repo,
-        responses: [{ prefix: ["label", action, "bug"] }],
-      });
-      expect(result.exitCode).toBe(0);
-      expect(JSON.parse(result.stdout)).toMatchObject({ action, name: "bug" });
-    }
-
-    for (const action of ["edit", "delete"] as const) {
-      const result = await runFixture(["gist", action, "fixture-gist", "--yes", "--json"], {
-        root,
-        responses: [{ prefix: ["gist", action, "fixture-gist"] }],
-      });
-      expect(result.exitCode).toBe(0);
-      expect(JSON.parse(result.stdout)).toMatchObject({ action, id: "fixture-gist" });
-    }
-  });
-
   it("returns JSON after opening a pull request in the browser", async () => {
     const result = await runFixture(["pr", "42", "--web", "--json"], {
       root,
@@ -80,28 +55,6 @@ describe("JSON for successful actions and no-ops", () => {
     });
     expect(result.exitCode).toBe(0);
     expect(JSON.parse(result.stdout)).toMatchObject({ action: "open", number: 42 });
-  });
-
-  it("requires explicit yes for team publish in JSON mode and keeps dry-runs local", async () => {
-    const missingYes = await runFixture(["team", "publish", "--json"], { root, cwd: repo });
-    expect(missingYes.exitCode).not.toBe(0);
-    expect(JSON.parse(missingYes.stdout)).toMatchObject({ status: "needs_input" });
-    expect(missingYes.calls.filter((args) => args[0] === "gist" && args[1] === "create")).toHaveLength(0);
-
-    const dryRun = await runFixture(["team", "publish", "--yes", "--dry-run", "--json"], { root, cwd: repo });
-    expect(dryRun.exitCode).toBe(0);
-    expect(JSON.parse(dryRun.stdout)).toMatchObject({ dryRun: true, gistUrl: null });
-    expect(dryRun.calls.filter((args) => args[0] === "gist" && args[1] === "create")).toHaveLength(0);
-
-    const published = await runFixture(["team", "publish", "--yes", "--json"], {
-      root,
-      cwd: repo,
-      responses: [{ prefix: ["gist", "create"], stdout: "https://gist.github.com/fixture/stack\n" }],
-    });
-    expect(published.exitCode).toBe(0);
-    expect(JSON.parse(published.stdout)).toMatchObject({ gistUrl: "https://gist.github.com/fixture/stack" });
-    const input = published.inputs.find((entry) => entry.args[0] === "gist" && entry.args[1] === "create");
-    expect(JSON.parse(input?.text ?? "{}")).toMatchObject({ user: "fixture", branch: "main" });
   });
 
   it("returns action results for workflow rerun and cancel", async () => {
@@ -131,7 +84,6 @@ describe("JSON for successful actions and no-ops", () => {
 
   it("returns reasoned no-op results instead of empty stdout", async () => {
     const cases = [
-      { args: ["draft", "create", "--json"], cwd: repo, expected: { status: "no_op", reason: "no_uncommitted_changes" } },
       { args: ["sync", "--json"], cwd: repo, expected: { status: "no_op", reason: "no_remotes" } },
       { args: ["undo", "--json"], cwd: emptyRepo, expected: { status: "no_op", reason: "no_commits" } },
       { args: ["rename", "main", "--yes", "--json"], cwd: repo, expected: { status: "no_op", reason: "already_named" } },

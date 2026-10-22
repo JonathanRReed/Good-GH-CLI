@@ -13,6 +13,12 @@ export const CLONE_MODES: readonly CloneMode[] = ["blobless", "shallow", "standa
 export const COMMIT_STYLES = ["auto", "conventional", "gitmoji", "concise"] as const;
 
 export interface GoodGhConfig {
+  project_roots?: string[];
+  project_exclude?: string[];
+  project_scan_depth?: number;
+  tidy_max_fetch_age_days?: number;
+  host_worktree_dirs?: { t3?: string; codex?: string; cursor?: string; claude?: string };
+  go_default?: "cd" | "editor" | "t3";
   repo_create_confirm?: boolean;
   attachment_upload_command?: string;
   /** User-owned permission for commands to generate content with AI. */
@@ -28,7 +34,7 @@ export interface GoodGhConfig {
   grok_model?: string;
   claude_model?: string;
   ollama_model?: string;
-  default_clone_dir?: string;
+  clone_root?: string;
   default_clone_mode?: CloneMode;
   commit_style?: "auto" | CommitStyle;
   /** Per-attempt timeout for an AI provider invocation, in milliseconds. */
@@ -39,6 +45,12 @@ export interface GoodGhConfig {
 }
 
 export const DEFAULT_CONFIG: Required<GoodGhConfig> = {
+  project_roots: [],
+  project_exclude: [],
+  project_scan_depth: 4,
+  tidy_max_fetch_age_days: 30,
+  host_worktree_dirs: { t3: "~/.t3/worktrees", codex: "~/.codex/worktrees", cursor: "~/.cursor/worktrees" },
+  go_default: "cd",
   repo_create_confirm: true,
   attachment_upload_command: "",
   ai_enabled: false,
@@ -48,7 +60,7 @@ export const DEFAULT_CONFIG: Required<GoodGhConfig> = {
   grok_model: "grok-4.5",
   claude_model: "sonnet",
   ollama_model: "qwen2.5-coder",
-  default_clone_dir: ".",
+  clone_root: "",
   default_clone_mode: "standard",
   commit_style: "auto",
   ai_timeout_ms: 120_000,
@@ -62,6 +74,10 @@ export const MAX_AI_TIMEOUT_MS = 3_600_000;
 /** A model slug: letters, digits, and the punctuation vendors actually use. */
 const MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 
+function isProjectRoot(path: string): boolean {
+  return !path.includes("\0") && (isAbsolute(path) || path === "~" || path.startsWith("~/"));
+}
+
 export interface ConfigProblem {
   key: string;
   message: string;
@@ -73,7 +89,29 @@ export interface ConfigProblem {
  * `.ggh.json` a cloned repository may ship — which is untrusted input.
  */
 export function validateConfigValue(key: string, raw: unknown): { value?: unknown; problem?: string } {
+  if (["project_roots", "project_exclude", "host_worktree_dirs"].includes(key) && typeof raw === "string") {
+    try { raw = JSON.parse(raw); }
+    catch { return { problem: "must be valid JSON" }; }
+  }
   switch (key as keyof GoodGhConfig) {
+    case "project_roots":
+    case "project_exclude":
+      return Array.isArray(raw) && raw.every((path: unknown) => typeof path === "string" && path.length > 0 && !path.includes("\0") && (key === "project_exclude" || isProjectRoot(path)))
+        ? { value: raw }
+        : { problem: key === "project_roots" ? "must be an array of absolute or ~/ paths" : "must be an array of paths or globs" };
+    case "tidy_max_fetch_age_days": {
+      const n = typeof raw === "number" ? raw : typeof raw === "string" && /^\d+$/.test(raw) ? Number(raw) : NaN;
+      return Number.isSafeInteger(n) && n >= 1 && n <= 3650 ? { value: n } : { problem: "must be an integer between 1 and 3650" };
+    }
+    case "project_scan_depth": {
+      const n = typeof raw === "number" ? raw : typeof raw === "string" && /^\d+$/.test(raw) ? Number(raw) : NaN;
+      return Number.isInteger(n) && n >= 0 && n <= 8 ? { value: n } : { problem: "must be an integer between 0 and 8" };
+    }
+    case "host_worktree_dirs":
+      return raw && typeof raw === "object" && !Array.isArray(raw) && Object.entries(raw).every(([host, path]) => ["t3", "codex", "cursor", "claude"].includes(host) && typeof path === "string" && isProjectRoot(path))
+        ? { value: raw } : { problem: "must be an object mapping t3, codex, cursor, or claude to absolute or ~/ paths" };
+    case "go_default":
+      return typeof raw === "string" && ["cd", "editor", "t3"].includes(raw) ? { value: raw } : { problem: "must be cd, editor, or t3" };
     case "attachment_upload_command":
       return typeof raw === "string" && (raw === "" || (isAbsolute(raw) && raw.length <= 4096 && !/[\0\r\n]/.test(raw)))
         ? { value: raw }
@@ -99,11 +137,9 @@ export function validateConfigValue(key: string, raw: unknown): { value?: unknow
       return typeof raw === "string" && MODEL_PATTERN.test(raw)
         ? { value: raw }
         : { problem: "must be a model name (letters, digits, . _ : / -)" };
-    case "default_clone_dir": {
-      if (typeof raw !== "string" || !raw.trim()) return { problem: "must be a directory path" };
-      if (raw.includes("\0")) return { problem: "must not contain NUL" };
-      return { value: raw };
-    }
+    case "clone_root":
+      return typeof raw === "string" && (isAbsolute(raw) || raw === "~" || raw.startsWith("~/")) && !/[\0\r\n]/.test(raw)
+        ? { value: raw } : { problem: "must be an absolute path or a ~ path" };
     case "default_clone_mode":
       return CLONE_MODES.includes(raw as CloneMode)
         ? { value: raw }
@@ -152,6 +188,7 @@ export function sanitizeConfig(raw: unknown): { config: Partial<GoodGhConfig>; p
 }
 
 export function getConfigDir(): string {
+  if (process.env.GGH_CONFIG_DIR) return process.env.GGH_CONFIG_DIR;
   const baseDir =
     process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
   return join(baseDir, "good-gh");
@@ -226,7 +263,7 @@ export function getProjectConfig(cwd = process.cwd()): ProjectConfig | null {
  * Environment overrides, named after the config keys they set:
  * GGH_AI_ENABLED, GGH_AI_PROVIDER, GGH_AI_FALLBACK, GGH_CODEX_MODEL, GGH_GROK_MODEL,
  * GGH_CLAUDE_MODEL, GGH_OLLAMA_MODEL, GGH_AI_TIMEOUT_MS, GGH_COMMIT_STYLE,
- * GGH_DEFAULT_CLONE_DIR, GGH_DEFAULT_CLONE_MODE, GGH_HOSTED_AI_CONSENT.
+ * GGH_CLONE_ROOT, GGH_DEFAULT_CLONE_MODE, GGH_HOSTED_AI_CONSENT.
  */
 function readEnvConfig(): Partial<GoodGhConfig> {
   const env: Record<string, unknown> = {};

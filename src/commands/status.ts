@@ -1,6 +1,10 @@
 import { Command } from "commander";
+import { existsSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { branchSettings, pushTarget } from "../services/git/push-target.ts";
+import { run } from "../utils/exec.ts";
 import { getFlags } from "../services/runtime.ts";
-import { checkSubmodules, getAheadBehind, getAheadOfDefault, getRepoRoot, getStatus, worktreeList } from "../services/git.ts";
+import { checkSubmodules, getAheadBehind, getAheadOfDefault, getRepoRoot, getRemotes, getStatus, worktreeList } from "../services/git.ts";
 import { getActivePullRequest, getGitHubAuthStatus, type GitHubAccount } from "../services/github.ts";
 import { getConfig } from "../services/config.ts";
 import { buildAttemptChain, getStatusProviders, getProviderById, PROVIDER_ORDER } from "../services/ai/index.ts";
@@ -12,9 +16,12 @@ export function registerStatusCommand(program: Command): void {
     .command("status")
     .alias("st")
     .description("Repository, GitHub, and AI provider status in one place")
+    .option("--full", "Include raw porcelain-v2 records in agent output")
+    .option("--remote", "Include GitHub authentication and pull request probes")
+    .option("--providers", "Include AI provider probes")
     .option("--watch", "Refresh the status display every N seconds (default 5)")
     .option("--interval <seconds>", "Refresh interval in seconds (default 5)", "5")
-    .action(async (options?: { watch?: boolean; interval?: string }) => {
+    .action(async (options?: { watch?: boolean; interval?: string; remote?: boolean; providers?: boolean; full?: boolean }) => {
       if (options?.watch) {
         const parsed = Number.parseInt(options.interval ?? "5", 10);
         const intervalSec = Number.isFinite(parsed) ? Math.min(Math.max(2, parsed), 300) : 5;
@@ -25,11 +32,15 @@ export function registerStatusCommand(program: Command): void {
         await watchStatus(intervalSec);
         return;
       }
-      await renderStatus();
+      await renderStatus(options);
     });
 }
 
-async function renderStatus(): Promise<void> {
+async function renderStatus(options?: { remote?: boolean; providers?: boolean; full?: boolean }): Promise<void> {
+  if (getFlags().json) {
+    await renderMachineStatus(options);
+    return;
+  }
   header("System & Repository Status");
 
   if (isDryRun()) {
@@ -168,6 +179,101 @@ async function renderStatus(): Promise<void> {
   } else {
     p.outro(pc.yellow("GitHub setup needs attention. Local status checks are available."));
   }
+}
+
+async function renderMachineStatus(options?: { remote?: boolean; providers?: boolean; full?: boolean }): Promise<void> {
+  const agent = getFlags().agent;
+  const [gitStatus, root, branchInfo, gitDir] = await Promise.all([
+    agent ? Promise.resolve(null) : getStatus(), getRepoRoot().catch(() => ""),
+    run("git", ["status", "--porcelain=v2", "--branch", "-z", agent ? "-uall" : "--untracked-files=no"], { reject: false }),
+    run("git", ["rev-parse", "--absolute-git-dir"], { reject: false }),
+  ]);
+  if (root && branchInfo.exitCode !== 0) throw new Error(branchInfo.stderr || "Cannot read Git status.");
+  let branch: string | null = null;
+  let head: string | null = null;
+  const rawChanges: string[] = [];
+  const changes: Array<[xy: string, path: string] | [xy: string, path: string, origPath: string]> = [];
+  const submodules: Array<[path: string, marker: string]> = [];
+  const counts = { staged: 0, unstaged: 0, untracked: 0, conflicts: 0 };
+  let rename: [xy: string, path: string] | undefined;
+  let upstream: string | null = null;
+  let ahead = 0;
+  let behind = 0;
+  for (const field of branchInfo.stdout.split("\0")) {
+    if (!field) continue;
+    if (rename) { rawChanges.push(field); changes.push([...rename, field]); rename = undefined; continue; }
+    if (field.startsWith("# branch.head ")) branch = field.slice(14) === "(detached)" ? null : field.slice(14);
+    if (field.startsWith("# branch.oid ")) head = field.slice(13) === "(initial)" ? null : field.slice(13);
+    if (!field.startsWith("# ")) {
+      rawChanges.push(field);
+      if (field.startsWith("? ") || field.startsWith("! ")) {
+        changes.push([field.startsWith("? ") ? "??" : "!!", field.slice(2)]);
+        if (field.startsWith("? ")) counts.untracked++;
+      } else {
+        // Split only the fixed metadata prefix. Paths may contain spaces and newlines.
+        const match = /^(1|2) (\S{2}) (\S{4}) (?:\S+ ){5}([\s\S]*)$/.exec(field);
+        const unmerged = /^u (\S{2}) (\S{4}) (?:\S+ ){7}([\s\S]*)$/.exec(field);
+        const xy = unmerged?.[1] ?? match?.[2];
+        const marker = unmerged?.[2] ?? match?.[3];
+        let path = unmerged?.[3] ?? match?.[4];
+        if (!xy || !marker || path === undefined) throw new Error("Invalid porcelain-v2 change record.");
+        if (field.startsWith("2 ")) {
+          const separator = path.indexOf(" ");
+          if (separator < 0) throw new Error("Invalid porcelain-v2 rename record.");
+          path = path.slice(separator + 1);
+          rename = [xy, path];
+        } else changes.push([xy, path]);
+        if (marker !== "N...") submodules.push([path, marker]);
+        if (unmerged) counts.conflicts++;
+        else {
+          if (xy[0] !== ".") counts.staged++;
+          if (xy[1] !== ".") counts.unstaged++;
+        }
+      }
+    }
+    if (field.startsWith("# branch.upstream ")) upstream = field.slice(18);
+    const ab = /^# branch\.ab \+(\d+) -(\d+)$/.exec(field);
+    if (ab) { ahead = Number(ab[1]); behind = Number(ab[2]); }
+  }
+  const directory = gitDir.stdout.trim();
+  let operation: string | null = null;
+  for (const [file, name] of [
+    ["rebase-merge", "rebase"], ["rebase-apply", "rebase"], ["MERGE_HEAD", "merge"],
+    ["CHERRY_PICK_HEAD", "cherry-pick"], ["REVERT_HEAD", "revert"], ["sequencer", "sequencer"], ["BISECT_LOG", "bisect"],
+  ] as const) {
+    if (directory && existsSync(join(directory, file))) { operation = name; break; }
+  }
+  const probes = {
+    ...(options?.remote ? { pullRequest: await getActivePullRequest().catch(() => null), github: await getGitHubAuthStatus() } : {}),
+    ...(options?.providers ? { ai: { enabled: getConfig().ai_enabled, providers: (await getStatusProviders()).map(provider => provider.id) } } : {}),
+  };
+  if (agent) {
+    if (!root) { jsonOut(null); return; }
+    const [settings, remotes] = await Promise.all([branchSettings(root), getRemotes(root)]);
+    const remote = branch ? pushTarget(branch, remotes, settings) : null;
+    const destination = remote ? remote.remote === "." ? remote.branch : `${remote.remote}/${remote.branch}` : null;
+    const base = branch ? settings.get(`branch.${branch}.gh-merge-base`) : undefined;
+    const fetchPath = join(directory, "FETCH_HEAD");
+    jsonOut({
+      ...(root !== process.cwd() ? { root } : {}), branch, head,
+      ...(upstream ? { upstream } : {}), ...(ahead ? { ahead } : {}), ...(behind ? { behind } : {}),
+      ...Object.fromEntries(Object.entries(counts).filter(([, count]) => count !== 0)),
+      ...(operation ? { operation } : {}), ...(changes.length ? { changes } : {}),
+      ...(submodules.length ? { submodules } : {}), ...(options?.full ? { rawChanges } : {}),
+      ...(base ? { base } : {}), ...(destination !== upstream ? { push: destination } : {}),
+      ...(existsSync(fetchPath) ? { fetchedAt: statSync(fetchPath).mtime.toISOString() } : {}), ...probes,
+    });
+    return;
+  }
+  const result = {
+    repository: gitStatus?.isRepo ? {
+      root, branch: gitStatus.isDetached ? null : gitStatus.branch, detached: Boolean(gitStatus.isDetached),
+      upstream, ahead, behind, staged: gitStatus.staged.length, unstaged: gitStatus.unstaged.length,
+      untracked: gitStatus.untracked.length, conflicts: gitStatus.conflicts.length, operation,
+    } : null,
+    ...probes,
+  };
+  jsonOut(result);
 }
 
 async function watchStatus(intervalSec: number): Promise<void> {

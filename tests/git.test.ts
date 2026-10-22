@@ -132,7 +132,7 @@ describe("git service", () => {
   it("syncs .env files into new worktrees", async () => {
     writeFileSync(join(tempRepo, ".env"), "SECRET_VAR=123\n");
     const wtPath = join(tempRepo, ".worktrees", "feat-env-test");
-    const result = await worktreeAdd("feat-env-test", wtPath, "main", tempRepo);
+    const result = await worktreeAdd("feat-env-test", wtPath, "main", tempRepo, { copyEnv: true });
     expect(result.copiedEnvFiles).toContain(".env");
 
     // Verify .env was copied into the new worktree

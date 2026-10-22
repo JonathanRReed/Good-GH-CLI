@@ -114,13 +114,14 @@ export function registerPrLifecycleCommands(pr: Command): void {
     .option("-s, --squash", "Squash and merge")
     .option("-r, --rebase", "Rebase and merge")
     .option("-m, --merge", "Create a merge commit")
+    .option("--match-head-commit <sha>", "Require this reviewed head SHA instead of the preflight head")
     .option("--auto", "Merge automatically once required checks pass")
     .option("--delete-branch", "Delete the head branch after merging", true)
     .option("--no-delete-branch", "Keep the head branch after merging")
     .option("-y, --yes", "Skip the confirmation prompt")
     .action(async (prNumber?: string, options?: {
       squash?: boolean; rebase?: boolean; merge?: boolean; auto?: boolean;
-      deleteBranch?: boolean; yes?: boolean;
+      deleteBranch?: boolean; yes?: boolean; matchHeadCommit?: string;
     }) => {
       header("Merge Pull Request");
       const num = await resolvePrNumber(prNumber);
@@ -140,6 +141,12 @@ export function registerPrLifecycleCommands(pr: Command): void {
           fail(`Pull Request #${num} is ${detail.state.toLowerCase()}, not open.`);
           return;
         }
+      }
+
+      const matchHeadCommit = options?.matchHeadCommit ?? detail?.headRefOid;
+      if (!matchHeadCommit) {
+        fail("Could not read the PR head SHA. Refresh the PR or pass --match-head-commit <sha>.");
+        return;
       }
 
       let method: MergeOptions["method"] | null = options?.squash
@@ -176,15 +183,17 @@ export function registerPrLifecycleCommands(pr: Command): void {
       const s = p.spinner();
       s.start(`Merging #${num}...`);
       try {
-        const url = await mergePullRequest(num, {
+        const result = await mergePullRequest(num, {
           method,
+          matchHeadCommit,
           deleteBranch: options?.deleteBranch !== false,
           auto: options?.auto,
         });
-        s.stop(pc.green(options?.auto ? `Auto-merge armed for #${num}.` : `Pull Request #${num} merged.`));
-        if (url) p.log.message(pc.dim(url));
-                  const repo = getFlags().json ? await repoForUrl() : null;
-          if (jsonOut({ number: num, action: "merge", url: repo ? getPullRequestUrl(repo, num) : url })) return;
+        s.stop(`Pull Request #${num}: ${result.outcome}.`);
+        if (result.cleanupError) p.log.warn(result.cleanupError);
+        const repo = getFlags().json ? await repoForUrl() : null;
+        const url = detail?.url ?? (repo ? getPullRequestUrl(repo, num) : undefined);
+        if (jsonOut({ number: num, action: "merge", url, ...result })) return;
         p.outro("Done.");
       } catch (err) {
         s.stop(pc.red("Merge failed."));

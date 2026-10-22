@@ -53,10 +53,9 @@ suggest a next step.
 **Every command exits non-zero when it fails.** Use `fail()`, which sets the exit
 code for you.
 
-**New actions are subcommands, not positional strings.** `ggh draft resume`,
-not `ggh draft` with an `if/else` on `[action]`. Subcommands get their own
-options (`-y`, `--limit`); `--json`, `--dry-run`, `-R`, `-q`, and `--no-input`
-arrive free from the global decorator — never redeclare them.
+**Register new actions as subcommands**, such as `ggh stash restore <name>`.
+Subcommands get their own options such as `-y` and `--limit`. The global
+decorator adds supported `--json`, `--dry-run`, `-R`, `-q`, and `--no-input` flags.
 
 **Use the shared helpers.** `jsonOut(v)` instead of the `--json` triplet,
 `confirmOrAbort()` instead of hand-rolled confirms (it forces you to pass
@@ -106,10 +105,10 @@ Maintainer only:
 bun run release 0.4.0
 ```
 
-That bumps `package.json`, writes a `CHANGELOG.md` entry with `ggh changelog`,
-commits, tags, and pushes. The tag triggers the release workflow, which verifies
-again, compiles standalone binaries for five targets, publishes a GitHub Release,
-and publishes to npm if `NPM_TOKEN` is set.
+The script verifies the tree, bumps `package.json`, promotes the manually written
+Unreleased changelog entry, regenerates the man page, commits, and creates a local
+tag. Review the commit and tag before publishing. See [PACKAGING](docs/PACKAGING.md)
+for the release workflow and npm publication gates.
 
 
 ## Release-safety regressions

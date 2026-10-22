@@ -116,6 +116,22 @@ export async function cached<T>(key: string, fetcher: () => Promise<T>, options:
   return value;
 }
 
+/** Callers validate the stored value at their boundary. */
+export function readCacheValue(key: string, ttlMs: number): unknown {
+  const dir = cacheDir();
+  if (!dir) return null;
+  const entry = readEntry<unknown>(dir, entryName(key));
+  const age = entry ? Date.now() - entry.at : -1;
+  return entry && entry.key === key && age >= 0 && age < ttlMs ? entry.value : null;
+}
+
+export function writeCacheValue(key: string, value: unknown): void {
+  const dir = cacheDir();
+  if (!dir) return;
+  try { atomicWrite(dir, entryName(key), JSON.stringify({ version: CACHE_VERSION, key, at: Date.now(), value })); }
+  catch { /* A cache write is optional. */ }
+}
+
 function removeEntries(matches: (key: string) => boolean): number {
   const dir = cacheDir();
   if (!dir) return 0;

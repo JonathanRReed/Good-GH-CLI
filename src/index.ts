@@ -1,3 +1,9 @@
+import { removedCommandMessage } from "./services/removed-commands.ts";
+import { registerTidyCommand } from "./commands/tidy.ts";
+import { registerLostCommand } from "./commands/lost.ts";
+import { registerProjectsCommand } from "./commands/projects.ts";
+import { registerGoCommand } from "./commands/go.ts";
+import { registerInitCommand } from "./commands/init.ts";
 import { CapabilityError } from "./services/dependency-compatibility.ts";
 import { registerAgentCommand } from "./commands/agent.ts";
 import { finalizeJsonOutput } from "./utils/output.ts";
@@ -9,10 +15,10 @@ import { registerCloneCommand } from "./commands/clone.ts";
 import { registerCommitCommand } from "./commands/commit.ts";
 import { registerWorktreeCommand } from "./commands/worktree.ts";
 import { registerConfigCommand } from "./commands/config.ts";
+import { registerCiCommand } from "./commands/ci.ts";
 import { registerChecksCommand } from "./commands/checks.ts";
 import { registerCompletionCommand } from "./commands/completion.ts";
 import { registerDiscardCommand } from "./commands/discard.ts";
-import { registerDraftCommand } from "./commands/draft.ts";
 import { registerHookCommand } from "./commands/hook.ts";
 import { registerIgnoreCommand } from "./commands/ignore.ts";
 import { registerLogCommand } from "./commands/log.ts";
@@ -20,20 +26,12 @@ import { registerIssueCommand } from "./commands/issue.ts";
 import { registerMcpCommand } from "./commands/mcp.ts";
 import { registerRunCommand } from "./commands/run.ts";
 import { registerApiCommand } from "./commands/api.ts";
-import { registerBrowseCommand } from "./commands/browse.ts";
-import { registerGistCommand } from "./commands/gist.ts";
-import { registerLabelCommand } from "./commands/label.ts";
 import { registerNotificationsCommand } from "./commands/notifications.ts";
 import { registerPluginCommand, loadPlugins } from "./commands/plugin.ts";
 import { registerRepoCommand } from "./commands/repo.ts";
-import { registerSearchCommand } from "./commands/search.ts";
-import { registerSecretCommand } from "./commands/secret.ts";
-import { registerVariableCommand } from "./commands/variable.ts";
-import { registerWorkflowCommand } from "./commands/workflow.ts";
 import { registerStackCommand } from "./commands/stack.ts";
-import { registerChangelogCommand } from "./commands/changelog.ts";
+import { registerReviewCommand } from "./commands/review.ts";
 import { registerPrCommand } from "./commands/pr.ts";
-import { registerReleaseCommand } from "./commands/release.ts";
 import { registerRenameCommand } from "./commands/rename.ts";
 import { registerResolveCommand } from "./commands/resolve.ts";
 import { registerSquashCommand } from "./commands/squash.ts";
@@ -41,8 +39,6 @@ import { registerStashCommand } from "./commands/stash.ts";
 import { registerStatusCommand } from "./commands/status.ts";
 import { registerSwitchCommand } from "./commands/switch.ts";
 import { registerSyncCommand } from "./commands/sync.ts";
-import { registerTeamCommand } from "./commands/team.ts";
-import { registerTriageCommand } from "./commands/triage.ts";
 import { registerUndoCommand } from "./commands/undo.ts";
 import { gitPassthrough } from "./services/git.ts";
 import { run } from "./utils/exec.ts";
@@ -60,6 +56,11 @@ import { registerCommandOperations } from "./services/command-operations.ts";
  * Commands without an entry (including community plugins) keep the default group.
  */
 export const HELP_GROUPS: Record<string, string> = {
+  tidy: "Projects",
+  lost: "Projects",
+  projects: "Projects",
+  go: "Projects",
+  init: "Setup",
   status: "Status",
   commit: "Daily loop",
   log: "Daily loop",
@@ -76,28 +77,18 @@ export const HELP_GROUPS: Record<string, string> = {
   clone: "GitHub",
   repo: "GitHub",
   pr: "GitHub",
+  review: "GitHub",
   issue: "GitHub",
   run: "GitHub",
   checks: "GitHub",
-  release: "GitHub",
-  changelog: "GitHub",
+  ci: "GitHub",
   api: "GitHub",
-  workflow: "GitHub",
-  label: "GitHub",
-  gist: "GitHub",
-  search: "GitHub",
-  secret: "GitHub",
-  variable: "GitHub",
   notifications: "GitHub",
-  browse: "GitHub",
-  triage: "GitHub",
-  draft: "Local workflow",
   ignore: "Local workflow",
   alias: "Local workflow",
   hook: "Local workflow",
   mcp: "Extensions",
   plugin: "Extensions",
-  team: "Extensions",
   config: "Setup",
   completion: "Setup",
   git: "Native tools",
@@ -125,6 +116,11 @@ export async function createProgram(): Promise<Command> {
 
   // Registration order is the order `ggh --help` prints them, so it runs from
   // "where am I" through the daily loop, then GitHub, then configuration.
+  registerProjectsCommand(program);
+  registerTidyCommand(program);
+  registerLostCommand(program);
+  registerGoCommand(program);
+  registerInitCommand(program);
   registerStatusCommand(program);
   registerCommitCommand(program);
   registerLogCommand(program);
@@ -144,28 +140,18 @@ export async function createProgram(): Promise<Command> {
   registerCloneCommand(program);
   registerRepoCommand(program);
   registerPrCommand(program);
+  registerReviewCommand(program);
   registerIssueCommand(program);
   registerRunCommand(program);
   registerChecksCommand(program);
-  registerReleaseCommand(program);
-  registerChangelogCommand(program);
+  registerCiCommand(program);
   registerApiCommand(program);
-  registerWorkflowCommand(program);
-  registerLabelCommand(program);
-  registerGistCommand(program);
-  registerSearchCommand(program);
-  registerSecretCommand(program);
-  registerVariableCommand(program);
   registerNotificationsCommand(program);
-  registerBrowseCommand(program);
-  registerTriageCommand(program);
-  registerDraftCommand(program);
   registerIgnoreCommand(program);
   registerAliasCommand(program);
   registerHookCommand(program);
   registerMcpCommand(program);
   registerPluginCommand(program);
-  registerTeamCommand(program);
 
   registerConfigCommand(program);
   registerOperationCommand(program);
@@ -230,10 +216,21 @@ export async function runCli(argv: string[]): Promise<void> {
     return;
   }
 
+  if (args.length === 0 || args.every(arg => ["--agent", "--json", "-q", "--quiet", "--no-input", "--wide", "--remote", "--uncloned", "--refresh"].includes(arg))) args = ["projects", ...args];
+
   const agentRequested = args.slice(0, args.indexOf("--") < 0 ? args.length : args.indexOf("--")).includes("--agent");
   if (agentRequested) {
     beginCommandOutput();
     setFlags({ agent: true, json: true, noInput: true });
+  }
+  const removedHead = args.find(arg => !arg.startsWith("-"));
+  const removed = removedHead ? removedCommandMessage(removedHead) : undefined;
+  if (removed) {
+    if (args.includes("--json")) setFlags({ json: true });
+    setCommandPath([removedHead ?? ""]);
+    fail(removed, { code: "invalid_arguments" });
+    finalizeJsonOutput();
+    return;
   }
   let program: Command;
   try { program = await createProgram(); }
@@ -280,11 +277,6 @@ export async function runCli(argv: string[]): Promise<void> {
       ? `Use the explicit Git command: ggh git ${args.join(" ")}`
       : `Unknown command "${head}".${suggestion ? ` Did you mean "ggh ${suggestion}"?` : ""} Use ggh git or ggh gh for native commands.`);
     if (agentRequested) { recordCommandIssue({ status: "failed", code: "invalid_arguments", message: "Unknown command." }); finalizeJsonOutput(); }
-    return;
-  }
-
-  if (args.length === 0) {
-    program.outputHelp();
     return;
   }
 
