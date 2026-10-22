@@ -5,6 +5,7 @@ import { acquireProcessLock } from "../services/process-lock.ts";
 import { projectGit } from "../services/projects/git.ts";
 import { buildTidyPlan, type TidyPlan, type TidyOptions } from "../services/projects/tidy-plan.ts";
 import { assertTidyApproval, executeTidyPlan, tidyLockPath } from "../services/projects/tidy-execute.ts";
+import { auditTidyPlan, renderTidyAudit } from "../services/projects/tidy-audit.ts";
 import { findLost } from "../services/projects/lost.ts";
 import { confirmOrAbort, fail, jsonOut, p } from "../utils/ui.ts";
 import { cleanupProjects, renderLost } from "./lost.ts";
@@ -26,10 +27,12 @@ export function renderTidyPlan(plan: TidyPlan): string[] {
   }
   return lines;
 }
-interface TidyCommandOptions extends TidyOptions { all?: boolean; fetch?: boolean; yes?: boolean; approvePlan?: string }
+interface TidyCommandOptions extends TidyOptions { all?: boolean; fetch?: boolean; yes?: boolean; approvePlan?: string; audit?: string; proceedWithoutAudit?: boolean }
 export function registerTidyCommand(program: Command): void {
   const append = (value: string, previous: string[]) => [...previous, value];
   program.command("tidy [projects...]").description("Preview and approve guarded clone cleanup")
+    .option("--audit <provider>", "Audit metadata with codex, claude, grok, or ollama; requires AI permission")
+    .option("--proceed-without-audit", "Explicitly allow the original plan if the requested audit fails")
     .option("--all", "Plan cleanup across all indexed projects")
     .option("--fetch", "Fetch and prune remote-tracking refs once per clone before planning")
     .option("--remote-branches", "Include proven merged branches on your own origin")
@@ -44,6 +47,7 @@ export function registerTidyCommand(program: Command): void {
       process.on("SIGINT", interrupt);
       setCommandCancellation(interrupt);
       try {
+        if (options.proceedWithoutAudit && !options.audit) throw new Error("--proceed-without-audit requires --audit");
         const { clones, coverage } = await cleanupProjects(names, Boolean(options.all));
         if (options.fetch) for (const clone of clones) {
           if (controller.signal.aborted) break;
@@ -60,15 +64,22 @@ export function registerTidyCommand(program: Command): void {
             }
           } finally { await release(); }
         }
-        const plan = await buildTidyPlan(clones, { remoteBranches: options.remoteBranches, allowIgnored: options.allowIgnored, allowUnknown: options.allowUnknown, staleDays: options.staleDays });
+        const originalPlan = await buildTidyPlan(clones, { remoteBranches: options.remoteBranches, allowIgnored: options.allowIgnored, allowUnknown: options.allowUnknown, staleDays: options.staleDays });
+        const audited = options.audit ? await auditTidyPlan(originalPlan, { provider: options.audit, approvePlan: options.approvePlan }) : undefined;
+        const plan = audited?.plan ?? originalPlan;
         const lost = await findLost(clones);
-        const payload = { schemaVersion: 1, plan, lost, coverage };
+        const payload = { schemaVersion: 1, plan, lost, coverage, ...(audited ? { audit: audited.audit } : {}) };
         const count = plan.clones.reduce((n, clone) => n + clone.actions.length, 0);
         if (!getFlags().json) {
+          if (audited) for (const line of renderTidyAudit(originalPlan, audited.audit)) p.log.message(line);
           for (const line of renderTidyPlan(plan)) p.log.message(line);
           for (const line of renderLost(lost)) p.log.message(line);
           for (const gap of coverage.skipped) p.log.warn(`${gap.path}: ${gap.reason}`);
           if (coverage.truncated) p.log.warn("Discovery is incomplete: scan depth reached");
+        }
+        if (audited?.audit.state === "failed" && !options.proceedWithoutAudit) {
+          fail(`Audit failed: ${audited.audit.reason}. Cleanup refused; use --proceed-without-audit to approve the original plan`, { code: "operation_failed" });
+          jsonOut({ ...payload, status: "failed", outcomes: [] }); return;
         }
         if (options.approvePlan !== undefined) {
           try { assertTidyApproval(options.approvePlan, plan); }

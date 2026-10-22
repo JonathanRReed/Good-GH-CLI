@@ -55,7 +55,7 @@ function decorate(command: Command, domain: string): void {
   if (AGENT_CAPABLE.has(domain)) addSafe(command, "--agent", "Emit the versioned agent envelope without prompting");
   addSafe(command, "-q, --quiet", "Suppress progress output; errors are still shown");
   addSafe(command, "--no-input", "Never prompt; fail with instructions instead");
-  if (["commit", "pr", "issue", "worktree", "squash", "draft", "changelog", "release", "run", "triage"].includes(domain)) {
+  if (["tidy", "commit", "pr", "issue", "worktree", "squash", "draft", "changelog", "release", "run", "triage"].includes(domain)) {
     addSafe(command, "--ai", "Allow AI generation for this command");
     addSafe(command, "--no-ai", "Disable AI generation for this command");
   }
