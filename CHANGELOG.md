@@ -56,6 +56,13 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Pin pushes to one source OID and destination branch. Disable matching, mirror
   and follow-tags scope expansion; use exact OID leases for forced updates.
 
+- Keep projects tables and checkout details within terminal width, with one
+  summary row per clone and `--wide` for full values.
+- Show private cached project status immediately on warm terminal runs, mark it
+  stale, and replace it after a local refresh. Keep JSON and piped output fresh.
+- Batch unpublished commit counts per clone, share refs and stash reads, and
+  give each checkout its own status deadline. Report missing checkout paths.
+
 - Pin PR merges to the reviewed head SHA, with `--match-head-commit` for an
   explicit override. Re-read GitHub state and report merged, queued,
   auto_merge_enabled, or unknown. Clean up branches only after a confirmed merge.

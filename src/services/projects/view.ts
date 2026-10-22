@@ -1,13 +1,13 @@
 import { homedir } from "node:os";
 import { relative } from "node:path";
 import { p } from "../../utils/ui.ts";
-import { terminalText } from "../../utils/output.ts";
+import { stripAnsi, terminalText } from "../../utils/output.ts";
 import { within } from "./discovery.ts";
 import type { CloneStatus, CommitSummary, FieldState, IndexedClone } from "./types.ts";
 
-export interface ProjectRow { clone: IndexedClone; status: CloneStatus }
+export interface ProjectRow { clone: IndexedClone; status: CloneStatus; stale?: boolean }
 export function shortPath(path: string): string { return within(homedir(), path) ? `~${path === homedir() ? "" : `/${relative(homedir(), path)}`}` : path; }
-function cell(value: string): string { return terminalText(value).replace(/[\r\n\t]/g, " "); }
+function cell(value: string): string { return stripAnsi(terminalText(value)).replace(/[\r\n\t]/g, " "); }
 function show<T>(field: FieldState<T>, render: (value: T) => string): string {
   return field.state === "ok" ? render(field.value) : field.state === "error" ? "error" : "?";
 }
@@ -25,41 +25,106 @@ function age(commit: CommitSummary | null): string {
   const seconds = Math.max(0, Math.floor((Date.now() - Date.parse(commit.committedAt)) / 1000));
   return seconds < 60 ? `${seconds}s` : seconds < 3600 ? `${Math.floor(seconds / 60)}m` : seconds < 86400 ? `${Math.floor(seconds / 3600)}h` : `${Math.floor(seconds / 86400)}d`;
 }
-export function renderProjects(rows: ProjectRow[]): void {
-  if (!rows.length) { p.log.info("No projects. Add a scan root with ggh projects roots add <path>."); return; }
-  const lines = rows.map(({ clone, status }) => {
-    const hosts = new Map<string, number>();
-    for (const checkout of clone.checkouts) hosts.set(checkout.createdBy, (hosts.get(checkout.createdBy) ?? 0) + 1);
-    return [clone.displayName + (clone.missing ? " [missing]" : ""), shortPath(clone.checkouts[0]?.path ?? clone.commonDir), clone.checkouts.map(checkout => checkout.bare ? "bare" : checkout.branch ?? checkout.head?.slice(0, 7) ?? "unborn").join(", "),
-      status.checkouts.map(checkout => dirtySummary(checkout.dirty)).join(", "),
-      status.checkouts.map(checkout => show(checkout.upstream, value => value ? `+${value.ahead}/-${value.behind}` : "-")).join(", "),
-      show(status.unpublished, refs => refs.filter(ref => ref.commits).map(ref => `${ref.ref.replace("refs/heads/", "")}:${ref.commits}`).join(",") || "0"),
-      show(status.stashes, String), `${clone.checkouts.length} ${[...hosts].map(([host, count]) => `${host}:${count}`).join(" ")}`, show(status.lastCommit, age)].map(cell);
-  });
-  const headings = ["Name", "Path", "Branch", "Staged/unstaged/new/conflicts", "Ahead/behind", "Unpublished", "Stashes", "Worktrees", "Commit"];
-  const widths = headings.map((heading, index) => Math.max(heading.length, ...lines.map(line => line[index]?.length ?? 0)));
-  for (const line of [headings, ...lines]) p.log.message(line.map((value, index) => value.padEnd(widths[index] ?? 0)).join("  ").trimEnd());
+export interface ProjectViewOptions { width?: number; wide?: boolean }
+type ProjectHistory = { recent: FieldState<CommitSummary[]>; unpublished: FieldState<CommitSummary[]> };
+function available(options: ProjectViewOptions): number {
+  return options.wide ? Infinity : Math.max(1, Math.floor(options.width ?? process.stdout.columns ?? 100) - 3);
 }
-export function renderProjectCard(row: ProjectRow, history?: { recent: FieldState<CommitSummary[]>; unpublished: FieldState<CommitSummary[]> }, brief = false): void {
+function fit(value: string, width: number): string {
+  value = cell(value);
+  if (Bun.stringWidth(value) <= width) return value;
+  if (width <= 0) return "";
+  let result = "";
+  for (const part of new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(value)) {
+    if (Bun.stringWidth(result + part.segment) > width - 1) break;
+    result += part.segment;
+  }
+  return result + "…";
+}
+function table(rows: string[][], options: ProjectViewOptions): string[] {
+  const widths = rows[0]?.map((_, index) => Math.max(...rows.map(row => Bun.stringWidth(cell(row[index] ?? ""))))) ?? [];
+  const limit = available(options);
+  while (widths.reduce((sum, width) => sum + width, 0) + Math.max(0, widths.length - 1) * 2 > limit) {
+    const widest = Math.max(...widths);
+    if (widest <= 1) break;
+    const index = widths.indexOf(widest);
+    widths[index] = widest - 1;
+  }
+  return rows.map(row => fit(row.map((value, index) => {
+    const width = widths[index] ?? 0;
+    const text = fit(value, width);
+    return text + " ".repeat(Math.max(0, width - Bun.stringWidth(text)));
+  }).join("  ").trimEnd(), limit));
+}
+function branch(checkout: IndexedClone["checkouts"][number]): string {
+  return checkout.bare ? "bare" : checkout.branch ?? `detached ${checkout.head?.slice(0, 7) ?? "unknown"}`;
+}
+function drift(field: CloneStatus["checkouts"][number]["upstream"]): string {
+  return show(field, value => value ? `↑${value.ahead} ↓${value.behind}` : "-");
+}
+function unpublished(status: CloneStatus): string {
+  return show(status.unpublished, refs => {
+    const positive = refs.filter(ref => ref.commits > 0);
+    return `${positive.length} br / ${positive.reduce((sum, ref) => sum + ref.commits, 0)} commits`;
+  });
+}
+function stateSummary(row: ProjectRow): string {
+  const states: string[] = [];
+  const dirty = row.status.checkouts.filter(checkout => checkout.dirty.state === "ok" && Object.values(checkout.dirty.value).some(count => count > 0)).length;
+  if (dirty) states.push(`${dirty} dirty`);
+  if (row.status.checkouts.some(checkout => checkout.dirty.state === "ok" && checkout.dirty.value.conflicted > 0)) states.push("conflicts");
+  const operations = new Set(row.status.checkouts.flatMap(checkout => checkout.operation.state === "ok" && checkout.operation.value ? [checkout.operation.value] : []));
+  states.push(...operations);
+  if (row.status.checkouts.length < row.clone.checkouts.length || row.status.checkouts.some(checkout => [checkout.dirty, checkout.upstream, checkout.operation].some(field => field.state !== "ok")) || [row.status.unpublished, row.status.stashes, row.status.lastCommit].some(field => field.state !== "ok")) states.push("unknown");
+  if (row.clone.missing) states.push("missing");
+  if (row.stale) states.unshift("stale");
+  return states.join(", ") || "clean";
+}
+export function formatProjects(rows: ProjectRow[], options: ProjectViewOptions = {}): string[] {
+  if (!rows.length) return [fit("No projects. Add a scan root with ggh projects roots add <path>.", available(options))];
+  return table([["Name", "Branch", "State", "↑/↓", "Unpublished", "Stashes", "Worktrees", "Age"], ...rows.map(row => {
+    const primary = row.clone.checkouts.find(checkout => checkout.gitDir === row.clone.commonDir) ?? row.clone.checkouts[0];
+    const status = row.status.checkouts.find(checkout => checkout.path === primary?.path);
+    const hosts = new Map<string, number>();
+    for (const checkout of row.clone.checkouts.filter(checkout => checkout !== primary)) hosts.set(checkout.createdBy, (hosts.get(checkout.createdBy) ?? 0) + 1);
+    return [row.clone.displayName, primary ? branch(primary) : "-", stateSummary(row), status ? drift(status.upstream) : "?", unpublished(row.status), show(row.status.stashes, String), [...hosts].map(([host, count]) => `${count} ${host === "unknown" ? "other" : host}`).join(", ") || "-", show(row.status.lastCommit, age)];
+  })], options);
+}
+export function renderProjects(rows: ProjectRow[], options: ProjectViewOptions = {}): void {
+  for (const line of formatProjects(rows, options)) p.log.message(line);
+}
+export function formatProjectCard(row: ProjectRow, history?: ProjectHistory, brief = false, options: ProjectViewOptions = {}): string[] {
   const { clone, status } = row;
-  p.log.step(`${clone.displayName}${clone.primary ? `  ${clone.primary.host}/${clone.primary.owner}/${clone.primary.name}` : ""}`);
-  if (!brief) for (const remote of clone.remotes) p.log.message(`${remote.name}  ${remote.url}`);
-  for (const checkout of clone.checkouts) {
+  const lines = [`${clone.displayName}${clone.primary ? `  ${clone.primary.host}/${clone.primary.owner}/${clone.primary.name}` : ""}${row.stale ? "  stale" : ""}`];
+  if (!brief) for (const remote of clone.remotes) lines.push(`${remote.name}  ${remote.url}`);
+  const checkouts = clone.checkouts.map(checkout => {
     const state = status.checkouts.find(state => state.path === checkout.path);
-    p.log.message(`${shortPath(checkout.path)}  ${checkout.createdBy}  ${checkout.bare ? "bare" : checkout.branch ?? `detached ${checkout.head?.slice(0, 7) ?? "unknown"}`}  ${state ? dirtySummary(state.dirty) : "?"}${checkout.locked ? `  locked: ${checkout.locked.reason}` : ""}${checkout.prunable ? `  prunable: ${checkout.prunable.reason}` : ""}`);
-    if (state) for (const [name, field] of Object.entries({ dirty: state.dirty, upstream: state.upstream, operation: state.operation })) {
-      if (field.state !== "ok") p.log.message(`${name}: ${field.state === "unknown" ? field.reason : field.message}`);
-      else if (name === "operation" && field.value) p.log.message(`operation: ${String(field.value)}`);
+    const flags: string[] = [];
+    if (checkout.locked) flags.push(`locked: ${checkout.locked.reason}`);
+    if (checkout.prunable) flags.push(`prunable: ${checkout.prunable.reason}`);
+    if (state) {
+      for (const [name, field] of Object.entries({ dirty: state.dirty, upstream: state.upstream, operation: state.operation })) {
+        if (field.state !== "ok") flags.push(`${name}: ${field.state === "unknown" ? field.reason : field.message}`);
+      }
+      if (state.operation.state === "ok" && state.operation.value) flags.push(state.operation.value);
+    }
+    return [shortPath(checkout.path), branch(checkout), state ? dirtySummary(state.dirty) : "?", state ? drift(state.upstream) : "?", checkout.createdBy, flags.join(", ")];
+  });
+  lines.push(...table([["Checkout", "Branch", "S/U/N/C", "↑/↓", "Host", "State"], ...checkouts], options));
+  lines.push(`Unpublished: ${unpublished(status)}  Stashes: ${show(status.stashes, String)}${status.newestStash.state === "ok" && status.newestStash.value ? `  ${status.newestStash.value}` : ""}`);
+  if (!brief) {
+    if (status.unpublished.state === "ok") for (const ref of status.unpublished.value.filter(ref => ref.commits > 0)) lines.push(`${ref.ref.replace("refs/heads/", "")}  ${ref.commits} commits`);
+    lines.push(`Merged branches: ${show(status.mergedBranches, branches => branches.join(", ") || "none")}`);
+    for (const [name, field] of Object.entries({ stashes: status.stashes, unpublished: status.unpublished, mergedBranches: status.mergedBranches, lastCommit: status.lastCommit })) if (field.state !== "ok") lines.push(`${name}: ${field.state === "unknown" ? field.reason : field.message}`);
+    for (const [label, commits] of [["Unpublished commits", history?.unpublished], ["Recent commits", history?.recent]] as const) {
+      if (!commits) continue;
+      lines.push(label);
+      if (commits.state === "ok") for (const commit of commits.value) lines.push(`${commit.oid.slice(0, 7)}  ${commit.subject}`);
+      else lines.push(commits.state === "unknown" ? commits.reason : commits.message);
     }
   }
-  p.log.message(`Unpublished: ${show(status.unpublished, refs => refs.filter(ref => ref.commits > 0).map(ref => `${ref.ref.replace("refs/heads/", "")}: ${ref.commits}`).join(", ") || "0")}  Stashes: ${show(status.stashes, String)}${status.newestStash.state === "ok" && status.newestStash.value ? `  ${status.newestStash.value}` : ""}`);
-  if (brief) return;
-  p.log.message(`Merged branches: ${show(status.mergedBranches, branches => branches.join(", ") || "none")}`);
-  for (const [name, field] of Object.entries({ stashes: status.stashes, unpublished: status.unpublished, mergedBranches: status.mergedBranches, lastCommit: status.lastCommit })) if (field.state !== "ok") p.log.message(`${name}: ${field.state === "unknown" ? field.reason : field.message}`);
-  for (const [label, commits] of [["Unpublished commits", history?.unpublished], ["Recent commits", history?.recent]] as const) {
-    if (!commits) continue;
-    p.log.step(label);
-    if (commits.state === "ok") for (const commit of commits.value) p.log.message(`${commit.oid.slice(0, 7)}  ${commit.subject}`);
-    else p.log.message(commits.state === "unknown" ? commits.reason : commits.message);
-  }
+  return lines.map(line => fit(line, available(options)));
+}
+export function renderProjectCard(row: ProjectRow, history?: ProjectHistory, brief = false, options: ProjectViewOptions = {}): void {
+  for (const line of formatProjectCard(row, history, brief, options)) p.log.message(line);
 }

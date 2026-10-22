@@ -10,7 +10,7 @@ import type { Checkout, DiscoveryCoverage, IndexedClone, ProjectIndexFile, Remot
 
 export function projectIndexPath(configDir = getConfigDir()): string { return join(configDir, "projects.json"); }
 
-function privateDirectory(dir: string, create: boolean): void {
+export function privateProjectDirectory(dir: string, create: boolean): void {
   assertWindowsPrivateDirectory(dir, create);
   if (!existsSync(dir)) { if (!create) return; mkdirSync(dir, { recursive: true, mode: 0o700 }); }
   const info = lstatSync(dir);
@@ -67,7 +67,7 @@ function coverage(value: unknown): DiscoveryCoverage {
 }
 
 export function readProjectIndex(configDir = getConfigDir()): ProjectIndexFile {
-  privateDirectory(configDir, false);
+  privateProjectDirectory(configDir, false);
   const file = projectIndexPath(configDir);
   const info = lstatSync(file, { throwIfNoEntry: false });
   if (!info) return { version: 1, updatedAt: new Date(0).toISOString(), roots: [], excluded: [], registered: [], clones: [] };
@@ -80,7 +80,7 @@ export function readProjectIndex(configDir = getConfigDir()): ProjectIndexFile {
 }
 
 export async function updateProjectIndex(update: (current: ProjectIndexFile) => ProjectIndexFile, configDir = getConfigDir()): Promise<ProjectIndexFile> {
-  privateDirectory(configDir, true);
+  privateProjectDirectory(configDir, true);
   const release = await acquireProcessLock(join(configDir, "projects.lock"));
   const temporary = join(configDir, `.projects.${randomUUID()}.tmp`);
   try {

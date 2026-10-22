@@ -9,7 +9,7 @@ async function field<T>(read: () => Promise<T>): Promise<FieldState<T>> {
   try { return ok(await read()); }
   catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return /timed out|deadline/i.test(message) ? unknown("Project deadline exceeded") : { state: "error", message };
+    return /timed out|deadline/i.test(message) ? unknown("Status deadline exceeded") : { state: "error", message };
   }
 }
 
@@ -47,9 +47,11 @@ function operation(checkout: Checkout): CheckoutStatus["operation"] {
   } catch { return unknown("Cannot inspect Git operation state"); }
 }
 
-async function checkoutStatus(checkout: Checkout, commonDir: string, deadline: number): Promise<CheckoutStatus> {
+async function checkoutStatus(checkout: Checkout, commonDir: string, deadlineMs: number): Promise<CheckoutStatus> {
   if (checkout.bare) return { path: checkout.path, dirty: unknown("Bare repository has no working tree"), upstream: unknown("Bare repository has no working tree"), operation: ok(null) };
-  const status = await field(async () => parseCheckoutStatus((await projectGit(checkout.path, ["status", "--porcelain=v2", "--branch", "-z", "--untracked-files=normal"], deadline)).stdout));
+  if (!existsSync(checkout.path)) return { path: checkout.path, dirty: unknown("Checkout path is missing"), upstream: unknown("Checkout path is missing"), operation: operation(checkout) };
+  const deadline = Date.now() + deadlineMs;
+  const status = await field(async () => parseCheckoutStatus((await projectGit(checkout.path, ["status", "--porcelain=v2", "--branch", "-z", "--untracked-files=normal", "--ignore-submodules=dirty"], deadline)).stdout));
   if (status.state !== "ok") return { path: checkout.path, dirty: status, upstream: status, operation: operation(checkout) };
   const upstream = status.value.upstream;
   if (upstream.state === "ok" && upstream.value) {
@@ -67,23 +69,19 @@ function parseRefs(text: string): Ref[] {
   });
 }
 
-export async function readCloneStatus(clone: Clone, options: { deadlineMs?: number } = {}): Promise<CloneStatus> {
+async function readCloneFields(clone: Clone, options: { deadlineMs?: number }): Promise<Omit<CloneStatus, "checkouts">> {
   const deadline = Date.now() + (options.deadlineMs ?? 3000);
   const cwd = clone.checkouts.find(checkout => existsSync(checkout.path) && !checkout.bare)?.path ?? clone.commonDir;
-  const checkoutsPromise = projectPool(clone.checkouts, checkout => checkoutStatus(checkout, clone.commonDir, deadline), 1);
   const refs = await field(async () => parseRefs((await projectGit(cwd, ["for-each-ref", "--format=%(refname)%00%(objectname)%00%(symref)%00%(committerdate:iso-strict)%00%(subject)", "refs/heads/", "refs/remotes/", "refs/stash"], deadline)).stdout));
   const stashPromise = refs.state === "ok" && !refs.value.some(ref => ref.name === "refs/stash") ? Promise.resolve(ok<string[]>([]))
     : field(async () => (await projectGit(cwd, ["stash", "list", "--format=%s"], deadline)).stdout.split("\n").filter(Boolean));
   const unpublishedPromise: Promise<CloneStatus["unpublished"]> = refs.state === "ok" ? field(async () => {
     const targets = refs.value.filter(ref => ref.name.startsWith("refs/heads/")).map(ref => ({ ref: ref.name, target: ref.oid }));
     for (const checkout of clone.checkouts) if (!checkout.branch && checkout.head) targets.push({ ref: checkout.head, target: checkout.head });
-    const counts: { ref: string; commits: number }[] = [];
-    for (const target of new Map(targets.map(target => [target.ref, target])).values()) {
-      const count = Number((await projectGit(cwd, ["rev-list", "--count", target.target, "--not", "--remotes"], deadline)).stdout.trim());
-      if (!Number.isSafeInteger(count) || count < 0) throw new Error("Invalid unpublished count from Git");
-      counts.push({ ref: target.ref, commits: count });
-    }
-    return counts;
+    const unique = [...new Map(targets.map(target => [target.ref, target])).values()];
+    if (!unique.length) return [];
+    const graph = (await projectGit(cwd, ["rev-list", "--topo-order", "--parents", ...new Set(unique.map(target => target.target)), "--not", "--remotes", "--"], deadline)).stdout;
+    return countUnpublished(unique, graph);
   }) : Promise.resolve(refs);
   const remoteDefault = refs.state === "ok" ? refs.value.find(ref => ref.name === "refs/remotes/origin/HEAD" && ref.symbolic)?.symbolic
     ?? refs.value.find(ref => ref.name.startsWith("refs/remotes/") && ref.name.endsWith("/HEAD") && ref.symbolic)?.symbolic : undefined;
@@ -95,8 +93,8 @@ export async function readCloneStatus(clone: Clone, options: { deadlineMs?: numb
   const lastPromise: Promise<CloneStatus["lastCommit"]> = !head ? Promise.resolve(refs.state === "ok" ? ok(null) : refs)
     : ref ? Promise.resolve(ok({ oid: ref.oid, subject: ref.subject, committedAt: ref.committedAt }))
       : field(async () => parseCommits((await projectGit(cwd, ["log", "-1", "--format=%H%x00%cI%x00%s", head, "--"], deadline)).stdout)[0] ?? null);
-  const [checkouts, stash, unpublished, mergedBranches, lastCommit] = await Promise.all([checkoutsPromise, stashPromise, unpublishedPromise, mergedPromise, lastPromise]);
-  return { commonDir: clone.commonDir, checkouts, unpublished, mergedBranches, lastCommit,
+  const [stash, unpublished, mergedBranches, lastCommit] = await Promise.all([stashPromise, unpublishedPromise, mergedPromise, lastPromise]);
+  return { commonDir: clone.commonDir, unpublished, mergedBranches, lastCommit,
     stashes: stash.state === "ok" ? ok(stash.value.length) : stash,
     newestStash: stash.state === "ok" ? ok(stash.value[0] ?? null) : stash };
 }
@@ -105,8 +103,45 @@ export function parseCommits(text: string): CommitSummary[] {
   return text.split("\n").filter(Boolean).map(line => { const [oid = "", committedAt = "", subject = ""] = line.split("\0"); return { oid, committedAt, subject }; });
 }
 
+// Git emits children before parents. Propagate each tip's membership once through
+// the shared graph; excluded remote ancestors never appear and are never counted.
+export function countUnpublished(targets: { ref: string; target: string }[], graph: string): { ref: string; commits: number }[] {
+  const reachable = new Map<string, bigint>();
+  const counts = targets.map(target => ({ ref: target.ref, commits: 0 }));
+  targets.forEach((target, i) => reachable.set(target.target, (reachable.get(target.target) ?? 0n) | (1n << BigInt(i))));
+  for (const line of graph.split("\n")) {
+    if (!line) continue;
+    const [oid, ...parents] = line.split(" ");
+    if (!oid) continue;
+    const mask = reachable.get(oid) ?? 0n;
+    reachable.delete(oid);
+    for (let i = 0; i < counts.length; i++) {
+      const count = counts[i];
+      if (count && (mask & (1n << BigInt(i))) !== 0n) count.commits++;
+    }
+    for (const parent of parents) reachable.set(parent, (reachable.get(parent) ?? 0n) | mask);
+  }
+  return counts;
+}
+
+export async function readCloneStatus(clone: Clone, options: { workers?: number; deadlineMs?: number } = {}): Promise<CloneStatus> {
+  const [status] = await readProjectStatuses([clone], options);
+  if (!status) throw new Error("Missing clone status");
+  return status;
+}
+
 export async function readProjectStatuses(clones: readonly Clone[], options: { workers?: number; deadlineMs?: number } = {}): Promise<CloneStatus[]> {
-  return projectPool(clones, clone => readCloneStatus(clone, options), options.workers);
+  const [fields, checkouts] = await Promise.all([
+    projectPool(clones, clone => readCloneFields(clone, options), options.workers),
+    projectPool(clones.flatMap(clone => clone.checkouts.map(checkout => ({ checkout, commonDir: clone.commonDir }))),
+      async ({ checkout, commonDir }) => ({ commonDir, status: await checkoutStatus(checkout, commonDir, options.deadlineMs ?? 3000) }), options.workers),
+  ]);
+  const byClone = new Map<string, CheckoutStatus[]>();
+  for (const { commonDir, status } of checkouts) {
+    const list = byClone.get(commonDir) ?? [];
+    list.push(status); byClone.set(commonDir, list);
+  }
+  return fields.map(status => ({ ...status, checkouts: byClone.get(status.commonDir) ?? [] }));
 }
 
 export async function projectHistory(clone: Clone, status: CloneStatus): Promise<{ recent: FieldState<CommitSummary[]>; unpublished: FieldState<CommitSummary[]> }> {
