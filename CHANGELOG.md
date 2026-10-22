@@ -7,6 +7,15 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Make bare `ggh` list local projects. Add bounded discovery, a private atomic
+  index, separate clone and checkout identities, host provenance, and local
+  status with per-field errors and deadlines.
+- Add `projects` context cards, scan roots, exclusions, explicit registration,
+  `go` with duplicate-name handling and editor/T3 probes, and newline-safe shell
+  functions from `init zsh|bash|fish|pwsh`.
+- Add compact versioned projects JSON and agent schemas, detached unpublished
+  commit detection, merged branch checks, and a disposable 70-repository benchmark.
+
 - Add read-only `ggh pr threads` with full comment bodies, nested pagination,
   resolution and outdated state, revision SHAs, edited-comment cursors, compact
   agent output, a versioned result schema, and a read-only MCP tool.
