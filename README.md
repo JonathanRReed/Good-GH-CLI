@@ -3,833 +3,258 @@
 [![CI](https://github.com/JonathanRReed/Good-GH-CLI/actions/workflows/ci.yml/badge.svg)](https://github.com/JonathanRReed/Good-GH-CLI/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/JonathanRReed/Good-GH-CLI?include_prereleases&label=release)](https://github.com/JonathanRReed/Good-GH-CLI/releases)
 
-I hated the GitHub CLI. This makes it bearable.
-
-`ggh` provides commands for commits, pull requests, issues, CI, releases, and stacked branches. It uses your installed `git`, `gh`, and, when requested, AI provider CLI. `ggh` has no account, server, or telemetry.
-
-Git and GitHub commands are explicit. Use `ggh git <args>` for Git, `ggh gh <args>` for GitHub CLI, or `ggh -- <git-args>` as a short Git escape. Unknown commands do not run as Git.
-
-## Projects
-
-```bash
-ggh projects roots add ~/Downloads
-ggh                         # All indexed local projects
-ggh projects                # Same table
-ggh projects Good-GH-CLI     # Checkouts, unpublished work, stashes, history
-ggh projects --agent         # Compact, versioned JSON; no network
-ggh --remote                 # Add GitHub PR counts, review requests and CI
-ggh projects Good-GH-CLI --remote  # Authored PRs and default-branch checks
-ggh projects --remote --refresh   # Bypass the five-minute remote cache
-ggh projects --uncloned       # Also count owned repos without local clones
-ggh go Good-GH-CLI           # Context on stderr, path on stdout
-ggh go Good-GH-CLI --editor  # VISUAL, EDITOR, code, cursor, or zed
-ggh go Good-GH-CLI --t3      # Probe an installed T3 launcher
-ggh go Good-GH-CLI --print   # Path only
-ggh projects roots list
-ggh projects roots remove ~/Downloads
-ggh projects exclude ~/Downloads/archive
-ggh projects forget ~/Downloads/old-project
-ggh projects register ~/Downloads/parent/nested-repo
-```
-
-Bare `ggh` lists projects, including without a terminal. Help stays at `ggh --help`.
-Scan roots start empty. Discovery stops at a repository, includes its linked
-worktrees wherever Git lists them, and checks configured host worktree directories.
-T3 defaults to `~/.t3/worktrees`; Claude and Cursor directories inside a repository
-are included. Codex directories require configuration. Host labels describe path
-evidence, not permission to delete a checkout.
-
-Each clone gets its own row, even when several clones share a remote. Status is
-local and read on demand, with eight clone workers and a three-second deadline per
-clone. Unknown and failed fields stay visible. Unpublished counts include every
-local branch and detached checkout HEAD, measured against all remote-tracking refs.
-Merged branches require a known remote default branch. Nothing fetches or reads
-host transcripts. Discovery reports unreadable and depth-limited paths.
-
-`--remote` uses your active `gh` account on each remote host. Independent clones
-share one remote lookup; fork and upstream repositories remain separate. The table
-shows authored open PR counts, failed checks among the three displayed PRs, review
-requests, archive and fork flags, and remote age. Context cards list up to three
-authored PRs with their branches, checks and review decisions, plus default-branch
-CI. Terminal runs show local status before waiting for GitHub.
-
-Requests serialize per host and group metadata and PR searches by query cost,
-with up to 100 repository identities per batch. Timeouts and transient GitHub
-errors split batches and retry only those repos. A 20-second remote deadline,
-200-request cap per host, and 500-point foreground reserve bound the work. Every
-query reads its rate-limit cost and remaining quota. Reset times and retry delays
-persist for the same host and login; `--refresh` keeps those limits. Failed fields
-retain reasons in JSON. The table shows a dash and one reason footer.
-
-Successful remote fields live in the private ggh cache for five minutes, keyed by
-host, login and repository. Partial successes are reused across repo sets, and
-failures are retried on the next run. Each field retains its original age and
-expiry. Environment tokens bypass result caching because two tokens for one
-login can grant different access. GraphQL reads
-use the TTL cache; ETag revalidation applies to REST GETs, not these queries.
-`--uncloned` implies `--remote` and enumerates owned repositories, excludes every
-indexed local remote, and shows the ten most recently pushed. Enumeration stops at
-1,000 repositories or the request budget; incomplete counts remain unavailable.
-Organization repositories are not included. Nothing fetches local Git refs.
-
-JSON and agent results put remote fields under each clone's `remote` array, with
-`state`, `value` and `observedAt` for successful fields. Unavailable fields carry a
-`reason` and, when known, `retryAt`. Top-level `remote` metadata reports GraphQL
-request count, cost and uncloned results. `ggh agent schema` describes these fields.
-
-The private index lives at `<configDir>/projects.json`. It stores checkout metadata
-and redacted remote URLs, never status. Missing clones remain flagged for one
-refresh before removal. `forget` and `exclude` remove paths from discovery without
-deleting their files. Registering a path clears an exact index exclusion; remove
-any matching `project_exclude` rule separately to include an excluded path again.
-
-Configure discovery with `ggh config set` using JSON for lists and objects:
-
-```bash
-ggh config set project_roots '["~/Downloads", "/work"]'
-ggh config set project_exclude '["**/archive/**", "/work/old"]'
-ggh config set project_scan_depth 4  # Range: 0 through 8
-ggh config set host_worktree_dirs '{"t3":"~/.t3/worktrees","codex":"/work/codex"}'
-ggh config set go_default editor    # cd, editor, or t3; default cd
-```
-
-Install the shell function to change your current shell's directory:
-
-```bash
-# Add to ~/.zshrc, or use bash in ~/.bashrc:
-eval "$(ggh init zsh)"
-g Good-GH-CLI
-# Choose another function name:
-eval "$(ggh init zsh --cmd jump)"
-```
-
-For fish, add `ggh init fish | source` to `config.fish`. For PowerShell, add
-`Invoke-Expression (ggh init pwsh | Out-String)` to your profile. Only the generated
-function is sourced. Repository paths are passed as data and never evaluated.
-The hook calls `ggh go --print --shell`; its path ends in `/.` so command
-substitution preserves trailing newlines. Failed lookups leave the directory
-unchanged. Identical basenames require a choice or an exact checkout path.
-Noninteractive ambiguous or missing lookups return JSON candidates and exit
-nonzero. A missing local project suggests `ggh clone`; it never clones for you.
-
-Run `bun run scripts/bench-projects.ts` for a disposable 70-repository cold/warm
-benchmark. Set `GGH_BENCH_REAL=1` to also measure `~/Downloads` and T3 worktrees.
-The benchmark writes its index under a temporary directory and leaves repositories
-unchanged. Timings include discovery, index refresh, and local status.
-
-## Tidy and lost
-
-```bash
-ggh lost                           # All indexed projects, read-only
-ggh lost Good-GH-CLI --agent        # Versioned JSON and suggested commands
-ggh tidy --dry-run                 # Current clone, using existing tracking refs
-ggh tidy Good-GH-CLI --dry-run
-ggh tidy --all --dry-run --json     # One plan with a snapshotId
-ggh tidy --all                     # One preview, one confirmation
-ggh tidy --all --yes               # Approve the displayed snapshot without prompting
-```
-
-Tidy deletes a local branch only when its exact tip is an ancestor of a fetched
-remote default branch or a recorded PR merge commit, all its commits are reachable
-from remote-tracking refs, and no worktree has it checked out. A merged PR badge
-and a deleted upstream never prove that later commits are safe. Recorded merge
-commits can be supplied as local `refs/ggh/merged-prs/<branch>` refs. A record alone
-never bypasses ancestry or publication checks.
-
-An existing linked checkout must be clean, merged or a published detached HEAD,
-unlocked, and created by ggh. Tidy keeps the main checkout, the current checkout,
-clone-level stashes, nested repositories, submodules, hidden index flags, and
-symbolic local branches, and unknown or incomplete history. Ignored files such as `.env` protect a checkout.
-Unknown provenance also means keep. Overrides name one exact checkout path and
-require approval of a new snapshot:
-
-```bash
-ggh tidy --dry-run --allow-ignored /work/old-checkout
-ggh tidy --dry-run --allow-unknown /work/old-checkout
-```
-
-T3, Claude, Cursor, and Codex checkouts are always `host-manual`. Use the host's own
-cleanup. A clean, merged checkout can still belong to a live thread or queued
-turn. Neither override permits ggh to remove a host-owned checkout.
-
-Metadata pruning is separate from removing files. Tidy prunes only missing entries
-Git reports as prunable. It honors locks and `gc.worktreePruneExpire`, using three
-months when unset. An apparently unmounted volume, unpublished HEAD, stash, host
-claim, or unknown registry entry blocks the clone-wide prune. Stale repositories
-and GC hints are reports only. Tidy never deletes repositories or runs GC.
-
-The preview states when the clone last fetched. The default makes no network
-request. `--fetch` explicitly runs `git fetch --prune` before planning, including
-with `--dry-run`; it updates tracking refs but performs no cleanup in a dry run.
-`--remote-branches` includes only merged branches on your own origin when the
-saved active `gh` login matches the URL owner and the push remote is origin.
-Missing cached identity, environment tokens, a different push remote, or multiple/different push URLs
-mean keep. A remote delete checks the server tip immediately before pushing and
-uses an exact expected-OID lease against the pinned destination.
-
-Agents must approve the exact digest from a dry run. Use identical scope and
-options, and omit `--fetch` when applying a plan already fetched for preview:
-
-```bash
-ggh tidy --all --dry-run --agent
-ggh tidy --all --agent --approve-plan <snapshotId>
-```
-
-A changed snapshot is refused. Every action rechecks clone and checkout identities,
-refs, ancestry, publication, stashes, ownership, and relevant file state just before
-execution. Changed items are refused individually. Tidy never adds replacements
-to the approved batch.
-
-### Optional AI audit
-
-`--audit codex|claude|grok|ollama` asks your chosen provider to review the safe
-candidates before cleanup. AI permission is separate. Pass `--ai` or set
-`ai_enabled true`; `--no-ai` prevents an audit call.
-
-```bash
-ggh tidy --audit codex --ai --dry-run
-ggh tidy --audit ollama --ai
-ggh tidy --audit codex --ai --yes
-```
-
-The prompt contains at most 32 KB of action summaries, including instructions.
-Each summary contains an action ID and kind, clone display name, branch name,
-short OIDs, proof summaries, fetch age, checkout creator, and last commit subject
-and date when available. Names and subjects are quoted as untrusted data.
-Recognized secrets and URLs are removed. No code, diffs, files, environment
-values, transcripts, full filesystem paths, or remote URLs are included.
-
-Larger plans audit a subset, prioritizing checkout removal, remote branch
-removal, local branch removal, then missing-worktree metadata. The preview reports
-how many actions were omitted. Model recommendations can only narrow the original
-safe set. Invented or unsent IDs are rejected. `keep` overrides conflicting
-`prune` recommendations. Missing recommendations and omitted actions show
-`keep-unaudited` and stay out of the executable plan.
-
-Before sending metadata in an interactive run, ggh shows the provider, model,
-action count, commit-subject count, and disclosure scope. Hosted providers require
-`hosted_ai_consent true` or interactive consent. Non-interactive runs require prior
-consent in user config. Explicit provider selection stays with that provider,
-including model fallbacks. Ollama never falls through to hosted AI.
-
-An audited `--dry-run` calls the provider and saves a private approval record,
-but performs no cleanup. One cleanup confirmation, or `--yes`, applies the narrowed
-plan through the same per-action safety checks. Invalid JSON, provider failure,
-or denied consent leaves the original plan unchanged and blocks execution.
-`--yes` alone cannot bypass that failure. To review and approve the original plan
-instead, run with `--proceed-without-audit`, or omit `--audit` for a manual preview.
-
-A user-chosen external agent can run `ggh tidy --audit codex --ai --yes`, or apply
-an audited snapshot through the agent interface:
-
-```bash
-ggh tidy --audit codex --ai --dry-run --agent
-ggh tidy --audit codex --agent --approve-plan <snapshotId>
-```
-
-Use the same project scope and tidy options for both commands. Approval restores
-the reviewed audit without another provider call. The digest binds the original
-plan, narrowed actions, provider/model, input hash, and audit result hash, including
-verdicts and reasons. Changed plans or approval records are refused. Records live
-in `tidy-audits/<snapshotId>.json` under the user config directory with owner-only
-permissions. They contain hashes, IDs, counts, and recommendations, never prompts
-or commit subjects. Deleting a record requires a fresh audit before approval.
-The provider receives no ggh execution tools; ggh does not supervise external agents.
-
-Each attempted action has a private operation journal with `completed`, `skipped`,
-`refused`, `failed`, or `uncertain` state. Inspect the returned operation IDs with
-`ggh operation view`. Tidy serializes its own mutations per common Git directory.
-Ctrl-C stops before the next action; completed actions remain completed. A second
-interrupt exits immediately. Locks cannot stop unrelated Git commands or a host.
-An external writer can still race filesystem checks, so an uncertain result needs
-inspection before retrying.
-
-Lost lists local branches and detached HEADs with commits unreachable from all
-local remote-tracking refs, most commits first, then oldest unpublished work. It
-also lists stashes with dates and messages, dirty host checkouts as possible
-abandoned work, and broken `.git` pointers. It prints commands to push, create a
-rescue branch, or inspect a stash and never executes them. It cannot establish
-whether a host session is abandoned, or whether an unfetched remote or PR already
-has a commit. Coverage gaps and unavailable Git state remain explicit. Neither
-lost nor tidy's local preview refreshes the project index or status cache.
+I hated the GitHub CLI. This makes it bearable. `ggh` is the GitHub CLI it should have been: find the right checkout, understand its state, act on GitHub safely, for you and your agents. Start with one table across local clones and agent worktrees, jump to a project, find unpublished work, then review or publish from the right checkout. It uses your installed `git` and `gh`. AI is optional.
 
 ## Install
 
-Follow the [platform installation and repair guide](docs/INSTALL.md) for checksum, PATH, and dependency steps. See [dependency compatibility](docs/COMPATIBILITY.md) for the supported Git floor and tested GitHub CLI capabilities.
+The source candidate is `0.6.0-beta.1`. It has not been published by this preparation step. For released binaries, checksums, PATH setup, and dependencies, follow the [installation guide](docs/INSTALL.md) and the selected version's [release notes](https://github.com/JonathanRReed/Good-GH-CLI/releases).
 
-Download your platform's binary from [Releases](https://github.com/JonathanRReed/Good-GH-CLI/releases), verify its SHA-256 file, and place it on your PATH as `ggh`.
+Standalone binaries need Git 2.31+, plus `gh` for GitHub operations. They need neither Bun nor Node. Bare macOS binaries are ad-hoc signed; a signed, notarized DMG is a separate artifact. Check that release's receipts.
 
-Standalone binaries need Git 2.31 or newer, but not Bun or Node. GitHub operations also need `gh`. Local commits with an explicit message need neither a provider CLI nor `gh`; AI commands need a configured provider CLI.
-
-Package installs require Node 22+, Bun 1.4+, and Git. Releases include a tarball even when npm publication is disabled:
+Build this candidate from a checkout with Bun 1.4+:
 
 ```bash
-bun add -g ./good-gh-cli-<version>.tgz
-```
-
-Use `bun add -g good-gh-cli@<version>` only when that release's notes confirm npm publication. Prereleases use the `beta` tag, not necessarily the default npm tag.
-
-The source version is `0.5.0-beta.2`. A source commit is not a published release. Signed and notarized macOS DMGs are separate uploads; bare macOS binaries have ad-hoc signatures, not Developer ID notarization. See [packaging](docs/PACKAGING.md).
-
-To build from source:
-
-```bash
-git clone https://github.com/JonathanRReed/Good-GH-CLI.git
-cd Good-GH-CLI
 bun install --frozen-lockfile
-bun run build
-bun link
-ggh status
+make install PREFIX="$HOME/.local"
+export PATH="$HOME/.local/bin:$PATH"
+ggh --version
 ```
 
-## Clone
+Package tarballs need Node 22+, Bun 1.4+, and Git. Install a downloaded tarball with `bun add -g ./good-gh-cli-<version>.tgz`. Use the npm registry only when that version's release notes confirm publication. See [packaging](docs/PACKAGING.md) for lean installs and distribution gates.
+
+## 60-second tour
+
+Choose a scan root once. Roots start empty; ggh also remembers clones it creates.
 
 ```bash
+ggh projects roots add ~/Downloads
+ggh                                  # Projects table
+eval "$(ggh init zsh)"                 # Add this line to ~/.zshrc
+g Good-GH-CLI                         # Change this shell's directory
 cd ~/Downloads
-ggh clone owner/repo         # Alias: ggh get
-ggh clone                   # Pick from your repos, organizations, and stars
-ggh clone project-name      # Search all sources and GitHub
-ggh get owner/repo --to ~/work/repo
-ggh clone owner/repo --ask
-ggh clone owner/repo --fast  # Blobless; --blobless also works
-ggh clone owner/repo --shallow
-ggh clone owner/repo --protocol ssh
-ggh clone owner/repo --dry-run --agent
+ggh clone owner/repo                  # Search queries also work; alias: get
+ggh projects repo                    # Checkouts, unpublished work, stashes, history
+ggh lost                             # Find work absent from local tracking refs
+ggh tidy --dry-run                    # Preview cleanup in the current clone
+ggh tidy --audit codex --ai --dry-run # Optional provider audit; requires consent
+ggh sync --all                       # Fetch and fast-forward eligible checkouts
+ggh review 42 --editor                # Prepare a review checkout and open it
+ggh ci why                           # Bounded failure evidence for this branch's PR
 ```
 
-Clones go into `$PWD/<repo-name>`. Set `ggh config set clone_root ~/work` to use
-another root. `--to` chooses the exact destination, and `--ask` prompts for it.
-The destination appears before cloning and in JSON and agent results.
-Noninteractive calls use the configured clone mode, defaulting to standard.
-`--ask` requires an interactive terminal.
+`ggh clone <query>` searches your repositories, organizations, stars, and GitHub. The destination is `$PWD/<repo-name>` unless you set `clone_root` or pass `--to`. `--ask` chooses a destination; `--fast` uses a blobless clone and `--shallow` limits history. Reuse requires an origin identity check. Clone progress goes to stderr; cancellation cleanup protects preexisting content.
 
-Discovery paginates up to 1,000 repositories per source, with a combined limit
-of 1,000 organization repositories. Lists use the host and account cache;
-`--refresh` reloads them. Ambiguous noninteractive searches return candidates
-with destinations so callers can choose an exact `OWNER/REPO`.
-
-An existing clone with the same origin is reused. Other non-empty destinations
-are refused. Successful clones receive local `ggh.created` and `ggh.createdAt`
-Git config markers. Failed or cancelled clones remove only the destination
-directory created by that invocation.
-
-Progress marks a clone stalled after 20 silent seconds and keeps waiting.
-Ctrl-C cancels. SSH authentication or host-key failures retry once over HTTPS
-only when ggh derived the URL. Explicit URLs and `--protocol ssh` suppress
-fallback. Custom hosts and ports are preserved, URL credentials are redacted
-from diagnostics, and Git credential prompts are disabled.
-
-## Commits
+Projects gives each clone its own row and includes linked checkouts wherever Git lists them. Discovery stops at a repository, reports skipped paths, and never reads host transcripts. Warm terminal views show dated cached rows while refreshing; JSON and piped output wait for fresh local state. Unknown fields stay visible.
 
 ```bash
-ggh commit                  # Alias: ggh c
-ggh c -a                    # Stage everything first
-ggh c --push                # Commit and push
-ggh c --pr                  # Commit, push, and open a PR
-ggh c --pr --branch feat/login --yes # Name the PR branch and approve publication
-ggh c --amend
-ggh c --review              # Check for console.log, debugger, and localhost
-ggh c -m "fix: parser" -y   # Commit without AI or prompts
+ggh projects --remote                 # Add PR counts, review requests, and CI
+ggh projects repo --remote            # PRs and default-branch checks
+ggh projects --remote --refresh       # Bypass the five-minute result cache
+ggh projects --uncloned               # Also enumerate owned repos without clones
+ggh projects register /work/outer/nested
+ggh projects exclude /work/archive
+ggh projects forget /work/old
+ggh go repo --editor
+ggh go repo --t3
+ggh go repo --print                   # Path only
 ```
 
-On `main`, `ggh` offers to create a feature branch. AI generation is disabled by default. Set `ai_enabled` in your user config or pass `--ai` for a command that supports it. `--no-ai` disables generation for one invocation. An explicit commit message never invokes AI. `ggh` rejects staged blobs over GitHub's 100 MB limit and blocks commits with unresolved conflicts.
+Remote reads share lookups across clones of the same host/repository. Requests serialize per host, preserve foreground quota, and return partial fields with ages and failure reasons. A 20-second deadline bounds remote work. These reads do not fetch local Git refs. `--uncloned` covers owned repositories, with bounded enumeration; incomplete counts remain explicit.
 
-`ggh c --split` proposes file groups from an index snapshot. It rejects missing, duplicate, or extra paths and preserves unstaged changes. It cannot run with `--no-ai`, `-m`, `--amend`, or `--fixup`.
+The shell hook also supports bash, fish, and PowerShell through `init bash`, `init fish`, and `init pwsh`. Identical project names require a choice or an exact checkout path. A missing name suggests cloning; it never clones automatically. Repository paths travel as data, including spaces and trailing newlines.
 
-If a split fails partway through, completed commits remain. The original index is preserved, with the remaining changes staged, and the error identifies a private recovery checkpoint. Check `git status` and `git log` before retrying. There is no automatic reset; Git hook side effects are not rolled back.
+`lost` counts unpublished commits once per clone, with shared/exclusive branch counts and fetch age. It also reports stashes, dirty host checkouts, and broken gitdirs. Its suggested recovery commands are never executed. Tracking refs can be stale; the report cannot prove that a host session is abandoned. `lost --fetch` explicitly updates tracking refs first.
 
-## Pull requests and reviews
+Bulk sync fetches each remote once per clone and fast-forwards eligible checkouts to their own upstream. It skips dirty, detached, busy, locked, diverged, upstreamless, and host-owned checkouts. It never switches branches, rebases, pushes, or deletes local branches. Select names with `ggh sync api web`. Remote fork updates require `--fork-upstream` and confirmation. Plain `ggh sync` retains single-repository stale-branch cleanup.
 
-```bash
-ggh pr                      # Browse PRs
-ggh pr create --draft --ai   # Generate a title and body
-ggh pr create --editor --no-ai # Edit a multiline draft in your Git editor
-ggh pr create --attach 'proof.png#Sign-in screen' # Attach media when supported
-ggh pr view 42
-ggh pr diff 42
-ggh pr threads 42 --agent    # Read unresolved review threads with full bodies
-ggh pr edit 42
-ggh pr review 42 --ai        # Review and submit selected findings
-ggh pr review --local        # Print a review without posting
-ggh pr review --approve
-ggh pr review --request-changes
-ggh pr 42 --checkout
-ggh pr 42 --worktree         # Leave the current branch untouched
-ggh pr merge 42 --squash     # Merge and delete the branch
-ggh pr merge 42 --squash --no-delete-branch
-ggh pr merge 42 --auto       # Merge when required checks pass
-ggh pr comment 42 -b "lgtm"
-ggh pr ready | close | reopen
-```
+Review prepares a separate checkout without copying `.env` files or initializing submodules. `--editor` requires a supported GUI editor; plain review can fall back to terminal diff tools. `--mark` records inspected base/head SHAs explicitly; `--since last` compares against that mark. Opening an editor does not mark a review complete. Agent mode returns data without launching an editor, but can fetch refs and create the checkout.
 
-`pr threads` reads all threads by default; `--agent` defaults to unresolved threads.
-Use `--all` to include resolved threads, `--since <ISO|cursor>` for threads with
-new or edited comments, and `--max-body <n>` for explicitly flagged truncation.
-JSON includes head/base SHAs and fetched thread/comment counts before filtering.
-The cursor is the latest comment `updatedAt` read, including filtered threads.
-Pagination stops after 200 GraphQL requests. Reuse the cursor only when
-`pagination.complete` is true. Both JSON modes are compact; bodies stay verbatim.
+`ci why` links failed checks, steps, annotations, and extracted log lines to a revision. It reads full-job logs when a failed step points elsewhere. Missing logs, stale runs, and truncation remain explicit. It is a read-only prototype; diagnosis accuracy has not passed a blind trial.
 
-`--editor` opens your Git editor with a first-line title, a blank line, and the
-Markdown body. It honors `GIT_EDITOR`, Git's `core.editor`, `VISUAL`, and `EDITOR`.
-The publication preview follows the edit and identifies the target, draft state,
-and effects before confirmation. `--template NAME` selects a named PR template.
+## For agents
 
-If editing or publication stops, the private draft stays on disk. The recovery
-command reopens it with its publication options. Successful direct creation
-removes generated drafts. A file you supplied with `--editor FILE` stays intact.
-Dry runs never launch an editor. Scripts can use `--title` and `--body-file`.
-
-AI review findings must refer to lines added by the diff. `ggh` discards invalid locations, shows the remaining findings for selection, and posts the selected findings as a GitHub review.
-
-Repeated `--attach` options accept validated images and videos. `ggh` checks
-whether the installed `gh` supports native attachments. GitHub documents the
-flag for PR and issue create, edit, and comment commands in its [attachment
-guide](https://docs.github.com/en/github-cli/github-cli/attaching-files-with-github-cli)
-and [`gh pr create` manual](https://cli.github.com/manual/gh_pr_create).
-
-The local preflight accepts PNG, GIF, JPG, JPEG, SVG, WEBP, MP4, MOV, and WEBM.
-It allows up to 50 files per operation, with ceilings of 10 MiB per image and
-100 MiB per video. The GitHub CLI manual also lists 50 files per PR command.
-GitHub's attachment docs list 10 MB images and videos up to 10 MB for free plans
-or 100 MB for paid plans, with access requirements for uploads over 10 MB. The
-local ceilings do not guarantee GitHub will accept a file. The [CLI attachment
-reference](https://github.com/cli/cli/blob/trunk/skills/gh/SKILL.md) also lists WEBP.
-Native uploads require GitHub.com or a GHE.com tenant and repository write
-access. Other hosts can use configured storage for verified public targets.
-
-Set `attachment_upload_command` to an absolute executable path for a fallback
-on verified public repositories. Configured public storage is refused for
-private repositories.
-
-### Create a repository or PR from local work
-
-Inside a named local repository with commits and no remote, `ggh repo create` infers the repository name and root, defaults to private visibility, adds `origin`, and pushes the current branch after one confirmation. Explicit flags can change visibility, source, remote, or the push choice. Set `ggh config set repo_create_confirm false` to skip this confirmation for unambiguous repo creation. `--confirm` restores it for one command.
-
-`ggh pr create` can use the same setup plan when the local repository has no GitHub remote. It requires a valid base and head before remote changes, then creates the repository, pushes the base and head, and opens the PR in that order. `ggh commit --pr` runs the commit and PR workflow together. Noninteractive publication requires `--yes` or an exact `--approve-plan` snapshot. Configured fast mode also authorizes unambiguous repo creation.
-
-PR merges pin the head SHA read before confirmation. Use
-`ggh pr merge 42 --squash --match-head-commit <sha>` to require a specific reviewed
-commit. A changed head fails. After the request, ggh checks GitHub and reports
-`merged`, `queued`, `auto_merge_enabled`, or `unknown`. Branch cleanup runs only
-after a confirmed merge.
-
-`ggh pr 42 --worktree` creates a review checkout without copying local env files,
-initializing submodules, or recording shared branch-parent metadata.
-`ggh wt add feature` keeps development worktree setup; add `--copy-env` to copy
-`.env`, `.env.local`, and `.env.development` from the current checkout.
-Worktree removal rechecks local changes, locks, and current/main checkout
-identity. Overriding a refusal requires `--force`; `--yes` does not force removal.
-
-## Review
+Read the [ggh skill](skills/ggh/SKILL.md) and its [generated command reference](skills/ggh/reference.md). The pack covers Claude Code, Codex, T3 Code, and Cursor.
 
 ```bash
-ggh review 42                 # Open a detected GUI editor, otherwise use the terminal
-ggh review 42 --editor
-ggh review 42 --pager
-ggh review 42 --mark           # Explicitly record a local inspection
-ggh review 42 --since last     # Changes since your last local mark
-ggh review 42 --since <sha>    # Compare against a full commit SHA
-ggh review 42 --since last --agent
-```
-
-Review fetches the PR's head and base into `.worktrees/review-42`. It reuses a
-clean, detached checkout and refuses tracked or untracked changes. It never
-copies local `.env` files, initializes submodules, or writes branch-parent
-metadata. Run it from a clone with a remote matching the PR's repository.
-
-Editor detection checks `GGH_REVIEW_EDITOR`, then GUI-capable `VISUAL` and
-`EDITOR`, then `code`, `cursor`, `zed`, and `idea` on PATH. VS Code and Cursor
-open the checkout folder and suggest the GitHub Pull Requests extension when
-it is missing. With `--since`, they also open each changed file pair. Zed opens
-all changed file pairs in one invocation. Other GUI editors use
-`git difftool -y --dir-diff` with your configured `diff.tool` and
-`difftool.<tool>.cmd`. IDEA defaults to its `diff` command. GUI launches detach
-so ggh returns without waiting for the editor to close.
-
-`--pager` uses `tuicr pr 42`, then delta, then ggh's diff renderer. Incremental
-reviews use delta or ggh's renderer to preserve the requested revision range.
-External tools retain their own controls for submitting GitHub reviews.
-
-`--mark` stores an inspection record under your config directory's private
-`reviews/` folder, keyed by host, owner, repository, and PR. Opening an editor
-never creates a mark. A local mark is never a GitHub approval and sends nothing
-to GitHub. Mark only after inspecting the changes. `--since last` requires a
-prior mark and lists added commits, changed files, and review threads with new
-or edited comments since that mark. Rewritten history includes a range-diff
-and a warning that patch matching is heuristic. An explicit SHA has no review
-time, so its thread list includes all threads.
-
-`--json` and `--agent` return revision SHAs, checkout path, and incremental
-review data without launching editors or pagers. They still fetch Git objects
-and prepare the checkout. `--mark` remains explicit in both modes. Editor diff
-snapshots stay in a private temporary directory so detached editors can read
-them after ggh exits. They may be removed after closing the editor.
-
-## Issues and CI
-
-```bash
-ggh issue                   # Browse issues
-ggh issue 42
-ggh issue create --ai -n "failing on Safari, intermittent 500s"
-ggh issue develop 42        # Create a branch and start work
-ggh issue edit 42 --title "new title" --add-label bug
-ggh issue close 42 | reopen 42 | comment 42
-ggh issue lock 42 | unlock 42 | pin 42 | unpin 42
-ggh issue transfer 42 owner/other-repo
-
-ggh checks
-ggh checks --watch          # Poll from 5s to 30s, stopping at --timeout
-ggh run                     # Browse workflow runs
-ggh run 12345               # Read failed-job logs and suggest a fix
-ggh run rerun 12345 --failed
-ggh run cancel 12345
-```
-
-With `--ai`, issue generation uses the title and optional `--notes` to draft a description, reproduction steps, and expected and actual results. Accept, edit, or regenerate before opening the issue.
-
-### CI failure evidence
-
-`ggh ci why` is a read-only prototype that links CI evidence to a PR's head SHA.
-It fetches the latest run per workflow for that revision, failing jobs and steps,
-check-run annotations, and failed-step logs. When those logs defer to another
-step or contain only a summary, it reads the full job log.
-
-```bash
-ggh ci why                         # Current branch's PR
-ggh ci why 42                      # PR number, or run ID if no PR matches
-ggh ci why https://github.com/owner/repo/pull/42
-ggh ci why 12345 --run -R owner/repo # Explicit run ID
+ggh agent skill
+ggh agent skill --install claude --dry-run --agent
+ggh agent skill --install codex --yes --agent
+ggh agent schema --agent
+ggh status --agent
+ggh projects repo --agent
+ggh pr threads 42 --agent
 ggh ci why 42 --agent --max-bytes 6144 --context 2
 ```
 
-The deterministic extractor keeps errors, assertions, exceptions, TypeScript
-errors, and source locations with context and original log line numbers.
-`--agent` returns compact JSON with result `schemaVersion: 1`, described by
-`ggh agent schema`. Stale runs are flagged and their evidence excluded.
-Missing logs, annotations, and incomplete pagination appear in `unavailable`.
+Skill installation copies both files, requires approval, and refuses differing files unless explicitly forced. `--install t3` explains provider directories; an explicit path names the final skill directory. Dry runs write nothing.
 
-The default evidence budget is 6 KiB per failing job, shared by annotations and
-log excerpts. Failure identity and other metadata are extra. Every failure has
-`truncated: {bytesTotal, bytesShown}` for the selected log source and a separate
-`annotationsTruncated` count. Log totals count original UTF-8 bytes; shown bytes
-count displayed text after prefix removal and deduplication. Counts disclose
-extraction omissions as well as budget cuts. `--context` supplies nearby lines
-after matching evidence receives its budget.
+Managed `--agent` commands never prompt and return compact JSON with `contract: "ggh.agent"` and `version: 1`. Read `status`, `error.code`, `error.retryability`, `requiredInputs`, and `effects` before continuing. Inspect completed, pending, and uncertain effects after a partial failure. Read-only status may omit empty effects. Other results remain command-specific; discover their schemas from the installed version.
 
-The [offline benchmark](bench/agent/README.md) records output size and evidence
-recall on two archived failures. It includes losses against native commands.
-Agent repair success and blind diagnosis accuracy remain unmeasured.
+Agent status includes full HEAD identity and XY/path tuples, including rename sources and conflict codes. `--full` adds raw porcelain-v2 records. Omitted counts mean zero, omitted `root` means cwd, and omitted `push` means upstream. `fetchedAt` is local fetch metadata, not proof of current remote state. Status is local unless you request `--remote` or `--providers`.
 
-## Stacked branches
+Inspect the staged patch before committing. `ggh commit` preserves partial staging but has no `--approve-plan`. For PR publication, preview the exact inputs with `--dry-run --agent`, inspect the returned `snapshotId`, then use `--approve-plan` with identical inputs. Tidy requires its own exact approved snapshot in agent mode. `--yes` is not permission from a human.
 
-Each new branch's parent is stored in Git config. `ggh stack` reads those relationships; it needs no separate service or account. Restacking updates local branches. `stack submit` is the explicit publication action and uses `--force-with-lease` when a rewritten branch must replace a remote tip. A changed remote tip stops the update.
+After PR creation, the calling agent must register the returned URL with its host, such as T3 Code's `link_pull_request`. ggh does not register or monitor PRs on the host's behalf. Review-thread reads preserve full comments and cursors; fixing code does not resolve a thread.
 
-Plain `ggh stack list` stays local and offline. `--remote` fetches PR review and CI status for the visible branches, uses at most five concurrent lookups, and checks no more than 25 branches per view. GitHub errors appear as unavailable status without hiding the local branch tree.
+### What the benchmark proves
+
+The [offline benchmark](bench/agent/README.md) reports both wins and losses with 100% declared evidence recall across eight cases. VS Code CI output falls from 133,470 native bytes to 8,625 ggh bytes. A tuned native Zod CI filter wins at 5,402 versus 7,231 bytes. Clean status costs 181 versus 121 porcelain-v2 bytes; dirty porcelain-v1 and native run-detail output are smaller too.
+
+Use native `git log`, `diff`, and `blame` for ordinary history and patches. ggh earns its place when checkout identity, bounded CI evidence, structured project state, or guarded mutations save work. Benchmark tokens are bytes divided by four. No tokenizer, blind repair trial, or latency comparison supports broader savings claims. Native scripts can combine their commands into one tool call.
+
+## Everyday commands
+
+Use `ggh <command> --help` for options. These examples assume you have inspected the checkout and target.
+
+### Commit and publish
 
 ```bash
-ggh stack next feat/api     # Stack a branch on the current one
-ggh stack list              # Show parents and drift
-ggh stack list --remote     # Add GitHub PR review and CI status
-ggh stack restack           # Replay after amending a parent
-ggh stack restack --continue # Resume after resolving a conflict
-ggh stack restack --abort   # Restore saved local branch tips
-ggh stack submit            # Push and open one PR per branch
-ggh stack on main           # Adopt an existing branch
-ggh stack checkout
+ggh status
+ggh git diff --cached
+ggh commit -m "fix: handle empty input" # Commit the reviewed index
+ggh commit --ai                       # Opt into message generation
+ggh pr create --dry-run --agent       # Preview before publication
+ggh pr                               # Browse pull requests
+ggh pr 42
+ggh pr threads 42 --agent
+ggh pr merge 42
+ggh operation list
+ggh operation view <id>
+ggh operation resume <id> --dry-run
 ```
 
-## Branches and local work
+Managed publication binds approval to the destination, visibility, revisions, content, and attachment bytes. Changed inputs require a fresh plan. Merge pins the reviewed head and rereads GitHub state; queued, auto-merge-enabled, unknown, and confirmed merged outcomes stay distinct. Cleanup follows only a confirmed merge.
+
+Recovery records contain metadata and confirmed/pending/uncertain effects, without message bodies, prompts, or transcripts. Resume requires missing content again and refuses changed revisions. Set `GGH_NO_RECORDS=1` to disable recording. `ggh operation prune` removes old records after confirmation.
+
+### Branches and stacks
 
 ```bash
-ggh switch                  # Alias: ggh sw
 ggh sw -c feat/login
-ggh wt add "add dark mode"  # Uses a deterministic branch name by default
-ggh wt add "add dark mode" --ai # Allow AI to name the branch
+ggh wt add "add dark mode"
 ggh wt list
-ggh wt remove
-ggh undo                    # Soft-reset HEAD~1; keep changes staged
-ggh discard                 # Select files to revert
-ggh stash                   # Alias: ggh sh
-ggh resolve                 # Resolve conflicts file by file
-ggh squash 3
-ggh squash 3 --no-input --yes # Authorize an inferred message and history rewrite
-ggh squash 3 --message "feat: combine changes" --no-input
-ggh rename feat/new-name    # Rename locally and remotely
-ggh sync                    # Fetch, prune, and delete stale branches
-ggh log                     # Alias: ggh graph
-
+ggh stack next feat/api
+ggh stack list
+ggh stack list --remote
+ggh stack restack
+ggh stack restack --continue
+ggh stack restack --abort
+ggh stack submit
 ggh stash push --name "login work"
 ggh stash list --named
-ggh stash restore "login work" --yes
-ggh ignore "*.log" ".env"
-ggh ignore "*.key" --local  # Write .git/info/exclude instead
-ggh hook install pre-commit
-ggh hook edit pre-commit --command "hook check"
-ggh hook list
-ggh hook remove pre-commit
-ggh alias ci "commit --pr --yes"
-ggh alias --remove ci
+ggh stash restore "login work"
+ggh log
+ggh undo
+ggh discard --all --dry-run
+ggh squash 3 --message "feat: combine changes" --no-input
 ```
 
-## Sync
+Stack parents live in Git config. Restack changes local branches; submit explicitly publishes, using expected-tip leases for rewritten branches. Plain stack list is offline. Named stash restore pops after confirmation; legacy tagged stashes still work. Squash keeps original commits under a recovery ref. Inspect partial failures before retrying.
+
+### Issues, CI, and repositories
 
 ```bash
-ggh sync                        # Current repo: fetch, prune, and clean up gone branches
-ggh sync --all                  # Every clone in the project index
-ggh sync api web                # Indexed names, paths, or fuzzy matches, like go
-ggh sync --all --concurrency 4 --timeout 120000
-ggh sync api --include-host-worktrees
-ggh sync my-fork --fork-upstream --yes --agent
+ggh issue
+ggh issue create
+ggh issue develop 42
+ggh checks
+ggh checks --watch
+ggh run 12345 --agent
+ggh run rerun 12345 --failed
+ggh repo create --source .
+ggh notifications
+ggh notifications mark
+ggh mcp --list-tools
 ```
 
-Run `ggh projects` to populate the index. Bulk sync reads that index, fetches each
-remote once per clone, and fast-forwards each eligible checkout to its own
-upstream. It never switches branches, rebases, pushes, or deletes local branches.
-Ambiguous project names require selection or an exact checkout path.
+Local MCP tools expose their own protocol. GitHub operations use your installed `gh` authentication. For Enterprise, sign in with `gh auth login --hostname ghe.example.com` and select `GH_HOST` as appropriate.
 
-Dirty, detached, busy, diverged, locked, and upstreamless checkouts are skipped
-with a reason. Agent-host worktree directories are skipped unless you pass
-`--include-host-worktrees`. The timeout covers an entire clone, and at most four
-clones run at once by default. Fetches disable credential prompts and use SSH
-BatchMode. Failed fetches prevent checkout updates for that clone.
-
-`--fork-upstream` also runs `gh repo sync` for each selected fork's default branch.
-The confirmation names the remote targets. Non-interactive use requires `--yes`.
-This is the only bulk-sync option that mutates a remote repository.
-
-`--json` emits a compact result with `schemaVersion: 1`; `--agent` wraps it in the
-agent envelope. `ggh agent schema` describes both. Results include each clone,
-remote fetch, and checkout, with old and new commit IDs for fast-forwards.
-Ctrl-C stops new work, lets in-flight commands finish within their deadlines,
-and reports completed and pending effects. Earlier updates remain applied.
-
-Plain `ggh sync` keeps its single-repo cleanup. Even with `--force`, it keeps
-branches checked out in any worktree and branches containing commits unreachable
-from every remote-tracking ref. Unknown deletion proof also means keep.
-
-## Other GitHub commands
-
-| Command | Use |
-| --- | --- |
-| `ggh clone`, `ggh get` | Search and clone with `--to`, `--ask`, `--fast`, `--shallow`, and `--agent` |
-| `ggh repo` | View, create, fork, edit, rename, archive, delete, or sync repositories |
-| `ggh notifications` | List notifications; `mark [id]` marks one or all read without prompting |
-| `ggh plugin` | Install, list, or remove local commands |
-| `ggh mcp` | Start the MCP server; `--list-tools` lists its tools |
-| `ggh api` | Call GitHub endpoints not wrapped by another command |
-
-Plugins run with full privileges. Install only code you trust. To bypass a broken plugin:
+Native escapes preserve their streams and exit codes:
 
 ```bash
-GGH_NO_PLUGINS=1 ggh plugin list
-GGH_NO_PLUGINS=1 ggh plugin remove <name> -y
+ggh git status --short
+ggh gh pr list
+ggh -- log -5
 ```
 
-For GitHub Enterprise, sign in with `gh auth login --hostname ghe.example.com`, then set `GH_HOST=ghe.example.com`. Check the host and account with `ggh status`.
+They do not apply managed confirmations, dry runs, or agent envelopes. Unknown commands do not silently run as Git. Plugins are trusted local executables; `GGH_NO_PLUGINS=1` bypasses them.
 
-### Moved to gh
+## Moved to gh
 
-Version 0.6 removes these command families. Use the native escape:
+Version 0.6 removes these wrappers. Use native gh arguments through the escape.
 
 | Removed | Replacement |
 | --- | --- |
 | `label`, `secret`, `variable` | `ggh gh label`, `ggh gh secret`, `ggh gh variable` |
 | `gist`, `search`, `browse` | `ggh gh gist`, `ggh gh search`, `ggh gh browse` |
 | `workflow`, `release` | `ggh gh workflow`, `ggh gh release` |
-| `changelog` | `ggh gh api --method POST repos/{owner}/{repo}/releases/generate-notes -f tag_name=<tag>` for release notes; edit `CHANGELOG.md` by hand |
-| `team`, `triage` | Snapshot sharing and AI grouping are retired. Use `ggh gh gist list`, `ggh gh issue list`, or `ggh notifications` for reads. |
-| `draft` | `ggh stash list --named`, `ggh stash restore <name>`; existing tagged stashes still work |
+| `changelog` | Native gh release-note generation; edit `CHANGELOG.md` by hand |
+| `team`, `triage` | Snapshot sharing and AI grouping retired; native gh issue/gist reads remain |
+| `draft` | `ggh stash list --named`, `ggh stash restore <name>` |
 
-`ggh gh` uses gh's arguments, output, and exit status. It does not apply ggh's
-confirmations, dry-run behavior, or agent envelope. For secrets, use the masked
-`ggh gh secret set NAME` prompt or pipe the value on stdin. Keep secret values out
-of command arguments.
-
-Named stash restoration pops the matching stash after confirmation, or with `--yes`.
-Duplicate names require an explicit ref from `stash list --named`, then `stash pop <ref>`.
-
-## For agents
-
-Read the [ggh skill](skills/ggh/SKILL.md) for Claude Code, Codex, T3 Code and Cursor.
-The [generated reference](skills/ggh/reference.md) lists command inputs and result
-fields from `ggh agent schema`.
-
-```bash
-ggh agent skill                         # Print the skill
-ggh agent skill --install claude --dry-run --agent
-ggh agent skill --install claude         # Confirm installation in ~/.claude/skills/ggh
-ggh agent skill --install codex --yes --agent # Install in ~/.agents/skills/ggh
-ggh agent skill --install t3 --agent     # Explain provider skill directories
-ggh agent skill --install ./my-skills/ggh --dry-run --agent
-```
-
-Explicit paths name the final skill directory. Installation copies both skill
-files. It requires confirmation or `--yes`, leaves identical files alone, and
-refuses differing files without `--force`. Force still requires confirmation.
-`--dry-run` writes nothing. Agent output reports completed and pending effects.
-
-Use `--agent` for managed commands. Prefer native Git for plain log/diff/blame or
-a small porcelain-v1 dirty check. The [benchmark](bench/agent/README.md) records
-both ggh and native wins. Commit the reviewed index only; this version's commit
-command does not accept `--approve-plan`. Use the dry-run snapshot flow for PR
-publication. After creating a PR, the calling agent must register its URL with
-the host, such as T3 Code's `link_pull_request`. ggh does not register it.
-
-## Scripting
-
-These shared flags apply where the command advertises them:
-
-| Flag | Effect |
-| --- | --- |
-| `--json` | Write only machine-readable output to stdout |
-| `--agent` | Use the versioned agent envelope and never prompt |
-| `--dry-run` | Describe changes without making them |
-| `-y, --yes` | Accept every confirmation |
-| `-q, --quiet` | Hide progress, not errors |
-| `--no-input` | Never prompt; fail with instructions |
-| `-R, --repo owner/name` | Use another repository |
-
-Data goes to stdout; progress and errors go to stderr. Without a terminal, a command that needs an answer cancels and exits nonzero. It does not select a menu item or accept a destructive operation for you.
-
-```bash
-ggh status --agent
-ggh status --json --remote --providers
-ggh pr --json | jq -r '.[] | "\(.number) \(.title)"'
-ggh stack list --json | jq '.[] | select(.behind > 0) | .branch'
-ggh discard --all --dry-run
-```
-
-`ggh agent schema` lists supported commands, inputs, and the version 1
-`ggh.agent` envelope. With `--agent`, read `status`, `error.code`,
-`error.retryability`, `requiredInputs`, and `effects` before continuing. Detailed
-result schemas cover the core workflows; other `result` payloads remain
-command-specific. Read-only status may omit `effects` when all arrays are empty.
-Agent output is compact JSON. Native `git`, `gh`, and
-`--` escapes keep their native streams and exit codes. MCP and shell completion
-use their own protocols and reject `--agent`.
-
-`ggh status --json` and `--agent` read local Git state only. They report the
-checkout root, branch, upstream, ahead/behind counts, staged/unstaged/untracked
-and conflict counts, detached state, and operation in progress. Add `--remote`
-for GitHub authentication and PR checks, or `--providers` for AI provider checks.
-Agent status uses a flat result with full `head` OID and lossless porcelain-v2
-`changes`. Omitted counts mean zero, omitted `root` means cwd, and omitted
-`operation` means null. `ggh agent schema` defines all defaults, comparison base,
-push destination and local fetch timestamp. Legacy `--json` remains nested.
-`ggh run <id> --json` and `--agent` return one `jobs` array alongside `run`,
-`log`, and `logStatus`. Failed logs are fetched before output; expired or
-inaccessible logs have `logStatus: "unavailable"`.
-
-For repo creation, PR creation, and publication recovery, `--dry-run` returns a
-`snapshotId` alongside the plan. Review that plan, then supply
-`--approve-plan <snapshotId>` with the same inputs. This approves the exact
-target, visibility, destination, revisions, content, and attachment bytes.
-Material changes require a fresh preview and approval. `--yes` still approves
-the plan prepared by that invocation.
-
-File selections from status are relative to the repository root, even when you
-run `ggh` from a subdirectory. Selected filenames are literal, not glob patterns.
-`discard --all` keeps untracked files unless you also pass `--include-untracked`;
-restoring a rename refuses to overwrite a newly created, untracked source file.
-
-In a no-input run, squash requires `--yes` to authorize an inferred message, or
-an explicit `--message`. It collects the message before changing history and
-keeps the original commits at `refs/ggh/squash/<original-head>`. If the final
-commit fails, it reports that ref. Inspect `git status` and the saved history
-before recovering.
-
-Typos get command suggestions unless the word is a Git command or one of your Git aliases, which take precedence.
+Notifications keeps list and mark-read operations. For native secret writes, use the masked prompt or stdin; keep values out of command arguments.
 
 ## Configuration
 
-Set `GGH_CONFIG_DIR=/path/to/ggh-config` to isolate ggh settings and project metadata
-while leaving gh authentication under its usual XDG directory. Otherwise ggh uses
-`$XDG_CONFIG_HOME/good-gh`, defaulting to `~/.config/good-gh`.
+ggh uses `$XDG_CONFIG_HOME/good-gh`, defaulting to `~/.config/good-gh`. `GGH_CONFIG_DIR` names a separate ggh directory without moving gh's authentication. The project index and private status/cache files live there.
 
 ```bash
-ggh config
 ggh config list
-ggh config set ai_provider codex        # codex | grok | claude | ollama
-ggh config set codex_model gpt-5.6-luna
-ggh config set ai_timeout_ms 120000
-ggh config get ai_provider
-ggh config unset ai_timeout_ms
+ggh config set project_roots '["~/Downloads", "/work"]'
+ggh config set clone_root ~/work
+ggh config set project_exclude '["**/archive/**"]'
+ggh config set project_scan_depth 4
+ggh config set host_worktree_dirs '{"t3":"~/.t3/worktrees","codex":"/work/codex"}'
+ggh config set go_default cd
 ggh config doctor
-ggh config cache-clear
-ggh config set ai_enabled true
 ```
 
-Precedence is flags, `GGH_*` environment variables, project `.ggh.json`, user file, then defaults. Project files may set only `commit_style`; they cannot override providers, models, consent, paths, fallback, or timeouts.
+T3 defaults to `~/.t3/worktrees`; Claude and Cursor directories inside repositories are probed. Configure other host locations explicitly. Host labels describe observed path evidence, never authority to delete. Scan depth is bounded from 0 to 8. Forgetting or excluding a path removes it from discovery without deleting files.
 
-```json
-{ "commit_style": "conventional" }
-```
+Flags take precedence over `GGH_*` environment settings, project `.ggh.json`, user settings, then defaults. Project files may set only `commit_style`; they cannot grant AI consent or redirect providers and paths. Doctor checks local tools and capabilities, not live sign-in or model access.
 
-Environment variables use the corresponding key names, including `GGH_AI_PROVIDER`, `GGH_CODEX_MODEL`, `GGH_GROK_MODEL`, `GGH_AI_TIMEOUT_MS`, `GGH_COMMIT_STYLE`, `GGH_DEFAULT_CLONE_DIR`, `GGH_DEFAULT_CLONE_MODE`, and `GGH_HOSTED_AI_CONSENT`.
+### AI consent
 
-`ggh config cache-clear` removes only recognized cache entries. Cache errors disable caching rather than expand filesystem access.
-
-`ggh config doctor` checks for Git and `gh`, reports their local versions, probes `gh` attachment flags, and checks provider CLI versions and capabilities. It does not verify sign-in, model access, or live provider availability.
-
-## AI and privacy
-
-`ggh` stores no provider API keys. AI generation is off by default, even when a provider is configured. Use `--ai` for a single command or set `ai_enabled` in your user config. Provider choice, fallback, and hosted-content consent remain separate settings. Ollama needs a running daemon and downloaded model.
-
-An account-wide usage limit skips that provider for the rest of the run. When all providers fail, `ggh` reports each provider, model, and error, then opens the Conventional Commit wizard. `-m` and `--no-ai` make no AI calls.
-
-Hosted AI requires explicit consent. In a noninteractive session, set it deliberately with `ggh config set hosted_ai_consent true`. Before sending a diff, `ggh` excludes `.env` files, keys, lockfiles, and binaries, then scans remaining hunks for credentials. It reports the redaction count.
-
-Redaction removes recognized credentials, not your source code. Use `-m`, `--no-ai`, or local-only AI when source must not leave your machine:
+AI generation is off by default. Use `--ai` for one invocation or deliberately set `ai_enabled`. Hosted-content consent, provider choice, and fallback are separate settings.
 
 ```bash
+ggh config set ai_provider codex
+ggh config set hosted_ai_consent true
+ggh config set ai_enabled true
+# For local-only generation instead:
 ggh config set ai_provider ollama
 ggh config set ai_fallback false
 ```
 
-The Ollama adapter requires a loopback HTTP endpoint and a Modelfile that identifies local weights. It rejects remote endpoints, cloud aliases, and unverifiable models before sending a prompt. For a no-egress policy, also disable cloud features in the running Ollama daemon, restart it, and verify its settings. `ggh` does not sandbox provider CLIs or modified daemons.
+Hosted AI requires explicit consent. Diff generation excludes sensitive file classes and redacts recognized credentials, but source code can still leave your machine. Use an explicit message or `--no-ai` when it must stay local. Ollama requires verified local weights and a loopback daemon; enforce no-egress policy in that daemon too. See [SECURITY.md](SECURITY.md) for provider and redaction limits.
 
-Codex runs with `--ignore-user-config`. Claude runs in an isolated directory with safe mode, no built-in or MCP tools, and no session persistence. Older Claude CLIs must support those flags; `ggh` does not retry with weaker permissions. See [SECURITY.md](SECURITY.md) for limits.
+## Safety model
 
-### Local operation records
+Tidy is the bulk deletion command. Preview with `--dry-run`; execution requires approval. A branch needs exact-tip ancestry and publication proofs, and cannot be checked out anywhere. A merged badge or gone upstream alone proves nothing. Unknown or incomplete history means keep.
 
-Mutating and AI-assisted commands can record command identity, status, revision, completed steps, resource URLs, and provider-reported usage in local Git metadata or user configuration. Records exclude prompts, source content, message bodies, transcripts, and raw output. `ggh operation list`, `view`, and `evidence` inspect records or associate an existing local file by reference. Evidence files are not copied or checked. Use `ggh operation prune` to remove old records after confirmation. Set `GGH_NO_RECORDS=1` to disable recording.
+Checkout removal requires a clean, unlocked, eligible checkout and guards ignored files, nested repositories, submodules, and clone stashes. Main and current checkouts stay. Unknown provenance stays unless an exact-path override is separately approved. T3, Claude, Cursor, and Codex worktrees are always manual-only, even when clean and merged. Neither `--allow-unknown` nor `--allow-ignored` permits removing them.
 
-`ggh operation recover <id>` shows confirmed, pending, and uncertain effects
-with inspection commands. `ggh operation resume <id> --dry-run` reconciles a
-saved publication plan. Supply PR title/body, unconfirmed attachment files,
-and any unconfirmed repository description again, then approve the remaining
-work. Recovery refuses changed targets or revisions and does not recreate
-commits, comments, or confirmed uploads from missing content. Stack recovery
-uses `ggh stack restack --continue` or `--abort`.
+Every action rechecks identity, refs, OIDs, ancestry, ownership, and relevant file state immediately before its effect. Changed items are refused; ggh never widens an approved batch. Remote deletion requires ownership checks and an exact expected-OID lease. Missing-worktree metadata pruning is separate, honors locks and expiry, and refuses uncertain or apparently unmounted paths. Tidy never deletes repositories or runs GC.
 
-A crashed local writer's lock is reclaimed when its process is proven dead.
-`ggh operation unlock <id> --unknown-owner --yes` is available for legacy or
-unknown locks after you have stopped other writers. Known live writers cannot
-be unlocked.
+Local previews use existing tracking refs. `--fetch` explicitly updates them, including during a dry run. An optional `--audit` sends at most 32 KB of metadata to the chosen provider after consent, without file contents, diffs, `.env`, transcripts, or remote URLs. The provider can only narrow safe candidates. Invented action IDs or invalid responses fail closed; bypassing a failed audit requires an explicit option. Audited approvals bind the plan and audit result.
 
-## Development and completion
+Per-clone locks serialize ggh's own cleanup; they cannot stop an unrelated writer. Journals report completed, refused, failed, and uncertain effects. Cancellation leaves completed effects applied. Hooks, plugins, and provider executables remain trusted code.
 
-[CONTRIBUTING.md](CONTRIBUTING.md) covers development. Report bugs or send small fixes; open an issue before a large feature. `./scripts/demo.sh` runs a 60-second tour in a temporary repository without network access or authentication.
+There is no telemetry, ggh account, server, or automatic update check. GitHub reads and writes use `gh`; optional AI calls use your chosen provider.
 
-[Release readiness](docs/RELEASE-READINESS.md) lists regression commands and checks that need external accounts. [Packaging](docs/PACKAGING.md) covers distribution and `make install`.
+## Development
+
+[CONTRIBUTING.md](CONTRIBUTING.md) covers development. [Release readiness](docs/RELEASE-READINESS.md) records current gates and unverified behavior. Run `make smoke` to compile, temporarily install, and exercise the native binary against local bare remotes. It needs Bun, Git, make, zsh, and jq, with no network or GitHub authentication.
+
+Completions come from the installed command tree:
 
 ```bash
-eval "$(ggh completion zsh)"    # Add to ~/.zshrc
-eval "$(ggh completion bash)"   # Add to ~/.bashrc
+eval "$(ggh completion zsh)"
+eval "$(ggh completion bash)"
 ggh completion fish > ~/.config/fish/completions/ggh.fish
 ```
 
-Completions are generated from the command tree.
-
-For PowerShell, add this to your `$PROFILE`:
-
-```powershell
-ggh completion powershell | Out-String | Invoke-Expression
-```
-
-All four shells resolve nested commands, aliases, and flags from the installed
-CLI. Branch and file suggestions use local state and do not contact GitHub.
+PowerShell uses `ggh completion powershell | Out-String | Invoke-Expression`. Completion and MCP protocols reject `--agent`.
 
 ## License
 
