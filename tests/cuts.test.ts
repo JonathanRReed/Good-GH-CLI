@@ -122,6 +122,10 @@ test("notifications is a non-interactive list and mark-read inbox", async () => 
   const listed = await runFixture(["notifications", "--agent"], { root, responses: [{ prefix: ["api", "/notifications?per_page=30&page=1"], stdout: JSON.stringify(rows) }] });
   expect(listed.exitCode, listed.stdout).toBe(0);
   expect(JSON.parse(listed.stdout).result).toEqual(rows);
+  const human = await runFixture(["notifications", "list"], { root, responses: [{ prefix: ["api", "/notifications?per_page=30&page=1"], stdout: JSON.stringify(rows) }] });
+  expect(human.exitCode).toBe(0);
+  expect(human.stderr).toContain("123");
+  expect(human.stderr).toContain("An issue");
   for (const [id, method, endpoint] of [["123", "PATCH", "/notifications/threads/123"], [undefined, "PUT", "/notifications"]] as const) {
     const marked = await runFixture(["notifications", "mark", ...(id ? [id] : []), "--agent"], { root, responses: [{ prefix: ["api", "--method", method, endpoint] }] });
     expect(marked.exitCode, marked.stdout).toBe(0);

@@ -56,7 +56,7 @@ export function registerNotificationsCommand(program: Command): void {
       }
       for (const row of trimmed as Array<{ id: string; subject: { title: string; type: string; url?: string }; reason: string; unread: boolean; updated_at: string }>) {
         const mark = row.unread ? pc.yellow("●") : pc.dim("○");
-        p.log.message(`  ${mark} ${pc.bold(row.subject.title)} ${pc.dim(`[${row.subject.type}]`)} ${pc.cyan(row.reason)}`);
+        p.log.message(`  ${pc.dim(row.id)} ${mark} ${pc.bold(row.subject.title)} ${pc.dim(`[${row.subject.type}]`)} ${pc.cyan(row.reason)}`);
       }
     } catch (err) {
       s.stop(pc.red("Failed to fetch notifications."));
