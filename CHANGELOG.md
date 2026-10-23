@@ -7,6 +7,8 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Read a finished job's log through the jobs API in `ci why` while its workflow
+  run is still in progress, instead of reporting the log unavailable.
 - Keep SSH agent authentication available during tidy remote-branch deletion,
   disable interactive SSH prompts, and report authentication denial as refused.
 - Serialize tidy, sync, and cleanup fetches with one lock per clone. Sync waits

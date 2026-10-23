@@ -40,6 +40,22 @@ describe("CI evidence", () => {
     expect(result.unavailable).toContainEqual(expect.objectContaining({ job: "Screenshots & Tests", source: "full-job" }));
   });
 
+  test("reads a finished job's log through the jobs API while its run is still in progress", async () => {
+    const pending = { stderr: `run ${zod.run} is still in progress; logs will be available when it is complete`, exitCode: 1 };
+    const log = "2026-10-22T20:00:00.0000000Z src/types.ts(12,3): error TS2322: Type 'string' is not assignable to type 'number'.\n";
+    const responses = [
+      { command: "gh" as const, prefix: ["api", "--allow-escape-sequences", "repos/{owner}/{repo}/actions/jobs/96139983606/logs"], stdout: log },
+      ...replace(ciResponses(zod), [...jobPrefix, "--log-failed"], pending),
+    ];
+    const out = await replayCli(args(), responses);
+    expect(out.exitCode).toBe(0);
+    expect(out.unexpected).toEqual([]);
+    const { result } = JSON.parse(out.stdout);
+    expect(result.failures[0].logSource).toBe("full-job");
+    expect(out.stdout).toContain("error TS2322");
+    expect(result.unavailable.some((item: { source: string }) => item.source === "failed-step")).toBe(false);
+  });
+
   test("excludes stale-run evidence instead of blaming the current PR head", async () => {
     const out = await replayCli(args(), replace(ciResponses(zod), runPrefix, { stdout: JSON.stringify({ ...recordedRun(zod), headSha: "stale" }) }));
     const { result } = JSON.parse(out.stdout);

@@ -136,10 +136,21 @@ export async function collectCiEvidence(options: { target?: string; run?: boolea
       const annotated = await annotations(job, run);
       let log = "";
       let logSource: CiFailure["logSource"] = "failed-step";
+      let runInProgress = false;
       try {
         log = (await gh(["run", "view", String(run.databaseId), "--job", String(job.databaseId), "--log-failed"], { timeoutMs: 60_000 })).stdout;
-      } catch (err) { unavailable("failed-step", err, run.databaseId, job.name); }
-      if (needsFullJobLog(log)) {
+      } catch (err) {
+        // gh withholds every log until the whole run ends; the jobs API serves a finished job's log now.
+        if (/still in progress/i.test(err instanceof Error ? err.message : String(err))) runInProgress = true;
+        else unavailable("failed-step", err, run.databaseId, job.name);
+      }
+      if (runInProgress) {
+        try {
+          const full = (await ghApi(["--allow-escape-sequences", `repos/{owner}/{repo}/actions/jobs/${job.databaseId}/logs`], { timeoutMs: 60_000 })).stdout;
+          if (full.trim()) { log = full; logSource = "full-job"; }
+          else unavailable("full-job", "Empty job log.", run.databaseId, job.name);
+        } catch (err) { unavailable("full-job", err, run.databaseId, job.name); }
+      } else if (needsFullJobLog(log)) {
         try {
           const full = (await gh(["run", "view", String(run.databaseId), "--job", String(job.databaseId), "--log"], { timeoutMs: 60_000 })).stdout;
           if (full.trim()) { log = full; logSource = "full-job"; }
