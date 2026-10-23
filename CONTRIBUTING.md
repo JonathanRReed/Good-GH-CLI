@@ -113,7 +113,7 @@ for the release workflow and npm publication gates.
 
 ## Release-safety regressions
 
-Use Bun 1.4.0 and `bun install --frozen-lockfile`. Dependency changes must include
+Use Bun 1.4.4 and `bun install --frozen-lockfile`. Dependency changes must include
 an updated `bun.lock` on the reviewed branch; no workflow rewrites main's lock
 file after merge. Regenerate it with `bun install`, then run the frozen install
 and full checks before committing.
