@@ -26,7 +26,7 @@ Pull requests run the same artifact build/install/smoke pipeline without
 publishing. Tagged builds create a draft GitHub release; publish it only after
 adding and checking the separate signed/notarized macOS DMG. Manual releases resolve `refs/tags/<tag>` once, verify its package
 version, and pass that immutable commit SHA to every build. Bun is pinned to
-1.4.0. Native jobs download and test the exact artifacts that will be uploaded,
+1.4.4. Native jobs download and test the exact artifacts that will be uploaded,
 including checksums, PATH discovery, a real commit, and an installed pre-commit
 hook. Native checks install the prior published beta, upgrade to the candidate,
 roll back, restore the candidate, and uninstall it. Fixture installation and
@@ -55,7 +55,7 @@ The script promotes a manually maintained Unreleased section; CI uses native
 
 ## Build
 
-Build dependencies: Bun 1.4.0, Git, and the dependencies pinned in `bun.lock`.
+Build dependencies: Bun 1.4.4, Git, and the dependencies pinned in `bun.lock`.
 Use `bun install --frozen-lockfile`; the two runtime dependencies are commander
 and picocolors. CI also installs the packed package under Node 22.
 
@@ -86,7 +86,7 @@ for local developer builds.
 Phase 4A measured `dist/ggh.js` at 791,604 bytes before cuts, 739,130 after cuts,
 and 649,337 after packing the agent reference and sharing CI/review response
 validators. Measurements use `bun run build`, with Bun 1.4.4-canary.1 on macOS
-arm64. CI remains pinned to Bun 1.4.0; the headroom covers toolchain variation.
+arm64. CI is pinned to stable Bun 1.4.4; the existing budget is unchanged.
 The CI limit is **714,271 bytes**, the final measurement plus 10%, rounded up.
 
 The 600,000-byte limit predates the v0.6 additions. Removing another 49,337 bytes

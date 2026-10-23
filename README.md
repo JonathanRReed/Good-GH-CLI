@@ -11,7 +11,7 @@ The source candidate is `0.6.0-beta.1`. It has not been published by this prepar
 
 Standalone binaries need Git 2.31+, plus `gh` for GitHub operations. They need neither Bun nor Node. Bare macOS binaries are ad-hoc signed; a signed, notarized DMG is a separate artifact. Check that release's receipts.
 
-Build this candidate from a checkout with Bun 1.4+:
+Build this candidate from a checkout with Bun 1.4.4 (pinned in `.bun-version`):
 
 ```bash
 bun install --frozen-lockfile

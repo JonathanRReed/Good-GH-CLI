@@ -21,7 +21,7 @@ permissions:
   contents: read
 
 env:
-  BUN_VERSION: 1.4.0
+  BUN_VERSION: 1.4.4
 
 jobs:
   verify:
@@ -211,7 +211,7 @@ jobs:
       - name: Restore downloaded executable permissions
         if: runner.os != 'Windows'
         run: chmod +x native/${{ matrix.asset }} previous/${{ matrix.asset }}
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.13'
       - name: Native regression suite
