@@ -81,3 +81,5 @@ Branch `feat/v0.6-projects`. Loop started 2026-10-22 ("until the new version of 
 
 - 2026-10-22: DONE. main 59fe142: CI (macOS, Linux, Windows verify, offline agent benchmark, Windows private storage) and CodeQL all green. Temporary fix/v0.6-ci deleted. Installed shims report 0.6.0-beta.1.
 
+- 2026-10-22: RELEASED v0.6.0-beta.1 (tag on 57b6400) as a GitHub prerelease: 5 verified native binaries, npm tarball (npm publication opt-in, not published), completions, man page, and a Developer-ID-signed, notarized, stapled universal DMG (Gatekeeper accepted; downloaded checksums verified). main CI macOS hit a timing flake in the per-checkout deadline test (500 ms budget on a loaded runner); margins widened to 0.6 s per checkout vs 1.5 s deadline, keeping the shared-deadline detection.
+

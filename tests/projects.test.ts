@@ -311,13 +311,14 @@ it("starts each queued checkout deadline when its own status work starts", async
   if (!clone) throw new Error("Missing fixture");
   const binary = Bun.which("git"); if (!binary) throw new Error("Missing Git");
   const bin = join(root, "bin"); mkdirSync(bin);
-  writeFileSync(join(bin, "git"), `#!/bin/sh\ncase "$*" in *"status --porcelain"*) sleep 0.2;; esac\nexec ${quoteShellArgument(binary)} "$@"\n`); chmodSync(join(bin, "git"), 0o700);
+  writeFileSync(join(bin, "git"), `#!/bin/sh\ncase "$*" in *"status --porcelain"*) sleep 0.6;; esac\nexec ${quoteShellArgument(binary)} "$@"\n`); chmodSync(join(bin, "git"), 0o700);
   const previous = process.env.PATH;
   process.env.PATH = `${bin}:${previous}`;
   try {
     const start = performance.now();
-    const status = await readCloneStatus(clone, { deadlineMs: 500, workers: 1 });
-    expect(performance.now() - start).toBeGreaterThan(500);
+    const status = await readCloneStatus(clone, { deadlineMs: 1500, workers: 1 });
+    // Three 0.6 s statuses cannot share one 1.5 s deadline; each still has 0.9 s of slack on a loaded runner.
+    expect(performance.now() - start).toBeGreaterThan(1500);
     expect(status.checkouts).toHaveLength(3);
     expect(status.checkouts.every(checkout => checkout.dirty.state === "ok")).toBe(true);
   } finally { process.env.PATH = previous; }
