@@ -1,4 +1,4 @@
-.TH ggh 1 "" "ggh 0.5.0-beta.2"
+.TH ggh 1 "" "ggh 0.6.0-beta.1"
 .SH NAME
 ggh \- Git and GitHub in one CLI
 .SH SYNOPSIS
@@ -14,6 +14,79 @@ Run git with its native arguments, output, and exit status
 .TP
 \fBgh\fR
 Run gh with its native arguments, output, and exit status
+.SS "Projects"
+.TP
+\fBprojects\fR
+List local projects or inspect one project
+.RS
+.TP
+\fBroots\fR
+Manage project scan roots
+.RE
+.RS
+.TP
+\fBregister\fR
+Include a nested repository explicitly
+.RE
+.RS
+.TP
+\fBexclude\fR
+Exclude a path without deleting its files
+.RE
+.RS
+.TP
+\fBforget\fR
+Forget a path without deleting its files
+.RE
+.TP
+\fBtidy\fR
+Preview and approve guarded clone cleanup
+.TP
+\fBlost\fR
+Find unpublished commits, stashes, and possible abandoned agent work
+.TP
+\fBgo\fR
+Find a project and print its path or open it
+.SS "Setup"
+.TP
+\fBinit\fR
+Print a shell function to jump to projects
+.TP
+\fBconfig\fR
+Configure AI permission, providers, models, and defaults
+.RS
+.TP
+\fBlist, ls\fR
+List all configuration settings
+.RE
+.RS
+.TP
+\fBcache-clear\fR
+Delete cached GitHub responses
+.RE
+.RS
+.TP
+\fBget\fR
+Get a specific configuration value
+.RE
+.RS
+.TP
+\fBset\fR
+Set a configuration value (e.g. ai_enabled true, ai_provider grok)
+.RE
+.RS
+.TP
+\fBunset\fR
+Remove a value from your user config so the default (or project/env) applies
+.RE
+.RS
+.TP
+\fBdoctor\fR
+Check configuration and inspect installed AI CLI versions and capabilities
+.RE
+.TP
+\fBcompletion\fR
+Generate completions for zsh, bash, fish, or powershell
 .SS "Status"
 .TP
 \fBstatus, st\fR
@@ -81,7 +154,7 @@ Remove an active worktree and clean up references
 .RE
 .TP
 \fBstash, sh\fR
-Push, browse, pop, and drop stashes
+Save, list, restore, and drop stashes
 .RS
 .TP
 \fBpop\fR
@@ -102,6 +175,11 @@ Stash current changes
 \fBlist\fR
 List stashes
 .RE
+.RS
+.TP
+\fBrestore\fR
+Restore and pop a named stash, including a former draft
+.RE
 .TP
 \fBdiscard, restore\fR
 Discard uncommitted changes to selected files
@@ -119,11 +197,11 @@ Squash the last N commits into one
 Rename the current branch, locally and on the remote
 .TP
 \fBsync, prune\fR
-Fetch, prune, and delete branches whose remote is gone
+Sync indexed projects, or fetch and prune the current repository
 .SS "GitHub"
 .TP
-\fBclone\fR
-Search for and clone a repository, optionally blobless
+\fBclone, get\fR
+Search for and clone a repository
 .TP
 \fBrepo\fR
 View, fork, create, and set the default repository
@@ -245,6 +323,14 @@ Edit a Pull Request title, body, or base branch
 \fBreview\fR
 Review a Pull Request with AI and post the findings as real review comments
 .RE
+.RS
+.TP
+\fBthreads\fR
+Read pull request review threads with full comment bodies
+.RE
+.TP
+\fBreview\fR
+Inspect a PR in a safe checkout. Local marks are never GitHub approvals.
 .TP
 \fBissue, issues\fR
 Browse, read, open, and close issues
@@ -320,165 +406,19 @@ Cancel a workflow run
 \fBchecks\fR
 CI status for this branch's pull request
 .TP
-\fBrelease, rel\fR
-Browse releases, or publish one with AI-written notes
+\fBci\fR
+Inspect revision-linked CI evidence
 .RS
 .TP
-\fBlist\fR
-List releases
+\fBwhy\fR
+Extract failure evidence for a PR or Actions run
 .RE
-.RS
-.TP
-\fBview\fR
-View a release
-.RE
-.RS
-.TP
-\fBdownload\fR
-Download release assets
-.RE
-.RS
-.TP
-\fBupload\fR
-Upload assets to a release
-.RE
-.RS
-.TP
-\fBdelete\fR
-Delete a release
-.RE
-.RS
-.TP
-\fBcreate\fR
-Create a release
-.RE
-.TP
-\fBchangelog\fR
-Write a changelog entry into CHANGELOG.md
 .TP
 \fBapi\fR
 Authenticated GitHub API request (passthrough to `gh api`)
 .TP
-\fBworkflow, workflows\fR
-List, view, run, enable, and disable GitHub Actions workflows
-.RS
-.TP
-\fBlist\fR
-List workflows
-.RE
-.RS
-.TP
-\fBview\fR
-View a workflow
-.RE
-.RS
-.TP
-\fBrun\fR
-Run a workflow
-.RE
-.RS
-.TP
-\fBenable\fR
-Enable a workflow
-.RE
-.RS
-.TP
-\fBdisable\fR
-Disable a workflow
-.RE
-.TP
-\fBlabel, labels\fR
-List, create, edit, and delete issue labels
-.RS
-.TP
-\fBlist\fR
-List labels
-.RE
-.RS
-.TP
-\fBcreate\fR
-Create a label
-.RE
-.RS
-.TP
-\fBedit\fR
-Edit a label
-.RE
-.RS
-.TP
-\fBdelete\fR
-Delete a label
-.RE
-.TP
-\fBgist, gists\fR
-List, view, create, edit, and delete GitHub Gists
-.RS
-.TP
-\fBlist\fR
-List gists
-.RE
-.RS
-.TP
-\fBview\fR
-View a gist
-.RE
-.RS
-.TP
-\fBcreate\fR
-Create a gist from files
-.RE
-.RS
-.TP
-\fBedit\fR
-Edit a gist
-.RE
-.RS
-.TP
-\fBdelete\fR
-Delete a gist
-.RE
-.TP
-\fBsearch\fR
-Search issues, pull requests, repositories, or code on GitHub
-.TP
-\fBsecret, secrets\fR
-List, set, and delete repository secrets
-.RS
-.TP
-\fBlist\fR
-List secrets
-.RE
-.RS
-.TP
-\fBset\fR
-Set a secret
-.RE
-.RS
-.TP
-\fBdelete\fR
-Delete a secret
-.RE
-.TP
-\fBvariable, variables\fR
-List, set, and delete repository variables
-.RS
-.TP
-\fBlist\fR
-List variables
-.RE
-.RS
-.TP
-\fBset\fR
-Set a variable
-.RE
-.RS
-.TP
-\fBdelete\fR
-Delete a variable
-.RE
-.TP
 \fBnotifications, notifs\fR
-List, view, mark, and unsubscribe from GitHub notifications
+List notifications or mark them read without prompting
 .RS
 .TP
 \fBlist\fR
@@ -486,49 +426,10 @@ List notifications
 .RE
 .RS
 .TP
-\fBview\fR
-View a notification
-.RE
-.RS
-.TP
 \fBmark\fR
-Mark one or all notifications as read
+Mark one notification read, or all when no ID is supplied
 .RE
-.RS
-.TP
-\fBunsubscribe\fR
-Unsubscribe from a notification
-.RE
-.TP
-\fBbrowse\fR
-Open the repository in a browser
-.TP
-\fBtriage\fR
-AI-triage notifications and issues (read-only)
 .SS "Local workflow"
-.TP
-\fBdraft\fR
-Stash uncommitted work with a short description, then restore it later
-.RS
-.TP
-\fBcreate\fR
-Save current changes as a draft
-.RE
-.RS
-.TP
-\fBlist\fR
-Show saved drafts
-.RE
-.RS
-.TP
-\fBresume, pop\fR
-Restore a saved draft
-.RE
-.RS
-.TP
-\fBdrop, delete\fR
-Delete a saved draft
-.RE
 .TP
 \fBignore, gitignore\fR
 Manage .gitignore patterns
@@ -653,65 +554,15 @@ Install a plugin from a local file
 \fBremove, uninstall, delete\fR
 Remove an installed plugin
 .RE
-.TP
-\fBteam\fR
-Publish your stack graph to a secret gist, or pull a teammate's stack
-.RS
-.TP
-\fBpublish\fR
-Publish your stack as a secret gist
-.RE
-.RS
-.TP
-\fBpull, view\fR
-Fetch a teammate's stack
-.RE
-.RS
-.TP
-\fBlist\fR
-List your team-stack gists
-.RE
-.SS "Setup"
-.TP
-\fBconfig\fR
-Configure AI permission, providers, models, and defaults
-.RS
-.TP
-\fBlist, ls\fR
-List all configuration settings
-.RE
-.RS
-.TP
-\fBcache-clear\fR
-Delete cached GitHub responses
-.RE
-.RS
-.TP
-\fBget\fR
-Get a specific configuration value
-.RE
-.RS
-.TP
-\fBset\fR
-Set a configuration value (e.g. ai_enabled true, ai_provider grok)
-.RE
-.RS
-.TP
-\fBunset\fR
-Remove a value from your user config so the default (or project/env) applies
-.RE
-.RS
-.TP
-\fBdoctor\fR
-Check configuration and inspect installed AI CLI versions and capabilities
-.RE
-.TP
-\fBcompletion\fR
-Generate completions for zsh, bash, fish, or powershell
 .SS "Other commands"
 .TP
 \fBagent\fR
-Discover the versioned automation contract
+Discover the versioned automation contract and skill
+.RS
+.TP
+\fBskill\fR
+Print the ggh skill or install it for an agent host
+.RE
 .RS
 .TP
 \fBschema\fR
@@ -748,6 +599,9 @@ Target a GitHub Enterprise host instead of github.com.
 .TP
 \fBGGH_*\fR
 Per-key overrides (\fBGGH_AI_PROVIDER\fR, \fBGGH_CODEX_MODEL\fR, \fBGGH_AI_TIMEOUT_MS\fR, ...). Flags beat environment, environment beats config files.
+.TP
+\fBGGH_CONFIG_DIR\fR
+Override the ggh configuration directory without changing gh authentication. No good-gh suffix is added.
 .TP
 \fBXDG_CONFIG_HOME\fR, \fBXDG_CACHE_HOME\fR
 Respected for config, plugins, aliases, and cache.

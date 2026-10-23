@@ -184,6 +184,7 @@ export async function searchablePicker<T = string>(options: {
   pageSize?: number;
   initialQuery?: string;
   onSearchGitHub?: (query: string) => Promise<PickerItem<T>[]>;
+  matchesQuery?: (item: PickerItem<T>, query: string) => boolean;
 }): Promise<T | null> {
   if (isNonInteractive()) {
     nonInteractiveNotice(options.title);
@@ -212,8 +213,9 @@ export async function searchablePicker<T = string>(options: {
       } else {
         filtered = all.filter(
           (item) =>
-            item.label.toLowerCase().includes(q) ||
-            (item.hint && item.hint.toLowerCase().includes(q)),
+            options.matchesQuery ? options.matchesQuery(item, q) :
+              item.label.toLowerCase().includes(q) ||
+              (item.hint && item.hint.toLowerCase().includes(q)),
         );
 
         // If query looks like an exact owner/repo or URL, offer it as direct clone option

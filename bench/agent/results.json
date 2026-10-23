@@ -1,0 +1,518 @@
+{
+  "schemaVersion": 1,
+  "fixtureRevision": "agent-pain-2026-10-22",
+  "tokenMetric": "bytes/4 estimate; no offline tokenizer dev dependency installed",
+  "results": [
+    {
+      "case": "zod-ci",
+      "question": "Why did CI fail at this PR head?",
+      "expectedEvidence": [
+        {
+          "label": "PR head revision",
+          "pattern": "611a961879eef8379c44f778b113316b084180fa"
+        },
+        {
+          "label": "recursive pipe return type",
+          "pattern": "'pipe' implicitly has return type 'any'"
+        },
+        {
+          "label": "circular pipe type",
+          "pattern": "Type of property 'pipe' circularly references itself"
+        },
+        {
+          "label": "first source location",
+          "pattern": "recursive-types\\.test\\.ts:456:9"
+        },
+        {
+          "label": "second source location",
+          "pattern": "recursive-types\\.test\\.ts:457:14"
+        }
+      ],
+      "nativeCommands": [
+        "gh pr view 5914 -R colinhacks/zod --json number,url,headRefOid",
+        "gh run list -R colinhacks/zod --commit 611a961879eef8379c44f778b113316b084180fa --json databaseId,workflowName,conclusion,headSha,url",
+        "gh run view 32274929243 -R colinhacks/zod --json databaseId,headSha,url,workflowName,conclusion,jobs",
+        "gh run view 32274929243 -R colinhacks/zod --log-failed"
+      ],
+      "gghCommand": "ggh ci why 5914 -R colinhacks/zod --agent",
+      "native": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 5402,
+        "tokens": 1350.5,
+        "toolCalls": 4
+      },
+      "ggh": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 7231,
+        "tokens": 1807.75,
+        "toolCalls": 1,
+        "subprocessCalls": 6,
+        "exitCode": 0,
+        "unexpected": [],
+        "stderr": ""
+      }
+    },
+    {
+      "case": "zod-status",
+      "question": "Which branch and tracking branch, what drift, and is it clean?",
+      "expectedEvidence": [
+        {
+          "label": "branch",
+          "pattern": "main"
+        },
+        {
+          "label": "HEAD identity",
+          "pattern": "afdac65e0f80c0ccf9e8909da97c411567908b57"
+        },
+        {
+          "label": "tracking branch",
+          "pattern": "origin/main"
+        },
+        {
+          "label": "ahead/behind",
+          "pattern": "# branch\\.ab \\+0 -0|^(?!.*\"(?:ahead|behind)\":)[\\s\\S]+$"
+        },
+        {
+          "label": "clean checkout",
+          "pattern": "^# branch\\.ab \\+0 -0\\n?$|^(?!.*\"(?:changes|staged|unstaged|untracked|conflicts)\":)[\\s\\S]+$"
+        }
+      ],
+      "nativeCommands": [
+        "git status --porcelain=v2 --branch"
+      ],
+      "gghCommand": "ggh status --agent",
+      "native": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 121,
+        "tokens": 30.25,
+        "toolCalls": 1
+      },
+      "ggh": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 181,
+        "tokens": 45.25,
+        "toolCalls": 1,
+        "byteRatio": 1.4958677685950412,
+        "maxByteRatio": 1.5,
+        "subprocessCalls": 5,
+        "exitCode": 0,
+        "unexpected": [],
+        "stderr": ""
+      }
+    },
+    {
+      "case": "zod-run",
+      "question": "Which run/jobs failed and what did the failed steps print?",
+      "expectedEvidence": [
+        {
+          "label": "run ID",
+          "pattern": "32274929243"
+        },
+        {
+          "label": "conclusion",
+          "pattern": "failure"
+        },
+        {
+          "label": "workflow",
+          "pattern": "test"
+        },
+        {
+          "label": "failed-step output",
+          "pattern": "'pipe' implicitly has return type 'any'"
+        }
+      ],
+      "nativeCommands": [
+        "gh run view 32274929243 -R colinhacks/zod --json databaseId,displayTitle,workflowName,status,conclusion,headBranch,event,createdAt,url,jobs",
+        "gh run view 32274929243 -R colinhacks/zod --log-failed"
+      ],
+      "gghCommand": "ggh run 32274929243 -R colinhacks/zod --agent",
+      "native": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 230459,
+        "tokens": 57614.75,
+        "toolCalls": 2
+      },
+      "ggh": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 233858,
+        "tokens": 58464.5,
+        "toolCalls": 1,
+        "subprocessCalls": 4,
+        "exitCode": 0,
+        "unexpected": [],
+        "stderr": ""
+      }
+    },
+    {
+      "case": "vscode-ci",
+      "question": "Why did CI fail at this PR head?",
+      "expectedEvidence": [
+        {
+          "label": "PR head revision",
+          "pattern": "5f8cec627c1d4b555e917956e93233ca140a4eba"
+        },
+        {
+          "label": "missing dependency",
+          "pattern": "SessionChatInputToolbar depends on UNKNOWN service quickInputService"
+        },
+        {
+          "label": "deferring failed step",
+          "pattern": "Fail if fixtures had errors"
+        },
+        {
+          "label": "second failed job",
+          "pattern": "Screenshots & Tests"
+        }
+      ],
+      "nativeCommands": [
+        "gh pr view 343557 -R microsoft/vscode --json number,url,headRefOid",
+        "gh run list -R microsoft/vscode --commit 5f8cec627c1d4b555e917956e93233ca140a4eba --json databaseId,workflowName,conclusion,headSha,url",
+        "gh run view 39818915094 -R microsoft/vscode --json databaseId,headSha,url,workflowName,conclusion,jobs",
+        "gh run view 39818915094 -R microsoft/vscode --log-failed",
+        "gh run view 39818915094 -R microsoft/vscode --job 119964605506 --log"
+      ],
+      "gghCommand": "ggh ci why 343557 -R microsoft/vscode --agent",
+      "native": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 133470,
+        "tokens": 33367.5,
+        "toolCalls": 5
+      },
+      "ggh": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 8625,
+        "tokens": 2156.25,
+        "toolCalls": 1,
+        "subprocessCalls": 10,
+        "exitCode": 0,
+        "unexpected": [],
+        "stderr": ""
+      }
+    },
+    {
+      "case": "vscode-status",
+      "question": "Which branch and tracking branch, what drift, and is it clean?",
+      "expectedEvidence": [
+        {
+          "label": "branch",
+          "pattern": "main"
+        },
+        {
+          "label": "HEAD identity",
+          "pattern": "58173d0ebc1838579e3c331e0a47e365904a6456"
+        },
+        {
+          "label": "tracking branch",
+          "pattern": "origin/main"
+        },
+        {
+          "label": "ahead/behind",
+          "pattern": "# branch\\.ab \\+0 -0|^(?!.*\"(?:ahead|behind)\":)[\\s\\S]+$"
+        },
+        {
+          "label": "clean checkout",
+          "pattern": "^# branch\\.ab \\+0 -0\\n?$|^(?!.*\"(?:changes|staged|unstaged|untracked|conflicts)\":)[\\s\\S]+$"
+        }
+      ],
+      "nativeCommands": [
+        "git status --porcelain=v2 --branch"
+      ],
+      "gghCommand": "ggh status --agent",
+      "native": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 121,
+        "tokens": 30.25,
+        "toolCalls": 1
+      },
+      "ggh": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 181,
+        "tokens": 45.25,
+        "toolCalls": 1,
+        "byteRatio": 1.4958677685950412,
+        "maxByteRatio": 1.5,
+        "subprocessCalls": 5,
+        "exitCode": 0,
+        "unexpected": [],
+        "stderr": ""
+      }
+    },
+    {
+      "case": "vscode-run",
+      "question": "Which run/jobs failed and what did the failed steps print?",
+      "expectedEvidence": [
+        {
+          "label": "run ID",
+          "pattern": "39818915094"
+        },
+        {
+          "label": "conclusion",
+          "pattern": "failure"
+        },
+        {
+          "label": "workflow",
+          "pattern": "Component Fixtures"
+        },
+        {
+          "label": "failed-step output",
+          "pattern": "See the 'Check fixture errors' step"
+        }
+      ],
+      "nativeCommands": [
+        "gh run view 39818915094 -R microsoft/vscode --json databaseId,displayTitle,workflowName,status,conclusion,headBranch,event,createdAt,url,jobs",
+        "gh run view 39818915094 -R microsoft/vscode --log-failed"
+      ],
+      "gghCommand": "ggh run 39818915094 -R microsoft/vscode --agent",
+      "native": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 11533,
+        "tokens": 2883.25,
+        "toolCalls": 2
+      },
+      "ggh": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 11846,
+        "tokens": 2961.5,
+        "toolCalls": 1,
+        "subprocessCalls": 4,
+        "exitCode": 0,
+        "unexpected": [],
+        "stderr": ""
+      }
+    }
+  ],
+  "dirtyResults": [
+    {
+      "case": "dirty-status-5",
+      "question": "Which paths need index, worktree, rename, untracked or conflict actions?",
+      "expectedEvidence": [
+        {
+          "label": "branch main and upstream origin/main",
+          "pattern": "# branch\\.head main[\\s\\S]*# branch\\.upstream origin/main|^## main\\.\\.\\.origin/main$|\"branch\":\"main\",\"head\":\"[a-f0-9]+\",\"upstream\":\"origin/main\""
+        },
+        {
+          "label": "zero ahead and behind",
+          "pattern": "# branch\\.ab \\+0 -0|^## main\\.\\.\\.origin/main$|^\\{\"contract\":\"ggh.agent\",(?!.*\"(?:ahead|behind)\":)[^\\n]+\\}\\n?$"
+        },
+        {
+          "label": "unmerged UU conflict.txt",
+          "pattern": "u UU [^\\n]* conflict\\.txt|^UU conflict\\.txt$|\\[\"UU\",\"conflict.txt\"\\]"
+        },
+        {
+          "label": "index rename with old and new paths",
+          "pattern": "2 R\\. [^\\n]* rename-new\\.txt\\trename-old\\.txt|^R  rename-old\\.txt -> rename-new\\.txt$|\\[\"R\\.\",\"rename-new.txt\",\"rename-old.txt\"\\]"
+        },
+        {
+          "label": "untracked untracked.txt",
+          "pattern": "^\\?\\?? untracked\\.txt$|\\[\"\\?\\?\",\"untracked.txt\"\\]"
+        },
+        {
+          "label": "MM file-1.txt index/worktree state",
+          "pattern": "1 MM [^\\n]* file-1\\.txt$|^MM file-1\\.txt$|\\[\"MM\",\"file-1\\.txt\"\\]"
+        },
+        {
+          "label": "M. file-2.txt index/worktree state",
+          "pattern": "1 M\\. [^\\n]* file-2\\.txt$|^M  file-2\\.txt$|\\[\"M\\.\",\"file-2\\.txt\"\\]"
+        }
+      ],
+      "nativeCommands": [
+        "git status --porcelain=v2 --branch"
+      ],
+      "nativeV1Commands": [
+        "git status --porcelain=v1 -b"
+      ],
+      "gghCommand": "ggh status --agent",
+      "native": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 707,
+        "tokens": 176.75,
+        "toolCalls": 1
+      },
+      "nativeV1": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 119,
+        "tokens": 29.75,
+        "toolCalls": 1
+      },
+      "previousRawFormat": {
+        "bytes": 843,
+        "measurement": "Previous raw-record shape reconstructed from the same porcelain response and envelope, not an older binary."
+      },
+      "ggh": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 371,
+        "tokens": 92.75,
+        "toolCalls": 1,
+        "subprocessCalls": 5,
+        "exitCode": 0,
+        "unexpected": [],
+        "stderr": ""
+      }
+    },
+    {
+      "case": "dirty-status-25",
+      "question": "Which paths need index, worktree, rename, untracked or conflict actions?",
+      "expectedEvidence": [
+        {
+          "label": "branch main and upstream origin/main",
+          "pattern": "# branch\\.head main[\\s\\S]*# branch\\.upstream origin/main|^## main\\.\\.\\.origin/main$|\"branch\":\"main\",\"head\":\"[a-f0-9]+\",\"upstream\":\"origin/main\""
+        },
+        {
+          "label": "zero ahead and behind",
+          "pattern": "# branch\\.ab \\+0 -0|^## main\\.\\.\\.origin/main$|^\\{\"contract\":\"ggh.agent\",(?!.*\"(?:ahead|behind)\":)[^\\n]+\\}\\n?$"
+        },
+        {
+          "label": "unmerged UU conflict.txt",
+          "pattern": "u UU [^\\n]* conflict\\.txt|^UU conflict\\.txt$|\\[\"UU\",\"conflict.txt\"\\]"
+        },
+        {
+          "label": "index rename with old and new paths",
+          "pattern": "2 R\\. [^\\n]* rename-new\\.txt\\trename-old\\.txt|^R  rename-old\\.txt -> rename-new\\.txt$|\\[\"R\\.\",\"rename-new.txt\",\"rename-old.txt\"\\]"
+        },
+        {
+          "label": "untracked untracked.txt",
+          "pattern": "^\\?\\?? untracked\\.txt$|\\[\"\\?\\?\",\"untracked.txt\"\\]"
+        },
+        {
+          "label": "MM file-1.txt index/worktree state",
+          "pattern": "1 MM [^\\n]* file-1\\.txt$|^MM file-1\\.txt$|\\[\"MM\",\"file-1\\.txt\"\\]"
+        },
+        {
+          "label": "M. file-2.txt index/worktree state",
+          "pattern": "1 M\\. [^\\n]* file-2\\.txt$|^M  file-2\\.txt$|\\[\"M\\.\",\"file-2\\.txt\"\\]"
+        },
+        {
+          "label": ".M file-3.txt index/worktree state",
+          "pattern": "1 \\.M [^\\n]* file-3\\.txt$|^ M file-3\\.txt$|\\[\"\\.M\",\"file-3\\.txt\"\\]"
+        },
+        {
+          "label": "MM file-4.txt index/worktree state",
+          "pattern": "1 MM [^\\n]* file-4\\.txt$|^MM file-4\\.txt$|\\[\"MM\",\"file-4\\.txt\"\\]"
+        },
+        {
+          "label": "M. file-5.txt index/worktree state",
+          "pattern": "1 M\\. [^\\n]* file-5\\.txt$|^M  file-5\\.txt$|\\[\"M\\.\",\"file-5\\.txt\"\\]"
+        },
+        {
+          "label": ".M file-6.txt index/worktree state",
+          "pattern": "1 \\.M [^\\n]* file-6\\.txt$|^ M file-6\\.txt$|\\[\"\\.M\",\"file-6\\.txt\"\\]"
+        },
+        {
+          "label": "MM file-7.txt index/worktree state",
+          "pattern": "1 MM [^\\n]* file-7\\.txt$|^MM file-7\\.txt$|\\[\"MM\",\"file-7\\.txt\"\\]"
+        },
+        {
+          "label": "M. file-8.txt index/worktree state",
+          "pattern": "1 M\\. [^\\n]* file-8\\.txt$|^M  file-8\\.txt$|\\[\"M\\.\",\"file-8\\.txt\"\\]"
+        },
+        {
+          "label": ".M file-9.txt index/worktree state",
+          "pattern": "1 \\.M [^\\n]* file-9\\.txt$|^ M file-9\\.txt$|\\[\"\\.M\",\"file-9\\.txt\"\\]"
+        },
+        {
+          "label": "MM file-10.txt index/worktree state",
+          "pattern": "1 MM [^\\n]* file-10\\.txt$|^MM file-10\\.txt$|\\[\"MM\",\"file-10\\.txt\"\\]"
+        },
+        {
+          "label": "M. file-11.txt index/worktree state",
+          "pattern": "1 M\\. [^\\n]* file-11\\.txt$|^M  file-11\\.txt$|\\[\"M\\.\",\"file-11\\.txt\"\\]"
+        },
+        {
+          "label": ".M file-12.txt index/worktree state",
+          "pattern": "1 \\.M [^\\n]* file-12\\.txt$|^ M file-12\\.txt$|\\[\"\\.M\",\"file-12\\.txt\"\\]"
+        },
+        {
+          "label": "MM file-13.txt index/worktree state",
+          "pattern": "1 MM [^\\n]* file-13\\.txt$|^MM file-13\\.txt$|\\[\"MM\",\"file-13\\.txt\"\\]"
+        },
+        {
+          "label": "M. file-14.txt index/worktree state",
+          "pattern": "1 M\\. [^\\n]* file-14\\.txt$|^M  file-14\\.txt$|\\[\"M\\.\",\"file-14\\.txt\"\\]"
+        },
+        {
+          "label": ".M file-15.txt index/worktree state",
+          "pattern": "1 \\.M [^\\n]* file-15\\.txt$|^ M file-15\\.txt$|\\[\"\\.M\",\"file-15\\.txt\"\\]"
+        },
+        {
+          "label": "MM file-16.txt index/worktree state",
+          "pattern": "1 MM [^\\n]* file-16\\.txt$|^MM file-16\\.txt$|\\[\"MM\",\"file-16\\.txt\"\\]"
+        },
+        {
+          "label": "M. file-17.txt index/worktree state",
+          "pattern": "1 M\\. [^\\n]* file-17\\.txt$|^M  file-17\\.txt$|\\[\"M\\.\",\"file-17\\.txt\"\\]"
+        },
+        {
+          "label": ".M file-18.txt index/worktree state",
+          "pattern": "1 \\.M [^\\n]* file-18\\.txt$|^ M file-18\\.txt$|\\[\"\\.M\",\"file-18\\.txt\"\\]"
+        },
+        {
+          "label": "MM file-19.txt index/worktree state",
+          "pattern": "1 MM [^\\n]* file-19\\.txt$|^MM file-19\\.txt$|\\[\"MM\",\"file-19\\.txt\"\\]"
+        },
+        {
+          "label": "M. file-20.txt index/worktree state",
+          "pattern": "1 M\\. [^\\n]* file-20\\.txt$|^M  file-20\\.txt$|\\[\"M\\.\",\"file-20\\.txt\"\\]"
+        },
+        {
+          "label": ".M file-21.txt index/worktree state",
+          "pattern": "1 \\.M [^\\n]* file-21\\.txt$|^ M file-21\\.txt$|\\[\"\\.M\",\"file-21\\.txt\"\\]"
+        },
+        {
+          "label": "MM file-22.txt index/worktree state",
+          "pattern": "1 MM [^\\n]* file-22\\.txt$|^MM file-22\\.txt$|\\[\"MM\",\"file-22\\.txt\"\\]"
+        }
+      ],
+      "nativeCommands": [
+        "git status --porcelain=v2 --branch"
+      ],
+      "nativeV1Commands": [
+        "git status --porcelain=v1 -b"
+      ],
+      "gghCommand": "ggh status --agent",
+      "native": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 3200,
+        "tokens": 800,
+        "toolCalls": 1
+      },
+      "nativeV1": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 412,
+        "tokens": 103,
+        "toolCalls": 1
+      },
+      "previousRawFormat": {
+        "bytes": 3378,
+        "measurement": "Previous raw-record shape reconstructed from the same porcelain response and envelope, not an older binary."
+      },
+      "ggh": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 786,
+        "tokens": 196.5,
+        "toolCalls": 1,
+        "subprocessCalls": 5,
+        "exitCode": 0,
+        "unexpected": [],
+        "stderr": ""
+      }
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+# Recorded evidence is checksummed as raw bytes.
+bench/agent/fixtures/** -text
+# These files are embedded verbatim in the built CLI.
+skills/ggh/** text eol=lf

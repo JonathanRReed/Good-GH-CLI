@@ -1,9 +1,10 @@
 import { assertWindowsPrivateDirectory } from "../private-storage.ts";
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { commit, getRepoRoot, type CommitOptions } from "../git.ts";
+import { getRepoRoot, type CommitOptions } from "../git.ts";
 import { getFlags } from "../runtime.ts";
 import { run } from "../../utils/exec.ts";
+import { commitExpectedTree } from "./scoped-commit.ts";
 import type { ChangedFile } from "../../utils/diff.ts";
 import { getGitPath } from "./paths.ts";
 
@@ -39,7 +40,7 @@ async function branchAt(cwd: string): Promise<string | null> {
 }
 
 /** Capture the staged tree before the model runs. Working-tree bytes are never read. */
-export async function captureStagedSnapshot(cwd = process.cwd()): Promise<StagedSnapshot> {
+export async function captureStagedSnapshot(cwd = process.cwd(), options: { allowEmpty?: boolean } = {}): Promise<StagedSnapshot> {
   cwd = await getRepoRoot(cwd);
   const indexPath = await getGitPath("index", cwd);
   const head = await headAt(cwd);
@@ -62,7 +63,7 @@ export async function captureStagedSnapshot(cwd = process.cwd()): Promise<Staged
     if (!status || !path) throw new Error("Invalid staged path listing.");
     files.push({ path, staged: true, status: status === "D" ? "deleted" : status === "A" ? "added" : "modified" });
   }
-  if (!files.length) throw new Error("Nothing staged to split.");
+  if (!files.length && !options.allowEmpty) throw new Error("Nothing staged to split.");
   if (await branchAt(cwd) !== branch || await headAt(cwd) !== head || !readFileSync(indexPath).equals(indexBytes)) {
     throw new Error("Repository changed while capturing staged content. Retry the split.");
   }
@@ -150,7 +151,7 @@ export async function executeSplitCommits(
     for (const [i, group] of plan.entries()) {
       if (await headAt(cwd) !== expectedHead) throw new Error("HEAD changed during the split. No more commits were attempted.");
       await git(["read-tree", trees[i]!]);
-      await commit(group.subject, group.body, { ...options, cwd, env });
+      await commitExpectedTree({ cwd, head: expectedHead, branch: snapshot.branch, tree: trees[i]! }, group.subject, group.body, { ...options, cwd, env });
       const next = await headAt(cwd);
       if (!next) throw new Error("Git did not create the expected split commit.");
       completed.push(next); journal();

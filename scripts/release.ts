@@ -55,7 +55,7 @@ pkg.version = version;
 writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`, "utf-8");
 console.error(`  package.json ${previous} -> ${version}`);
 
-// Promote the Unreleased section, or write a fresh entry with ggh itself.
+// Promote the manually maintained Unreleased section.
 const changelogPath = join(root, "CHANGELOG.md");
 if (existsSync(changelogPath)) {
   const current = readFileSync(changelogPath, "utf-8");
@@ -64,7 +64,7 @@ if (existsSync(changelogPath)) {
     writeFileSync(changelogPath, current.replace("## Unreleased", `## ${version} — ${today}`), "utf-8");
     console.error("  CHANGELOG.md: Unreleased -> " + version);
   } else {
-    console.error("  CHANGELOG.md has no Unreleased section; add the entry by hand or run `ggh changelog`.");
+    console.error("  CHANGELOG.md has no Unreleased section; add the entry by hand before releasing.");
   }
 }
 

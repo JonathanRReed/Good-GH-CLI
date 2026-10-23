@@ -47,7 +47,6 @@ async function initRepo(dir: string): Promise<string> {
 }
 
 let configDir: string;
-let draftRepo: string;
 let hookDryRepo: string;
 let hookEditRepo: string;
 let ignoreRepo: string;
@@ -56,14 +55,6 @@ const tmpRoots: string[] = [];
 
 beforeAll(async () => {
   configDir = realpathSync(mkdtempSync(join(tmpdir(), "ggh-safety-config-")));
-
-  draftRepo = await initRepo("ggh-safety-draft-");
-  tmpRoots.push(draftRepo);
-  // Two stashes with the ggh-draft: prefix (dirty the file before each push).
-  await Bun.write(join(draftRepo, "a.txt"), "draft one\n");
-  await git(draftRepo, ["stash", "push", "-m", "ggh-draft: one"]);
-  await Bun.write(join(draftRepo, "a.txt"), "draft two\n");
-  await git(draftRepo, ["stash", "push", "-m", "ggh-draft: two"]);
 
   hookDryRepo = await initRepo("ggh-safety-hookdry-");
   tmpRoots.push(hookDryRepo);
@@ -108,20 +99,6 @@ describe("safety net: local-only black-box paths", () => {
     const parsed = JSON.parse(stdout);
     expect(typeof parsed).toBe("object");
     expect(Array.isArray(parsed)).toBe(false);
-  });
-
-  it("3. draft resume --dry-run never prompts", async () => {
-    const { exitCode, stderr } = await runCli(["draft", "resume", "--dry-run"], draftRepo);
-    expect(exitCode).toBe(0);
-    expect(stderr.toLowerCase()).toContain("dry run");
-    expect(stderr).not.toContain("Cannot prompt");
-  });
-
-  it("4. draft drop --dry-run never prompts", async () => {
-    const { exitCode, stderr } = await runCli(["draft", "drop", "--dry-run"], draftRepo);
-    expect(exitCode).toBe(0);
-    expect(stderr.toLowerCase()).toContain("dry run");
-    expect(stderr).not.toContain("Cannot prompt");
   });
 
   it("5. hook install --dry-run with existing hook leaves the file unchanged", async () => {
@@ -199,15 +176,6 @@ describe("safety net: local-only black-box paths", () => {
     const invoked = await runCli(["space-plugin"], repoRoot, env);
     expect(invoked.exitCode).toBe(0);
     expect(invoked.stdout.trim()).toBe("plugin ok");
-  });
-
-  it("9. team --help documents publish, draft --help documents resume", async () => {
-    const team = await runCli(["team", "--help"]);
-    expect(team.exitCode).toBe(0);
-    expect(team.stdout).toContain("publish");
-    const draft = await runCli(["draft", "--help"]);
-    expect(draft.exitCode).toBe(0);
-    expect(draft.stdout).toContain("resume");
   });
 
   it("10. api mutating dry-run is hermetic", async () => {

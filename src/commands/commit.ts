@@ -1,3 +1,4 @@
+import { executeSnapshotCommit } from "../services/git/scoped-commit.ts";
 import {
   captureStagedSnapshot,
   executeSplitCommits,
@@ -8,7 +9,6 @@ import { Command } from "commander";
 import {
   checkLargeFiles,
   checkSubmodules,
-  commit,
   detectPullRequestBase,
   getCommitSubject,
   getRecentCommits,
@@ -373,7 +373,7 @@ export function registerCommitCommand(program: Command): void {
         }
       }
 
-      if (!hasWorkingChanges) {
+      if (!hasWorkingChanges && !options.amend) {
         if (options.pr) {
           await openPullRequest({
             title: options.message,
@@ -485,6 +485,8 @@ export function registerCommitCommand(program: Command): void {
         });
         p.log.warn("No files staged for commit."); return;
       }
+
+      let snapshot = await captureStagedSnapshot(process.cwd(), { allowEmpty: options.amend });
 
       p.log.step(
         `Staged ${pc.green(String(status.staged.length))} file(s) on branch ${pc.cyan(status.branch)}`,
@@ -612,6 +614,7 @@ export function registerCommitCommand(program: Command): void {
           const newBranch = featureNameInput.trim();
           await switchBranch(newBranch, true);
           status = await getStatus();
+          snapshot = await captureStagedSnapshot();
           p.log.success(`Created and switched to feature branch ${pc.bold(pc.cyan(newBranch))}!`);
         }
       }
@@ -631,7 +634,7 @@ export function registerCommitCommand(program: Command): void {
         const fixupSpinner = p.spinner();
         fixupSpinner.start("Creating fixup commit...");
         try {
-          await commit("fixup", "", {
+          await executeSnapshotCommit(snapshot, "fixup", "", {
             noVerify: options.verify === false,
             gpgSign: options.gpgSign,
             signoff: options.signoff,
@@ -667,7 +670,6 @@ export function registerCommitCommand(program: Command): void {
           if (dryRun(`split ${status.staged.length} staged file(s) into multiple commits`)) return;
         }
 
-        const snapshot = await captureStagedSnapshot();
         if (!options.provider) await ensureFirstRunSetup(promptFirstRunProvider);
 
         const splitDiffStat = diffStat;
@@ -931,7 +933,7 @@ export function registerCommitCommand(program: Command): void {
       const commitSpinner = p.spinner();
       commitSpinner.start(options.amend ? "Amending commit..." : "Creating commit...");
         try {
-        await commit(commitSubject, commitBody, {
+        await executeSnapshotCommit(snapshot, commitSubject, commitBody, {
           noVerify: options.verify === false,
           gpgSign: options.gpgSign,
           signoff: options.signoff,

@@ -42,6 +42,8 @@ export interface AIProvider {
   getDiagnostics(): Promise<AIProviderDiagnostics>;
   getLastUsage(): AIUsage | undefined;
   resetLastUsage(): void;
+  /** Bounded metadata review only, including during an explicitly requested dry run. */
+  auditTidy(prompt: string, model?: string): Promise<string>;
   generateCommit(input: CommitPromptInput, model?: string): Promise<CommitMessageResult>;
   generatePr(input: PrPromptInput, model?: string): Promise<PrContentResult>;
   generateBranchName(taskDescription: string, model?: string): Promise<string>;

@@ -155,7 +155,7 @@ export function registerSwitchCommand(program: Command): void {
         for (const wt of secondaryTrees) {
           choices.push({
             value: `worktree:${wt.path}`,
-            label: `🌲 ${wt.branch}`,
+            label: `🌲 ${wt.branch ?? "detached"}`,
             hint: wt.path,
           });
         }

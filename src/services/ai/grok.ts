@@ -41,7 +41,7 @@ export class GrokProvider extends CliAIProvider {
     }
   }
 
-  protected async invoke(prompt: string, model: string, timeoutMs: number): Promise<string> {
+  protected async invoke(prompt: string, model: string, timeoutMs: number, metadataOnly = false): Promise<string> {
     const tmpDir = privateTemporaryDirectory("good-gh-grok-");
     const promptPath = join(tmpDir, "prompt.txt");
 
@@ -60,6 +60,7 @@ export class GrokProvider extends CliAIProvider {
           "--output-format",
           "plain",
           // Disable web/subagents; the vendor CLI remains a trusted executable.
+          ...metadataOnly ? ["--tools", "", "--deny", "*", "--max-turns", "1"] : [],
           "--no-subagents",
           "--disable-web-search",
         ],

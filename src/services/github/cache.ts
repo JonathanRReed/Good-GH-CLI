@@ -25,7 +25,7 @@ export async function cachedGitHub<T>(
       repository = explicit?.nameWithOwner ?? await getCurrentRepositoryNameWithOwner(options.cwd);
       if (!repository) return fetcher();
       const root = await run("git", ["rev-parse", "--show-toplevel"], { cwd: options.cwd, reject: false });
-      if (root.exitCode === 0) checkout = realpathSync(root.stdout.trim());
+      if (root.exitCode === 0) checkout = realpathSync.native(root.stdout.trim());
     }
     namespace = JSON.stringify([2, host.toLowerCase(), auth.login.toLowerCase(), repository?.toLowerCase(),
       checkout, options.scope ?? "repository", process.env.GH_REPO ?? null, explicit?.repoArg ?? null]);

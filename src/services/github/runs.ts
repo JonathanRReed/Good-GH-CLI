@@ -76,7 +76,8 @@ export async function viewWorkflowRun(
     if (!stdout.trim()) return null;
     const parsed = JSON.parse(stdout);
     if (!parsed || typeof parsed !== "object") return null;
-    return { run: parsed, jobs: Array.isArray(parsed.jobs) ? parsed.jobs : [] };
+    const { jobs, ...run } = parsed;
+    return { run, jobs: Array.isArray(jobs) ? jobs : [] };
   } catch (err) {
     throw classifyGitHubError(err, "workflow run view");
   }
@@ -87,7 +88,6 @@ export async function getFailedRunLog(runId: number, cwd = process.cwd()): Promi
   try {
     const { stdout } = await gh(["run", "view", String(runId), "--log-failed"], {
       cwd,
-      reject: false,
       timeoutMs: 60_000,
     });
     return stdout;

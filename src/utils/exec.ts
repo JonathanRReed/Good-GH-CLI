@@ -4,6 +4,8 @@ import { isAbsolute, join } from "node:path";
 export interface RunOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
+  /** Inherit only these keys and basic process essentials; filter overrides too. */
+  envAllowlist?: readonly string[];
   stdio?: "pipe" | "inherit";
   input?: string;
   timeoutMs?: number;
@@ -140,10 +142,18 @@ export function commandExists(command: string): boolean {
  */
 export async function run(command: string, args: string[], options: RunOptions = {}): Promise<RunResult> {
   const inherit = options.stdio === "inherit" && !getFlags().json;
+  const inheritedEnv = { ...process.env, ...options.env };
+  const allowed = new Set([
+    "PATH", "HOME", "TMPDIR", "TMP", "TEMP", "LANG", "LANGUAGE", "LC_ALL", "LC_CTYPE",
+    "SystemRoot", "SYSTEMROOT", "WINDIR", "PATHEXT", "USERPROFILE",
+    ...options.envAllowlist ?? [],
+  ]);
+  const env = options.envAllowlist === undefined ? inheritedEnv
+    : Object.fromEntries(Object.entries(inheritedEnv).filter(([key]) => allowed.has(key)));
   const proc = Bun.spawn([command, ...args], {
     cwd: options.cwd,
-    env: options.env ? { ...process.env, ...options.env } : process.env,
-    stdin: inherit ? "inherit" : options.input !== undefined ? "pipe" : "ignore",
+    env,
+    stdin: options.input !== undefined ? "pipe" : inherit ? "inherit" : "ignore",
     stdout: inherit ? "inherit" : "pipe",
     stderr: inherit ? "inherit" : "pipe",
     // Piped children get their own process group so a timeout or Ctrl-C can

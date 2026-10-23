@@ -1,5 +1,5 @@
 import { agentEnvelope } from "../services/agent-contract.ts";
-import { getCommandPath, getEmittedJson, getFinishedOperation } from "../services/runtime.ts";
+import { getCommandPath, getCompletedEffects, getEmittedJson, getFinishedOperation, getUncertainEffects } from "../services/runtime.ts";
 import pc from "picocolors";
 import { getFlags, getCommandIssue, getPreview, hasJsonOutput, recordCommandIssue, stageJson, takePendingJson } from "../services/runtime.ts";
 
@@ -31,7 +31,7 @@ export function finalizeJsonOutput(): void {
   if (getFlags().agent) {
     const result = getEmittedJson()?.value;
     takePendingJson();
-    process.stdout.write(`${JSON.stringify(agentEnvelope({ command: getCommandPath(), result, issue: issue ? { ...issue, message: stripAnsi(issue.message) } : undefined, operation: getFinishedOperation(), failed: Boolean(process.exitCode), dryRun: getFlags().dryRun, preview: getPreview() }), null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify(agentEnvelope({ command: getCommandPath(), result, issue: issue ? { ...issue, message: stripAnsi(issue.message) } : undefined, operation: getFinishedOperation(), failed: Boolean(process.exitCode), dryRun: getFlags().dryRun, preview: getPreview(), completedEffects: getCompletedEffects(), uncertainEffects: getUncertainEffects() }))}\n`);
     return;
   }
   if (!hasJsonOutput() && issue) {
@@ -42,7 +42,7 @@ export function finalizeJsonOutput(): void {
     emitJson({ status: "planned", steps: getPreview() });
   }
   const pending = takePendingJson();
-  if (pending) process.stdout.write(`${JSON.stringify(pending.value, null, 2)}\n`);
+  if (pending) process.stdout.write(`${JSON.stringify(pending.value, null, ["pr threads", "projects", "go", "sync"].includes(getCommandPath().join(" ")) || getCommandPath()[0] === "projects" ? undefined : 2)}\n`);
 }
 
 function chromeSuppressed(): boolean {
@@ -130,6 +130,11 @@ export function terminalText(text: string): string {
     .replace(/(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]|(?:\x1b\[|\x9b)[0-?]*[ -/]*$/g, (sequence) => /^\x1b\[[0-9;]*m$/.test(sequence) ? sequence : "")
     // eslint-disable-next-line no-control-regex
     .replace(/\x1b(?!\[[0-9;]*m)[ -/]*[0-~]?|[\x00-\x08\x0b-\x1a\x1c-\x1f\x7f-\x9f]/g, "");
+}
+
+/** Repository and provider text has no authority to style or control the terminal. */
+export function safeHumanText(text: string): string {
+  return stripAnsi(terminalText(text)).replace(/\p{Cf}|\r/gu, "");
 }
 
 export function stripAnsi(str: string): string {

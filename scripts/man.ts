@@ -99,6 +99,9 @@ async function generate(): Promise<string> {
   L.push(`\\fBGGH_*\\fR`);
   L.push(`Per-key overrides (\\fBGGH_AI_PROVIDER\\fR, \\fBGGH_CODEX_MODEL\\fR, \\fBGGH_AI_TIMEOUT_MS\\fR, ...). Flags beat environment, environment beats config files.`);
   L.push(`.TP`);
+  L.push(`\\fBGGH_CONFIG_DIR\\fR`);
+  L.push(`Override the ggh configuration directory without changing gh authentication. No good-gh suffix is added.`);
+  L.push(`.TP`);
   L.push(`\\fBXDG_CONFIG_HOME\\fR, \\fBXDG_CACHE_HOME\\fR`);
   L.push(`Respected for config, plugins, aliases, and cache.`);
   L.push(`.TP`);

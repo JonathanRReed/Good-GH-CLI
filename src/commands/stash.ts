@@ -1,3 +1,4 @@
+import { namedStashName } from "../services/git/stash.ts";
 import { Command } from "commander";
 import { getFlags } from "../services/runtime.ts";
 import {
@@ -11,7 +12,7 @@ import {
 } from "../services/git.ts";
 import { dryRun } from "../utils/flags.ts";
 import {
-  jsonOut, emitJson,
+  jsonOut, emitJson, confirmOrAbort,
   fail,
   header,
   p,
@@ -26,9 +27,10 @@ export function registerStashCommand(program: Command): void {
   const stash = program
     .command("stash [action]")
     .alias("sh")
-    .description("Push, browse, pop, and drop stashes")
+    .description("Save, list, restore, and drop stashes")
     .option("-m, --message <message>", "Stash message")
-    .action(async (action?: string, options?: { message?: string }) => {
+    .option("--name <name>", "Save a named stash without AI")
+    .action(async (action?: string, options?: { message?: string; name?: string }) => {
       header("Git Stash Assistant");
 
       if (!(await requireGitRepo())) return;
@@ -36,14 +38,14 @@ export function registerStashCommand(program: Command): void {
       if (action === "push" || action === "save") {
         const status = await getStatus();
         const files = [...status.staged, ...status.unstaged, ...status.untracked].map((f) => f.path);
-        if (dryRun(`stash ${files.length} file(s)${options?.message ? ` with message "${options.message}"` : ""}`)) return;
+        if (dryRun(`stash ${files.length} file(s)${options?.name ? ` named "${options.name}"` : ""}${options?.message ? ` with message "${options.message}"` : ""}`)) return;
 
         const s = p.spinner();
         s.start("Stashing changes...");
         try {
-          await stashPush(options?.message);
+          await stashPush(options?.name ? `ggh-draft: ${options.name}` : options?.message);
           s.stop(pc.green("Changes stashed successfully!"));
-          if (jsonOut({ action: "push", files: files.length, ...(options?.message ? { message: options.message } : {}) })) return;
+          if (jsonOut({ action: "push", files: files.length, ...(options?.name ? { name: options.name } : {}), ...(options?.message ? { message: options.message } : {}) })) return;
         } catch (err) {
           s.stop(pc.red("Stash failed."));
           fail(String(err));
@@ -280,18 +282,19 @@ export function registerStashCommand(program: Command): void {
     .alias("save")
     .description("Stash current changes")
     .option("-m, --message <message>", "Stash message")
-    .action(async (options?: { message?: string }) => {
+    .option("--name <name>", "Save a named stash without AI")
+    .action(async (options?: { message?: string; name?: string }) => {
       header("Push Stash");
       if (!(await requireGitRepo())) return;
       const status = await getStatus();
       const files = [...status.staged, ...status.unstaged, ...status.untracked].map((f) => f.path);
-      if (dryRun(`stash ${files.length} file(s)${options?.message ? ` with message "${options.message}"` : ""}`)) return;
+      if (dryRun(`stash ${files.length} file(s)${options?.name ? ` named "${options.name}"` : ""}${options?.message ? ` with message "${options.message}"` : ""}`)) return;
       const s = p.spinner();
       s.start("Stashing changes...");
       try {
-        await stashPush(options?.message);
+        await stashPush(options?.name ? `ggh-draft: ${options.name}` : options?.message);
         s.stop(pc.green("Changes stashed successfully!"));
-        if (jsonOut({ action: "push", files: files.length, ...(options?.message ? { message: options.message } : {}) })) return;
+        if (jsonOut({ action: "push", files: files.length, ...(options?.name ? { name: options.name } : {}), ...(options?.message ? { message: options.message } : {}) })) return;
       } catch (err) {
         s.stop(pc.red("Stash failed."));
         fail(String(err));
@@ -301,10 +304,15 @@ export function registerStashCommand(program: Command): void {
   stash
     .command("list")
     .description("List stashes")
-    .action(async () => {
+    .option("--named", "Only named stashes, including former drafts")
+    .action(async (options: { named?: boolean }) => {
       header("Stash List");
       if (!(await requireGitRepo())) return;
-      const list = await stashList();
+      const all = await stashList();
+      const list = options.named ? all.flatMap(entry => {
+        const name = namedStashName(entry.message);
+        return name === undefined ? [] : [{ ...entry, name }];
+      }) : all;
       if (jsonOut(list)) return;
       if (list.length === 0) {
         p.log.info(pc.dim("No stashes found."));
@@ -312,6 +320,31 @@ export function registerStashCommand(program: Command): void {
       }
       for (const s of list) {
         p.log.message(`${pc.bold(pc.cyan(s.ref))} ${pc.dim(`(${s.date})`)}: ${s.message}`);
+      }
+    });
+
+  stash
+    .command("restore <name>")
+    .description("Restore and pop a named stash, including a former draft")
+    .option("-y, --yes", "Restore without confirmation")
+    .action(async (name: string, options: { yes?: boolean }) => {
+      if (!(await requireGitRepo())) return;
+      const matches = (await stashList()).filter(entry => namedStashName(entry.message) === name);
+      if (matches.length !== 1) {
+        fail(matches.length ? `Multiple stashes named "${name}". Use ggh stash pop <ref> from ggh stash list --named.`
+          : `No stash named "${name}". Use ggh stash list --named.`, { code: "invalid_arguments" });
+        return;
+      }
+      const entry = matches[0];
+      if (!entry) return;
+      if (dryRun(`restore named stash "${name}" (${entry.ref})`)) return;
+      if (!(await confirmOrAbort(`Restore stash "${name}"?`, { assumeYes: options.yes }))) return;
+      try {
+        await stashPop(entry.ref);
+        if (jsonOut({ action: "restore", name, ref: entry.ref })) return;
+        p.log.success(`Restored "${name}".`);
+      } catch (error) {
+        fail(`Failed to restore stash: ${String(error)}`);
       }
     });
 }

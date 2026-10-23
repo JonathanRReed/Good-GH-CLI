@@ -2,7 +2,7 @@
 
 Standalone binaries need Git 2.31 or newer and do not need Bun or Node. GitHub operations also need GitHub CLI. AI is optional and disabled by default. An explicit commit message needs no provider CLI.
 
-Choose a published version on [Releases](https://github.com/JonathanRReed/Good-GH-CLI/releases). These examples use 0.5.0-beta.2, the current source version. Source availability does not prove that its assets have been published. If a download returns 404, inspect the versioned release before continuing. Never execute a file whose checksum check failed. Run each command only after the previous command succeeds.
+Choose a published version on [Releases](https://github.com/JonathanRReed/Good-GH-CLI/releases). These examples remain pinned to 0.5.0-beta.2. The current source candidate is 0.6.0-beta.1; this preparation does not publish its downloads. Source availability does not prove that its assets have been published. If a download returns 404, inspect the versioned release before continuing. Never execute a file whose checksum check failed. Run each command only after the previous command succeeds.
 
 ## macOS
 

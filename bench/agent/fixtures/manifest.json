@@ -1,0 +1,390 @@
+{
+  "source": "agent-pain research, 2026-10-22",
+  "baseCommit": "36750d7dbf0bb6c3b1fc67897b870dad908e3bee",
+  "fixtures": [
+    {
+      "label": "zod-pr-json",
+      "file": "zod-pr-json.stdout",
+      "sha256": "f5a66b4c10bcd247611ee713893e06a93918b4355d02b8dcd13aa0ec193ddc71",
+      "bytes": 2836,
+      "capture": {
+        "label": "zod-pr-json",
+        "command": [
+          "gh",
+          "pr",
+          "view",
+          "5914",
+          "-R",
+          "colinhacks/zod",
+          "--json",
+          "number,url,title,state,isDraft,headRefName,headRefOid,baseRefName,mergeable,reviewDecision,statusCheckRollup"
+        ],
+        "cwd": "/tmp/ggh-research/agent-pain/zod",
+        "exit": 0,
+        "seconds": 0.6317,
+        "stdoutBytes": 2836,
+        "stderrBytes": 0,
+        "approximateTokens": 709
+      }
+    },
+    {
+      "label": "zod-run-json",
+      "file": "zod-run-json.stdout",
+      "sha256": "a71482013d241f0ada317e768782a068890102082003275c0e17b66c2d9a8f1d",
+      "bytes": 12084,
+      "capture": {
+        "label": "zod-run-json",
+        "command": [
+          "gh",
+          "run",
+          "view",
+          "32274929243",
+          "-R",
+          "colinhacks/zod",
+          "--json",
+          "databaseId,headSha,url,status,conclusion,jobs"
+        ],
+        "cwd": "/tmp/ggh-research/agent-pain/zod",
+        "exit": 0,
+        "seconds": 1.474,
+        "stdoutBytes": 12084,
+        "stderrBytes": 0,
+        "approximateTokens": 3021
+      }
+    },
+    {
+      "label": "zod-run-exact",
+      "file": "zod-run-exact.stdout",
+      "sha256": "6d1d7b2e808fc94e0ac09009b32e2834c2cc68ccde82328497f35d1b031538f9",
+      "bytes": 12216,
+      "capture": {
+        "label": "zod-run-exact",
+        "command": [
+          "gh",
+          "run",
+          "view",
+          "32274929243",
+          "-R",
+          "colinhacks/zod",
+          "--json",
+          "databaseId,displayTitle,workflowName,status,conclusion,headBranch,event,createdAt,url,jobs"
+        ],
+        "cwd": "/tmp/ggh-research/agent-pain/zod",
+        "exit": 0,
+        "seconds": 2.9443,
+        "stdoutBytes": 12216,
+        "stderrBytes": 0,
+        "approximateTokens": 3054
+      }
+    },
+    {
+      "label": "zod-run-failed-log",
+      "file": "zod-run-failed-log.stdout.gz",
+      "sha256": "75c51a7d8d8843ae8c2cc2cb7e42b39d7df51809dffc5f8077a561d415115b4c",
+      "bytes": 218243,
+      "capture": {
+        "label": "zod-run-failed-log",
+        "command": [
+          "gh",
+          "run",
+          "view",
+          "32274929243",
+          "-R",
+          "colinhacks/zod",
+          "--log-failed"
+        ],
+        "cwd": "/tmp/ggh-research/agent-pain/zod",
+        "exit": 0,
+        "seconds": 3.6686,
+        "stdoutBytes": 218243,
+        "stderrBytes": 0,
+        "approximateTokens": 54560.75
+      }
+    },
+    {
+      "label": "zod-state-porcelain",
+      "file": "zod-state-porcelain.stdout",
+      "sha256": "323e1094823f9918d29f62823a0af7f6513dc86f5b2ad07bd19dc0b068563968",
+      "bytes": 121,
+      "capture": {
+        "label": "zod-state-porcelain",
+        "command": [
+          "git",
+          "status",
+          "--porcelain=v2",
+          "--branch"
+        ],
+        "cwd": "/tmp/ggh-research/agent-pain/zod",
+        "exit": 0,
+        "seconds": 0.0325,
+        "stdoutBytes": 121,
+        "stderrBytes": 0,
+        "approximateTokens": 30.25
+      }
+    },
+    {
+      "label": "zod-state-status",
+      "file": "zod-state-status.stdout",
+      "sha256": "09be446dbc2620ee4a90fc59fa9005e726ac3b4c0e8f2939a9aaccc11575dad4",
+      "bytes": 100,
+      "capture": {
+        "label": "zod-state-status",
+        "command": [
+          "git",
+          "status"
+        ],
+        "cwd": "/tmp/ggh-research/agent-pain/zod",
+        "exit": 0,
+        "seconds": 0.0479,
+        "stdoutBytes": 100,
+        "stderrBytes": 0,
+        "approximateTokens": 25
+      }
+    },
+    {
+      "label": "zod-state-branch",
+      "file": "zod-state-branch.stdout",
+      "sha256": "4d402ee357279a08e2473dcfc14ec9d9455e6058f9d96df09a864eaa4dadb1f8",
+      "bytes": 122,
+      "capture": {
+        "label": "zod-state-branch",
+        "command": [
+          "git",
+          "branch",
+          "-vv"
+        ],
+        "cwd": "/tmp/ggh-research/agent-pain/zod",
+        "exit": 0,
+        "seconds": 0.0226,
+        "stdoutBytes": 122,
+        "stderrBytes": 0,
+        "approximateTokens": 30.5
+      }
+    },
+    {
+      "label": "zod-state-worktrees",
+      "file": "zod-state-worktrees.stdout",
+      "sha256": "a47df89c04abc4ec6ab1946c0d44b58ef4316f8d1dd6673635dfa4e723a5c428",
+      "bytes": 56,
+      "capture": {
+        "label": "zod-state-worktrees",
+        "command": [
+          "git",
+          "worktree",
+          "list"
+        ],
+        "cwd": "/tmp/ggh-research/agent-pain/zod",
+        "exit": 0,
+        "seconds": 0.0212,
+        "stdoutBytes": 56,
+        "stderrBytes": 0,
+        "approximateTokens": 14
+      }
+    },
+    {
+      "label": "vscode-pr-json",
+      "file": "vscode-pr-json.stdout",
+      "sha256": "b501f44b2f384780cefc3bce3ab364558b380a83cc7ab560232b99435320302c",
+      "bytes": 13322,
+      "capture": {
+        "label": "vscode-pr-json",
+        "command": [
+          "gh",
+          "pr",
+          "view",
+          "343557",
+          "-R",
+          "microsoft/vscode",
+          "--json",
+          "number,url,title,state,isDraft,headRefName,headRefOid,baseRefName,mergeable,reviewDecision,statusCheckRollup"
+        ],
+        "cwd": "/tmp/ggh-research/agent-pain/vscode",
+        "exit": 0,
+        "seconds": 1.0382,
+        "stdoutBytes": 13322,
+        "stderrBytes": 0,
+        "approximateTokens": 3330.5
+      }
+    },
+    {
+      "label": "vscode-run-json",
+      "file": "vscode-run-json.stdout",
+      "sha256": "5ebc1141856de993ada721118338bc1aba253946b8faebb8faefd832be1c5de4",
+      "bytes": 8547,
+      "capture": {
+        "label": "vscode-run-json",
+        "command": [
+          "gh",
+          "run",
+          "view",
+          "39818915094",
+          "-R",
+          "microsoft/vscode",
+          "--json",
+          "databaseId,headSha,url,status,conclusion,jobs"
+        ],
+        "cwd": "/tmp/ggh-research/agent-pain/vscode",
+        "exit": 0,
+        "seconds": 1.3692,
+        "stdoutBytes": 8547,
+        "stderrBytes": 0,
+        "approximateTokens": 2136.75
+      }
+    },
+    {
+      "label": "vscode-run-exact",
+      "file": "vscode-run-exact.stdout",
+      "sha256": "a6c396cb969fefc6316bf66c8301823294ff4ae682db274eb042fbf9b20a460f",
+      "bytes": 8736,
+      "capture": {
+        "label": "vscode-run-exact",
+        "command": [
+          "gh",
+          "run",
+          "view",
+          "39818915094",
+          "-R",
+          "microsoft/vscode",
+          "--json",
+          "databaseId,displayTitle,workflowName,status,conclusion,headBranch,event,createdAt,url,jobs"
+        ],
+        "cwd": "/tmp/ggh-research/agent-pain/vscode",
+        "exit": 0,
+        "seconds": 3.7537,
+        "stdoutBytes": 8736,
+        "stderrBytes": 0,
+        "approximateTokens": 2184
+      }
+    },
+    {
+      "label": "vscode-run-failed-log",
+      "file": "vscode-run-failed-log.stdout",
+      "sha256": "1277781619fb89c1ebc5605f61cacc9479634890c337c63d4b931c9bcdffae22",
+      "bytes": 2797,
+      "capture": {
+        "label": "vscode-run-failed-log",
+        "command": [
+          "gh",
+          "run",
+          "view",
+          "39818915094",
+          "-R",
+          "microsoft/vscode",
+          "--log-failed"
+        ],
+        "cwd": "/tmp/ggh-research/agent-pain/vscode",
+        "exit": 0,
+        "seconds": 2.4525,
+        "stdoutBytes": 2797,
+        "stderrBytes": 0,
+        "approximateTokens": 699.25
+      }
+    },
+    {
+      "label": "vscode-state-porcelain",
+      "file": "vscode-state-porcelain.stdout",
+      "sha256": "a2c3a8f631184aca66b3d2e7d39d1016fb789eba3eb7cf0bdc91617236c85174",
+      "bytes": 121,
+      "capture": {
+        "label": "vscode-state-porcelain",
+        "command": [
+          "git",
+          "status",
+          "--porcelain=v2",
+          "--branch"
+        ],
+        "cwd": "/tmp/ggh-research/agent-pain/vscode",
+        "exit": 0,
+        "seconds": 0.4323,
+        "stdoutBytes": 121,
+        "stderrBytes": 0,
+        "approximateTokens": 30.25
+      }
+    },
+    {
+      "label": "vscode-state-status",
+      "file": "vscode-state-status.stdout",
+      "sha256": "09be446dbc2620ee4a90fc59fa9005e726ac3b4c0e8f2939a9aaccc11575dad4",
+      "bytes": 100,
+      "capture": {
+        "label": "vscode-state-status",
+        "command": [
+          "git",
+          "status"
+        ],
+        "cwd": "/tmp/ggh-research/agent-pain/vscode",
+        "exit": 0,
+        "seconds": 0.4415,
+        "stdoutBytes": 100,
+        "stderrBytes": 0,
+        "approximateTokens": 25
+      }
+    },
+    {
+      "label": "vscode-state-branch",
+      "file": "vscode-state-branch.stdout",
+      "sha256": "aa91c71958a3a80a134519bc83ab2cb2444c46773f4e4c3e1a263364acc5cece",
+      "bytes": 83,
+      "capture": {
+        "label": "vscode-state-branch",
+        "command": [
+          "git",
+          "branch",
+          "-vv"
+        ],
+        "cwd": "/tmp/ggh-research/agent-pain/vscode",
+        "exit": 0,
+        "seconds": 0.0227,
+        "stdoutBytes": 83,
+        "stderrBytes": 0,
+        "approximateTokens": 20.75
+      }
+    },
+    {
+      "label": "vscode-state-worktrees",
+      "file": "vscode-state-worktrees.stdout",
+      "sha256": "58145fde1581faa93ff09b3bda9c70ff4c3ceb651d2cad00c4b822fb20b7c310",
+      "bytes": 60,
+      "capture": {
+        "label": "vscode-state-worktrees",
+        "command": [
+          "git",
+          "worktree",
+          "list"
+        ],
+        "cwd": "/tmp/ggh-research/agent-pain/vscode",
+        "exit": 0,
+        "seconds": 0.0203,
+        "stdoutBytes": 60,
+        "stderrBytes": 0,
+        "approximateTokens": 15
+      }
+    },
+    {
+      "label": "vscode-full-failed-job",
+      "file": "vscode-full-failed-job.stdout.gz",
+      "sha256": "d7abc99f2cf609e45533a6e8cb0f49fbe12bb41e9ddf2430e9b30ce240ae5492",
+      "bytes": 536918,
+      "capture": {
+        "label": "vscode-full-failed-job",
+        "command": [
+          "gh",
+          "run",
+          "view",
+          "39818915094",
+          "-R",
+          "microsoft/vscode",
+          "--job",
+          "119964605506",
+          "--log"
+        ],
+        "cwd": "/tmp/ggh-research/agent-pain/vscode",
+        "exit": 0,
+        "seconds": 1.2458,
+        "stdoutBytes": 536918,
+        "stderrBytes": 0,
+        "approximateTokens": 134229.5
+      }
+    }
+  ]
+}

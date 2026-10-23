@@ -260,20 +260,20 @@ export async function ghApiPassthrough(endpoint: string[], cwd = process.cwd()):
 
 const authCache = new Map<string, { at: number; result: Promise<GitHubAccount> }>();
 
-export async function getGitHubAuthStatus(host = getActiveHost(), refresh = false): Promise<GitHubAccount> {
+export async function getGitHubAuthStatus(host = getActiveHost(), refresh = false, timeoutMs?: number): Promise<GitHubAccount> {
   const key = host || "github.com";
   const hit = authCache.get(key);
   if (!refresh && hit && Date.now() - hit.at < 5_000) return hit.result;
-  const result = fetchAuthStatus(key);
+  const result = fetchAuthStatus(key, timeoutMs);
   authCache.set(key, { at: Date.now(), result });
   return result;
 }
 
-async function fetchAuthStatus(host: string): Promise<GitHubAccount> {
+async function fetchAuthStatus(host: string, timeoutMs?: number): Promise<GitHubAccount> {
   const args = ["auth", "status", "--json", "hosts"];
   args.push("--hostname", host || "github.com");
   try {
-    const { stdout, stderr, exitCode } = await ghGlobal(args, { reject: false });
+    const { stdout, stderr, exitCode } = await ghGlobal(args, { reject: false, timeoutMs });
     if (stdout && stdout.trim()) {
       const parsed = JSON.parse(stdout);
       const hostsObj = parsed?.hosts;

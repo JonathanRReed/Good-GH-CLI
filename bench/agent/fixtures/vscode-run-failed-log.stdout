@@ -1,0 +1,23 @@
+Screenshots	Fail if fixtures had errors	﻿2026-10-22T17:09:24.6915325Z ##[group]Run echo "::error::One or more component fixtures failed to render. See the 'Check fixture errors' step for details."
+Screenshots	Fail if fixtures had errors	2026-10-22T17:09:24.6915997Z ^[[36;1mecho "::error::One or more component fixtures failed to render. See the 'Check fixture errors' step for details."^[[0m
+Screenshots	Fail if fixtures had errors	2026-10-22T17:09:24.6916409Z ^[[36;1mexit 1^[[0m
+Screenshots	Fail if fixtures had errors	2026-10-22T17:09:24.6970290Z shell: /usr/bin/bash -e {0}
+Screenshots	Fail if fixtures had errors	2026-10-22T17:09:24.6970525Z env:
+Screenshots	Fail if fixtures had errors	2026-10-22T17:09:24.6970978Z   NODE_MODULES_CACHE_KEY: node_modules-component-fixtures-62cbd6d5ce730be2d8c30e4a5612961f78bd52844801f4207a96109c20c098c0
+Screenshots	Fail if fixtures had errors	2026-10-22T17:09:24.6971479Z ##[endgroup]
+Screenshots	Fail if fixtures had errors	2026-10-22T17:09:24.7038441Z ##[error]One or more component fixtures failed to render. See the 'Check fixture errors' step for details.
+Screenshots	Fail if fixtures had errors	2026-10-22T17:09:24.7041476Z ##[error]Process completed with exit code 1.
+Screenshots & Tests	Verify fixture test results	﻿2026-10-22T17:09:41.7645320Z ##[group]Run if [[ 'success' != 'success' ||
+Screenshots & Tests	Verify fixture test results	2026-10-22T17:09:41.7646373Z ^[[36;1mif [[ 'success' != 'success' ||^[[0m
+Screenshots & Tests	Verify fixture test results	2026-10-22T17:09:41.7647255Z ^[[36;1m      'failure' != 'success' ]]; then^[[0m
+Screenshots & Tests	Verify fixture test results	2026-10-22T17:09:41.7648187Z ^[[36;1m  echo "::error::Component fixture checks failed."^[[0m
+Screenshots & Tests	Verify fixture test results	2026-10-22T17:09:41.7649128Z ^[[36;1m  echo "Playwright: success"^[[0m
+Screenshots & Tests	Verify fixture test results	2026-10-22T17:09:41.7649976Z ^[[36;1m  echo "Screenshots: failure"^[[0m
+Screenshots & Tests	Verify fixture test results	2026-10-22T17:09:41.7650724Z ^[[36;1m  exit 1^[[0m
+Screenshots & Tests	Verify fixture test results	2026-10-22T17:09:41.7651766Z ^[[36;1mfi^[[0m
+Screenshots & Tests	Verify fixture test results	2026-10-22T17:09:41.8662225Z shell: /usr/bin/bash -e {0}
+Screenshots & Tests	Verify fixture test results	2026-10-22T17:09:41.8663327Z ##[endgroup]
+Screenshots & Tests	Verify fixture test results	2026-10-22T17:09:41.8924056Z ##[error]Component fixture checks failed.
+Screenshots & Tests	Verify fixture test results	2026-10-22T17:09:41.8931662Z Playwright: success
+Screenshots & Tests	Verify fixture test results	2026-10-22T17:09:41.8932468Z Screenshots: failure
+Screenshots & Tests	Verify fixture test results	2026-10-22T17:09:41.8941937Z ##[error]Process completed with exit code 1.
