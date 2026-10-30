@@ -15,6 +15,7 @@ export const projectSyncResultSchema = {
       type: "object", required: ["commonDir", "name", "outcome", "fetches", "checkouts", "forkUpstream"],
       properties: {
         commonDir: text, name: text, outcome: { enum: ["updated", "up-to-date", "skipped", "failed", "uncertain"] }, reason: text, message: text,
+        refSnapshot: { type: "object", required: ["fetchedAt"], properties: { fetchedAt: { type: ["string", "null"] } } },
         fetches: { type: "array", items: { type: "object", required: ["remote", "outcome"], properties: { remote: text }, oneOf: [
           { properties: { outcome: { const: "updated" } } },
           { required: ["message"], properties: { outcome: { enum: ["failed", "uncertain"] }, message: text } },

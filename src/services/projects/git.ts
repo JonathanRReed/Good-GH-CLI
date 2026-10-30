@@ -22,10 +22,10 @@ export async function safeTrackingFetch(commonDir: string, remote: string, deadl
   await run("git", ["-c", "core.fsmonitor=false", "-c", `core.hooksPath=${process.platform === "win32" ? "NUL" : "/dev/null"}`, "-c", "submodule.recurse=false", "fetch", "--prune", "--atomic", "--no-tags", "--no-prune-tags", "--refmap=", "--no-recurse-submodules", "--no-auto-maintenance", "--", remote, `+refs/heads/*:refs/remotes/${remote}/*`], { ...projectNetworkOptions, cwd: commonDir, timeoutMs });
 }
 
-export async function projectGit(cwd: string, args: string[], deadline = Date.now() + 3000): Promise<RunResult> {
+export async function projectGit(cwd: string, args: string[], deadline = Date.now() + 3000, input?: string): Promise<RunResult> {
   const remaining = deadline - Date.now();
   if (remaining <= 0) throw new Error("Project deadline exceeded");
-  return run("git", ["--no-replace-objects", "-c", "core.fsmonitor=false", ...args], { ...inventoryGitOptions, cwd, timeoutMs: remaining });
+  return run("git", ["--no-replace-objects", "-c", "core.fsmonitor=false", ...args], { ...inventoryGitOptions, cwd, timeoutMs: remaining, input });
 }
 
 export function gitLine(text: string): string { return text.replace(/\r?\n$/, ""); }

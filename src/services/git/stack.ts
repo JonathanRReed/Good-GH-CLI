@@ -117,6 +117,15 @@ function parseCheckpoint(value: unknown): StackRecoveryCheckpoint {
 
 export async function readStackRecovery(cwd = process.cwd()): Promise<StackRecoveryCheckpoint | null> {
   const directory = await recoveryDirectory(cwd);
+  return readStackRecoveryFromCommonDir(join(directory, ".."));
+}
+
+/** Inventory reads existing state without creating recovery storage. */
+export async function readStackRecoveryFromCommonDir(commonDir: string): Promise<StackRecoveryCheckpoint | null> {
+  const directory = join(commonDir, "ggh-stack-recovery");
+  const storage = await lstat(directory).catch((error: NodeJS.ErrnoException) => error.code === "ENOENT" ? null : Promise.reject(error));
+  if (!storage) return null;
+  if (!storage.isDirectory() || storage.isSymbolicLink() || (process.platform !== "win32" && (storage.mode & 0o077) !== 0) || (typeof process.getuid === "function" && storage.uid !== process.getuid())) throw new Error("Stack recovery storage has unsafe ownership or type.");
   const path = checkpointPath(directory);
   const info = await lstat(path).catch((error: NodeJS.ErrnoException) => error.code === "ENOENT" ? null : Promise.reject(error));
   if (!info) return null;
