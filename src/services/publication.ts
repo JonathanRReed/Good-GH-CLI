@@ -21,7 +21,8 @@ import {
   PartialGitHubMutationError,
   PartialAttachmentOperationError,
 } from "./github.ts";
-import { execGitWithRetry } from "./git/exec.ts";
+import { execGitPush, execGitWithRetry } from "./git/exec.ts";
+import { PushProtectionError, type PushProtectionDetails } from "./git/push-protection.ts";
 import { getRepoRoot } from "./git/branch.ts";
 import { detectPullRequestBase } from "./git/sync.ts";
 
@@ -131,6 +132,9 @@ export interface PublicationResult {
   url?: string;
   error?: string;
   attachments?: { uploaded: Array<{ file: string; url: string }>; remainingFiles: string[]; phase: "storage_upload" | "github_mutation" };
+  /** Remaining steps that definitively did not happen. */
+  failed?: PublicationStep[];
+  pushProtection?: PushProtectionDetails;
 }
 
 interface RemoteInfo {
@@ -866,7 +870,7 @@ async function pushHeadFastForward(
       `Remote branch "${branch}" has commits that are not in the local branch.`,
     );
   }
-  await execGitWithRetry(
+  await execGitPush(
     ["push", "--", plan.remote, `${headTip}:refs/heads/${branch}`],
     { cwd },
   );
@@ -940,6 +944,7 @@ async function executePublicationSteps(
   if (plan.kind === "pr" && prContent?.attachments?.length && !executionSteps.includes("upload_attachments")) executionSteps.push("upload_attachments");
   const remaining = [...executionSteps];
   let url: string | undefined;
+  let blocked: PublicationStep | undefined;
   const active = getActiveOperation();
   const intent = context.intent ?? publicationIntent(plan, { attachments: prContent?.attachments, draft: prContent?.draft, web: prContent?.web });
   const priorCompleted = context.priorCompleted ?? [];
@@ -947,7 +952,7 @@ async function executePublicationSteps(
     if (!active) return;
     await updateOperation(active.id, {
       target: `${plan.host}/${plan.target}`,
-      steps: [...new Set([...priorCompleted, ...executionSteps, ...remaining])].map(name => ({ name, state: priorCompleted.includes(name) || completed.some(step => step === name) ? "completed" : "pending" })),
+      steps: [...new Set([...priorCompleted, ...executionSteps, ...remaining])].map(name => ({ name, state: priorCompleted.includes(name) || completed.some(step => step === name) ? "completed" : name === blocked ? "failed" : "pending" })),
       resume: intent,
       ...(url ? { resources: [url] } : {}),
     }, active.cwd);
@@ -972,6 +977,14 @@ async function executePublicationSteps(
 
     }
   };
+  // GitHub rejected this push outright, so the journal records it as failed, not uncertain.
+  const pushStep = async (step: PublicationStep, action: () => Promise<unknown>): Promise<void> => {
+    try { await action(); }
+    catch (error) {
+      if (error instanceof PushProtectionError) blocked = step;
+      throw error;
+    }
+  };
   const fail = (error: unknown): PublicationResult => ({
     status: completed.length || error instanceof PartialAttachmentOperationError ? "partially_completed" : "failed",
     target: plan.target,
@@ -980,6 +993,7 @@ async function executePublicationSteps(
     ...(url ? { url } : {}),
     error: error instanceof Error ? error.message : String(error),
     ...(error instanceof PartialAttachmentOperationError ? { attachments: { uploaded: error.uploadedAttachments.map(item => ({ file: item.file.path, url: item.url })), remainingFiles: error.remainingFiles.map(file => file.path), phase: error.phase } } : {}),
+    ...(error instanceof PushProtectionError ? { pushProtection: error.details, ...(blocked ? { failed: [blocked] } : {}) } : {}),
   });
   if (
     plan.kind === "pr" &&
@@ -1051,7 +1065,7 @@ async function executePublicationSteps(
             ),
           );
         if (!baseRef)
-          await execGitWithRetry(
+          await pushStep("push_base", () => execGitPush(
             [
               "push",
               "--",
@@ -1059,14 +1073,14 @@ async function executePublicationSteps(
               `${plan.baseTip}:refs/heads/${plan.base}`,
             ],
             { cwd: plan.root },
-          );
+          ));
         await complete("push_base");
 
         await configureUpstream("set_base_upstream", plan.base, plan.baseTip, plan.root);
       }
       if (remaining.includes("set_base_upstream")) await configureUpstream("set_base_upstream", plan.base, plan.baseTip, plan.root);
       if (remaining.includes("push_head")) {
-        await pushHeadFastForward(plan, plan.head, plan.headTip, plan.root);
+        await pushStep("push_head", () => pushHeadFastForward(plan, plan.head, plan.headTip, plan.root));
         await complete("push_head");
 
         await configureUpstream("set_head_upstream", plan.head, plan.headTip, plan.root);
@@ -1196,7 +1210,8 @@ async function executePublicationSteps(
       plan.head &&
       plan.headTip
     ) {
-      await pushHeadFastForward(plan, plan.head, plan.headTip, plan.root);
+      const { head, headTip, root } = plan;
+      await pushStep("push_head", () => pushHeadFastForward(plan, head, headTip, root));
       await complete("push_head");
 
       await configureUpstream("set_head_upstream", plan.head, plan.headTip, plan.root);
@@ -1210,6 +1225,7 @@ async function executePublicationSteps(
       ...(url ? { url } : {}),
     };
   } catch (error) {
+    if (blocked) await persistProgress().catch(() => undefined);
     return fail(error);
   }
 }

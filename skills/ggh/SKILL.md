@@ -51,6 +51,7 @@ contract, which is large.
 6. Never pass `--yes` for destructive actions without explicit user approval. An error requesting `--yes` does not grant approval. Never execute `tidy` without a human-approved snapshot, even with `--yes`.
 7. After creating each PR, call the host's PR registration tool with the returned URL and head SHA where accepted. In T3 Code, call `link_pull_request` with the full URL for every layer. ggh does not register PRs. If the result lacks the SHA, read it with `gh pr view --json url,headRefOid` before reporting identity.
 8. When asked to monitor in T3, call `watch_pull_request` after registration. Use its events instead of tight CI polling. Do not claim registration or monitoring without a host receipt.
+9. On `push_protection_blocked`, stop. GitHub found a secret in the pushed commits. Do not retry, do not open or follow `error.pushProtection.bypassUrls`, and do not rewrite history unasked. Report each finding (secret type, commit, path, line) to the user; removing the secret and rotating it are their call.
 
 ## Recipes
 

@@ -70,6 +70,15 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   recorded fork point.
 - `projects` reports `projects_index_updated` only when a scan changed the
   index, not when only scan timestamps moved.
+- Classify GitHub push-protection rejections (GH013/GH009, including AI-detected
+  secrets) from `commit --push`, `pr create`, `repo create`, `operation resume`,
+  `stack submit`, and `rename`. Git's remote output still streams live. ggh
+  never retries the push, lists each secret's type, commit, path, and line,
+  explains how to rewrite the unpublished commits and rotate the secret, and
+  shows GitHub's bypass page only as a person's decision. `--agent` reports
+  `push_protection_blocked` with retryability `never`, the findings in
+  `error.pushProtection`, and the push as pending. Operation records mark the
+  push `failed`, not uncertain.
 
 ### Fixed
 

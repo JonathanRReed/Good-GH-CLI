@@ -5,6 +5,7 @@ import { registerProjectsCommand } from "./commands/projects.ts";
 import { registerGoCommand } from "./commands/go.ts";
 import { registerInitCommand } from "./commands/init.ts";
 import { CapabilityError } from "./services/dependency-compatibility.ts";
+import { PushProtectionError } from "./services/git/push-protection.ts";
 import { registerAgentCommand } from "./commands/agent.ts";
 import { finalizeJsonOutput } from "./utils/output.ts";
 import { beginCommandOutput, setCommandPath, recordCommandIssue, rememberCommandResult } from "./services/runtime.ts";
@@ -300,7 +301,7 @@ export async function runCli(argv: string[]): Promise<void> {
       err.message += ` Use ggh git ${args.join(" ")} for Git's native syntax.`;
     }
     if (agentRequested) {
-      recordCommandIssue({ status: "failed", code: err instanceof CapabilityError ? "provider_unavailable" : err instanceof CommanderError ? "invalid_arguments" : "operation_failed", message: err instanceof Error ? err.message : String(err) });
+      recordCommandIssue({ status: "failed", code: err instanceof CapabilityError ? "provider_unavailable" : err instanceof CommanderError ? "invalid_arguments" : err instanceof PushProtectionError ? "push_protection_blocked" : "operation_failed", message: err instanceof Error ? err.message : String(err), ...(err instanceof PushProtectionError ? { pushProtection: err.details } : {}) });
       process.exitCode = 1;
       const { finishCommandOperation } = await import("./services/command-operations.ts");
       await finishCommandOperation();

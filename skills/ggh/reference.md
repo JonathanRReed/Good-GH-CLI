@@ -14,17 +14,27 @@ All fields below come from the installed command tree and result schemas. Requir
 | `status` | `["succeeded","planned","no_op","needs_input","cancelled","failed","partially_completed"]` | yes |  |  |
 | `result` | varies | no |  | Command-specific payload. Detailed result schemas are not yet guaranteed. |
 | `error` | object | no |  |  |
-| `error.code` | `["invalid_arguments","missing_input","confirmation_required","authentication_required","not_found","forbidden","rate_limited","network","precondition_failed","provider_unavailable","cancelled","partial_completion","operation_failed","outcome_uncertain"]` | yes |  | not_found: the named PR, issue, repository or plan does not exist or is hidden. forbidden: the account lacks permission; a person must grant access. rate_limited: GitHub throttled the request. network: GitHub or the proxy was unreachable. precondition_failed: local or remote state blocks the command before any effect, such as nothing staged or a stale base; fix the state the message names, then retry. invalid_arguments also covers running a checkout command outside a Git repository. |
-| `error.message` | string | yes |  | Human-readable cause and next step. Never contains raw GraphQL response bodies. |
-| `error.retryability` | `["after_input","after_delay","after_inspection","never"]` | yes |  | after_input: retry only with changed or added input. after_delay: nothing changed; retry the same command after waiting (retryAfterSeconds when known). after_inspection: inspect effects and state before any retry. never: retrying the same inputs cannot succeed; report to the user. |
-| `error.retryAfterSeconds` | integer | no |  | Present only with rate_limited when GitHub reported a reset time. |
-| `requiredInputs` | array | no |  | Present exactly when status is needs_input, whose code is then missing_input or confirmation_required. Names are flags (--yes, -m) or positional arguments (file). |
+| `error.code` | `["invalid_arguments","missing_input","confirmation_required","authentication_required","provider_unavailable","cancelled","partial_completion","operation_failed","outcome_uncertain","push_protection_blocked"]` | yes |  | push_protection_blocked: GitHub push protection found a secret in the pushed commits and the push did not happen. Stop and report pushProtection to the user. |
+| `error.message` | string | yes |  |  |
+| `error.retryability` | `["after_input","after_inspection","never"]` | yes |  | never: retrying the same inputs cannot succeed. |
+| `error.pushProtection` | object | no |  | Present only with push_protection_blocked. Fields GitHub did not report are omitted. |
+| `error.pushProtection.findings` | array | yes |  |  |
+| `error.pushProtection.findings[]` | object | no |  |  |
+| `error.pushProtection.findings[].secretType` | string | no |  |  |
+| `error.pushProtection.findings[].commit` | string | no |  |  |
+| `error.pushProtection.findings[].path` | string | no |  |  |
+| `error.pushProtection.findings[].line` | integer | no |  |  |
+| `error.pushProtection.bypassUrls` | array | yes |  | GitHub bypass pages for a person to judge. Agents must never open or follow them. |
+| `error.pushProtection.bypassUrls[]` | string | no |  |  |
+| `error.pushProtection.remoteLines` | array | yes |  | Raw remote lines without the remote: prefix, kept when parsing is incomplete. |
+| `error.pushProtection.remoteLines[]` | string | no |  |  |
+| `requiredInputs` | array | no |  |  |
 | `requiredInputs[]` | object | no |  |  |
 | `requiredInputs[].name` | string | yes |  |  |
 | `requiredInputs[].description` | string | yes |  |  |
 | `requiredInputs[].alternatives` | array | no |  |  |
 | `requiredInputs[].alternatives[]` | string | no |  |  |
-| `effects` | object | no |  | Completed effects include explicit local mutations and launches, even when a later step fails. Review uses review_checkout_created/updated, review_objects_fetched, review_refs_updated and review_ledger_marked. Clone uses repository_cloned. Projects use projects_index_updated and projects_roots_updated/projects_exclusions_updated. Go launches use editor_opened/t3_opened. Single-repo sync uses refs_fetched_pruned and branch_deleted:<name>. A failed read never reports uncertain effects; command_effects in uncertain means a mutating command stopped without proof of what changed. Omitted only for read-only status and agent brief when all arrays are empty; defaults to completed: [], pending: [], uncertain: []. |
+| `effects` | object | no |  | Completed effects include explicit local mutations and launches, even when a later step fails. Review uses review_checkout_created/updated, review_objects_fetched, review_refs_updated and review_ledger_marked. Clone uses repository_cloned. Projects use projects_index_updated and projects_roots_updated/projects_exclusions_updated. Go launches use editor_opened/t3_opened. Single-repo sync uses refs_fetched_pruned and branch_deleted:<name>. A push blocked by push protection stays pending, never uncertain. Omitted only for read-only status when all arrays are empty; defaults to completed: [], pending: [], uncertain: []. |
 | `effects.completed` | array | yes |  |  |
 | `effects.completed[]` | string | no |  |  |
 | `effects.pending` | array | yes |  |  |
@@ -108,13 +118,11 @@ Every managed command accepts `--agent`. It wraps this payload in `result` and d
 | `ggh pr review` | `[prNumber]` | --guidance value, --approve, --request-changes, --comment, --local, --fix, --yes, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
 | `ggh pr threads` | `[number]` | --unresolved, --all, --since value, --max-body value, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | [reviewThreads](#reviewthreads) |
 | `ggh review` | `<pr>` | --editor, --pager, --since value, --mark, --agent, --quiet, --no-input, --json, --dry-run | [review](#review) |
-| `ggh inbox` | `[filter]` | --limit value, --agent, --quiet, --no-input, --json | [inbox](#inbox) |
 | `ggh issue` | `[issueNumber]` | --state value, --assignee value, --author value, --label value, --search value, --mine, --limit value, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
 | `ggh issue create` |  | --title value, --body value, --body-file value, --attach value, --label value, --assignee value, --ai, --from-diff, --notes value, --provider value, --agent, --quiet, --no-input, --no-ai, --json, --dry-run, --repo value | Unspecified |
 | `ggh issue close` | `<issueNumber>` | --yes, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
 | `ggh issue reopen` | `<issueNumber>` | --yes, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
 | `ggh issue comment` | `<issueNumber>` | --body value, --body-file value, --attach value, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
-| `ggh issue plan` | `<issueNumber> [file]` | --name value, --show, --approve-plan value, --yes, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
 | `ggh issue develop` | `<issueNumber>` | --base value, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
 | `ggh issue lock` | `<issueNumber>` | --reason value, --yes, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
 | `ggh issue unlock` | `<issueNumber>` | --yes, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
@@ -167,8 +175,7 @@ Every managed command accepts `--agent`. It wraps this payload in `result` and d
 | `ggh operation prune` |  | --older-than value, --yes, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
 | `ggh agent` |  | --agent, --quiet, --no-input | Unspecified |
 | `ggh agent skill` |  | --install value, --force, --yes, --dry-run, --agent, --quiet, --no-input | [agentSkill](#agentskill) |
-| `ggh agent brief` |  | --local, --agent, --quiet, --no-input | [agentBrief](#agentbrief) |
-| `ggh agent schema` | `[command...]` | --agent, --quiet, --no-input | Unspecified |
+| `ggh agent schema` |  | --agent, --quiet, --no-input | Unspecified |
 
 Coverage: Partial field schemas. Optional fields vary by outcome. Other command result payloads are not yet specified.
 
@@ -187,111 +194,11 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.writes[]` | string | no |  |  |
 | `result.unchanged` | `true` | no |  | All bundled files already match; no writes performed. |
 
-## agentBrief
-
-| Field | Type / values | Required in parent | Default | Meaning |
-| --- | --- | --- | --- | --- |
-| `result` | object | no |  |  |
-| `result.schemaVersion` | `1` | yes |  |  |
-| `result.checkout` | object | yes |  | Local and always read. Same porcelain-v2 parse as status --agent, with explicit counts. No network. |
-| `result.checkout.root` | string | yes |  |  |
-| `result.checkout.branch` | string / null | yes |  | Null means detached HEAD. |
-| `result.checkout.head` | string / null | yes |  | Full HEAD object ID; null for an unborn branch. |
-| `result.checkout.upstream` | string / null | yes |  |  |
-| `result.checkout.ahead` | integer / null | yes |  | Null without an upstream; use unpublished then. |
-| `result.checkout.behind` | integer / null | yes |  | Null without an upstream. |
-| `result.checkout.unpublished` | integer / null | yes |  | Commits on HEAD that no remote-tracking ref contains, including a detached HEAD's own commits. Counts stop at 1000. Local refs only; fetch for freshness. |
-| `result.checkout.aheadOfDefault` | integer / null | yes |  | Commits on HEAD not on the remote default branch (refs/remotes/<remote>/HEAD). Counts stop at 1000. Null when no remote HEAD is recorded. |
-| `result.checkout.staged` | integer | yes |  |  |
-| `result.checkout.unstaged` | integer | yes |  |  |
-| `result.checkout.untracked` | integer | yes |  |  |
-| `result.checkout.conflicts` | integer | yes |  |  |
-| `result.checkout.operation` | `["rebase","merge","cherry-pick","revert","sequencer","bisect"]` | no |  | Omitted when no operation is in progress. |
-| `result.checkout.stackOperation` | object | no |  | An unfinished ggh stack restack or submit. A restack stopped on a conflict resumes with ggh stack restack --continue or rolls back with --abort. |
-| `result.checkout.stackOperation.mode` | `["restack","submit"]` | yes |  |  |
-| `result.checkout.stackOperation.selected` | string | yes |  |  |
-| `result.checkout.stackOperation.operationId` | string | yes |  |  |
-| `result.pullRequest` | varies | yes |  |  |
-| `result.pullRequest [anyOf 1]` | object | yes |  |  |
-| `result.pullRequest [anyOf 1].state` | `"available"` | yes |  |  |
-| `result.pullRequest [anyOf 1].number` | integer | yes |  |  |
-| `result.pullRequest [anyOf 1].url` | string | yes |  |  |
-| `result.pullRequest [anyOf 1].prState` | string | yes |  | GitHub state: OPEN, CLOSED or MERGED. |
-| `result.pullRequest [anyOf 1].draft` | boolean | yes |  |  |
-| `result.pullRequest [anyOf 1].headSha` | string | yes |  |  |
-| `result.pullRequest [anyOf 1].base` | string | yes |  |  |
-| `result.pullRequest [anyOf 1].reviewDecision` | string / null | yes |  |  |
-| `result.pullRequest [anyOf 1].mergeable` | string | yes |  |  |
-| `result.pullRequest [anyOf 1].headMatchesLocal` | boolean | yes |  | PR head equals the local full HEAD. False can mean unpushed or unpulled commits. |
-| `result.pullRequest [anyOf 2]` | object | yes |  | The branch has no pull request. |
-| `result.pullRequest [anyOf 2].state` | `"none"` | yes |  |  |
-| `result.pullRequest [anyOf 3]` | object | yes |  | unavailable: the read failed or missed the deadline. skipped: not attempted because of --local, a detached HEAD, or no readable branch PR. |
-| `result.pullRequest [anyOf 3].state` | `["unavailable","skipped"]` | yes |  |  |
-| `result.pullRequest [anyOf 3].reason` | string | yes |  |  |
-| `result.ci` | varies | yes |  |  |
-| `result.ci [anyOf 1]` | object | yes |  |  |
-| `result.ci [anyOf 1].state` | `"available"` | yes |  |  |
-| `result.ci [anyOf 1].total` | integer | yes |  |  |
-| `result.ci [anyOf 1].counts` | object | yes |  | Non-zero check counts by gh bucket: pass, fail, pending, skipping, cancel. |
-| `result.ci [anyOf 1].failing` | array | yes |  | Names of failed and cancelled checks. Logs are not fetched; use ggh ci why. |
-| `result.ci [anyOf 1].failing[]` | string | no |  |  |
-| `result.ci [anyOf 2]` | object | yes |  | unavailable: the read failed or missed the deadline. skipped: not attempted because of --local, a detached HEAD, or no readable branch PR. |
-| `result.ci [anyOf 2].state` | `["unavailable","skipped"]` | yes |  |  |
-| `result.ci [anyOf 2].reason` | string | yes |  |  |
-| `result.reviewThreads` | varies | yes |  |  |
-| `result.reviewThreads [anyOf 1]` | object | yes |  |  |
-| `result.reviewThreads [anyOf 1].state` | `"available"` | yes |  |  |
-| `result.reviewThreads [anyOf 1].unresolved` | integer | yes |  |  |
-| `result.reviewThreads [anyOf 1].complete` | `false` | no |  | Present when pagination stopped early; unresolved is then a lower bound. |
-| `result.reviewThreads [anyOf 2]` | object | yes |  | unavailable: the read failed or missed the deadline. skipped: not attempted because of --local, a detached HEAD, or no readable branch PR. |
-| `result.reviewThreads [anyOf 2].state` | `["unavailable","skipped"]` | yes |  |  |
-| `result.reviewThreads [anyOf 2].reason` | string | yes |  |  |
-| `result.linkedIssues` | varies | yes |  |  |
-| `result.linkedIssues [anyOf 1]` | object | yes |  |  |
-| `result.linkedIssues [anyOf 1].state` | `"available"` | yes |  |  |
-| `result.linkedIssues [anyOf 1].items` | array | yes |  | Issues the PR closes, from closingIssuesReferences. At most 10. |
-| `result.linkedIssues [anyOf 1].items[]` | object | no |  |  |
-| `result.linkedIssues [anyOf 1].items[].number` | integer | yes |  |  |
-| `result.linkedIssues [anyOf 1].items[].repo` | string | no |  | OWNER/REPO, present only for issues in another repository. |
-| `result.linkedIssues [anyOf 1].items[].artifacts` | varies | yes |  |  |
-| `result.linkedIssues [anyOf 1].items[].artifacts [anyOf 1]` | object | yes |  |  |
-| `result.linkedIssues [anyOf 1].items[].artifacts [anyOf 1].state` | `"available"` | yes |  |  |
-| `result.linkedIssues [anyOf 1].items[].artifacts [anyOf 1].items` | array | yes |  |  |
-| `result.linkedIssues [anyOf 1].items[].artifacts [anyOf 1].items[]` | object | no |  |  |
-| `result.linkedIssues [anyOf 1].items[].artifacts [anyOf 1].items[].number` | integer | yes |  |  |
-| `result.linkedIssues [anyOf 1].items[].artifacts [anyOf 1].items[].name` | string | yes |  |  |
-| `result.linkedIssues [anyOf 1].items[].artifacts [anyOf 1].items[].type` | string | yes |  |  |
-| `result.linkedIssues [anyOf 1].items[].artifacts [anyOf 2]` | object | yes |  | unavailable: the artifact read failed. skipped: the issue is in another repository. |
-| `result.linkedIssues [anyOf 1].items[].artifacts [anyOf 2].state` | `["unavailable","skipped"]` | yes |  |  |
-| `result.linkedIssues [anyOf 1].items[].artifacts [anyOf 2].reason` | string | yes |  |  |
-| `result.linkedIssues [anyOf 1].more` | integer | no |  | Linked issues beyond the first 10. |
-| `result.linkedIssues [anyOf 2]` | object | yes |  | unavailable: the read failed or missed the deadline. skipped: not attempted because of --local, a detached HEAD, or no readable branch PR. |
-| `result.linkedIssues [anyOf 2].state` | `["unavailable","skipped"]` | yes |  |  |
-| `result.linkedIssues [anyOf 2].reason` | string | yes |  |  |
-| `result.stack` | varies | yes |  |  |
-| `result.stack [anyOf 1]` | object | yes |  |  |
-| `result.stack [anyOf 1].state` | `"available"` | yes |  |  |
-| `result.stack [anyOf 1].number` | integer | yes |  |  |
-| `result.stack [anyOf 1].position` | integer | yes |  | 1-based position from the bottom of the stack. |
-| `result.stack [anyOf 1].size` | integer | yes |  |  |
-| `result.stack [anyOf 1].below` | array | yes |  | PRs below this one, bottom first. Merging this PR merges every unmerged PR below it. |
-| `result.stack [anyOf 1].below[]` | object | no |  |  |
-| `result.stack [anyOf 1].below[].number` | integer | yes |  |  |
-| `result.stack [anyOf 1].below[].prState` | string | yes |  |  |
-| `result.stack [anyOf 2]` | object | yes |  | The PR is not in a GitHub native stack. |
-| `result.stack [anyOf 2].state` | `"none"` | yes |  |  |
-| `result.stack [anyOf 3]` | object | yes |  | unavailable: the read failed or missed the deadline. skipped: not attempted because of --local, a detached HEAD, or no readable branch PR. |
-| `result.stack [anyOf 3].state` | `["unavailable","skipped"]` | yes |  |  |
-| `result.stack [anyOf 3].reason` | string | yes |  |  |
-| `result.next` | array | no |  | Suggested follow-up commands, such as ggh ci why, ggh pr threads, ggh pr create --dry-run for unpublished work, or ggh stack restack --continue/--abort for a stopped restack. Data, not permission to mutate. |
-| `result.next[]` | string | no |  |  |
-
 ## tidy
 
 | Field | Type / values | Required in parent | Default | Meaning |
 | --- | --- | --- | --- | --- |
 | `result` | object | no |  |  |
-| `result.snapshotId` | string | yes |  | Pass to --approve-plan. Same value as plan.snapshotId. |
 | `result.audit` | varies | no |  |  |
 | `result.audit [anyOf 1]` | object | no |  |  |
 | `result.audit [anyOf 1].state` | `"completed"` | yes |  |  |
@@ -573,8 +480,7 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.pr.repo` | string | yes |  |  |
 | `result.headSha` | string | yes |  |  |
 | `result.baseSha` | string | yes |  |  |
-| `result.checkoutPath` | string | yes |  | Always under the main clone's .worktrees, even when run from a linked worktree. |
-| `result.checkout` | `["created","updated","reused"]` | no |  | reused: the checkout was already at headSha; with no other effect the envelope status is no_op. |
+| `result.checkoutPath` | string | yes |  |  |
 | `result.surface` | `["editor","tuicr","delta","renderer","data"]` | yes |  |  |
 | `result.marked` | `true` | no |  |  |
 | `result.since` | object | no |  |  |
@@ -624,163 +530,6 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.since.threadsChanged.pagination.comments` | integer | yes |  | Comments fetched before filters. |
 | `result.since.rangeDiff` | string | no |  |  |
 | `result.since.ambiguity` | string | no |  |  |
-
-## inbox
-
-| Field | Type / values | Required in parent | Default | Meaning |
-| --- | --- | --- | --- | --- |
-| `result` | object | no |  |  |
-| `result.schemaVersion` | `1` | yes |  |  |
-| `result.host` | string | yes |  |  |
-| `result.login` | string / null | yes |  |  |
-| `result.filter` | string / null | yes |  |  |
-| `result.limit` | integer | yes |  |  |
-| `result.requestedLimit` | integer | no |  | The --limit you asked for, present only when it exceeded the maximum of 50. |
-| `result.sections` | object | yes |  |  |
-| `result.sections.reviewRequested` | varies | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1]` | object | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].state` | `"available"` | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].total` | integer | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].complete` | boolean | yes |  | False when more PRs matched than were fetched, or some were hidden. |
-| `result.sections.reviewRequested [oneOf 1].skipped` | integer | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].skippedReason` | string | no |  |  |
-| `result.sections.reviewRequested [oneOf 1].items` | array | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[]` | object | no |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[].repo` | string | yes |  | owner/name |
-| `result.sections.reviewRequested [oneOf 1].items[].number` | integer | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[].title` | string | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[].url` | string | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[].draft` | boolean | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[].author` | string / null | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[].updatedAt` | string | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[].headRefName` | string | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[].baseRefName` | string | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[].defaultBranch` | string / null | no |  | Repository default branch, null when GitHub did not report it. |
-| `result.sections.reviewRequested [oneOf 1].items[].checks` | string / null | yes |  | Head commit rollup. Null means no checks; UNKNOWN means GitHub did not return it. |
-| `result.sections.reviewRequested [oneOf 1].items[].reviewDecision` | string / null | yes |  | Null means the base branch requires no review. |
-| `result.sections.reviewRequested [oneOf 1].items[].mergeable` | `["MERGEABLE","CONFLICTING","UNKNOWN"]` | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[].mergeQueue` | varies | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[].mergeQueue [anyOf 1]` | null | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[].mergeQueue [anyOf 2]` | object | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[].mergeQueue [anyOf 2].position` | integer / null | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[].request` | object | no |  | Review requests only. |
-| `result.sections.reviewRequested [oneOf 1].items[].request.direct` | boolean | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[].request.teams` | array | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[].request.teams[]` | string | no |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[].reasons` | array | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[].reasons[]` | `["requested_directly","requested_via_team","checks_failing","changes_requested","conflicts","merge_queue","approved","no_review_required","checks_passing","no_checks","mergeable","stacked"]` | no |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[].stackedOn` | integer | no |  | PR number this one is stacked on, present with the stacked reason. |
-| `result.sections.reviewRequested [oneOf 1].items[].local` | varies | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[].local [anyOf 1]` | null | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[].local [anyOf 2]` | object | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[].local [anyOf 2].name` | string | yes |  | Argument for ggh go. |
-| `result.sections.reviewRequested [oneOf 1].items[].local [anyOf 2].path` | string | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[].local [anyOf 2].branchCheckedOut` | boolean | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[].local [anyOf 2].clones` | integer | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[].next` | array | yes |  | Suggested shell commands, one per entry. Each is self-contained and works from any directory; ggh never runs them. |
-| `result.sections.reviewRequested [oneOf 1].items[].next[]` | string | no |  |  |
-| `result.sections.reviewRequested [oneOf 2]` | object | yes |  |  |
-| `result.sections.reviewRequested [oneOf 2].state` | `"unavailable"` | yes |  |  |
-| `result.sections.reviewRequested [oneOf 2].reason` | string | yes |  |  |
-| `result.sections.reviewRequested [oneOf 2].retryAt` | string | no |  |  |
-| `result.sections.needsFix` | varies | yes |  |  |
-| `result.sections.needsFix [oneOf 1]` | object | yes |  |  |
-| `result.sections.needsFix [oneOf 1].state` | `"available"` | yes |  |  |
-| `result.sections.needsFix [oneOf 1].total` | integer | yes |  |  |
-| `result.sections.needsFix [oneOf 1].complete` | boolean | yes |  | False when more PRs matched than were fetched, or some were hidden. |
-| `result.sections.needsFix [oneOf 1].skipped` | integer | yes |  |  |
-| `result.sections.needsFix [oneOf 1].skippedReason` | string | no |  |  |
-| `result.sections.needsFix [oneOf 1].items` | array | yes |  |  |
-| `result.sections.needsFix [oneOf 1].items[]` | object | no |  |  |
-| `result.sections.needsFix [oneOf 1].items[].repo` | string | yes |  | owner/name |
-| `result.sections.needsFix [oneOf 1].items[].number` | integer | yes |  |  |
-| `result.sections.needsFix [oneOf 1].items[].title` | string | yes |  |  |
-| `result.sections.needsFix [oneOf 1].items[].url` | string | yes |  |  |
-| `result.sections.needsFix [oneOf 1].items[].draft` | boolean | yes |  |  |
-| `result.sections.needsFix [oneOf 1].items[].author` | string / null | yes |  |  |
-| `result.sections.needsFix [oneOf 1].items[].updatedAt` | string | yes |  |  |
-| `result.sections.needsFix [oneOf 1].items[].headRefName` | string | yes |  |  |
-| `result.sections.needsFix [oneOf 1].items[].baseRefName` | string | yes |  |  |
-| `result.sections.needsFix [oneOf 1].items[].defaultBranch` | string / null | no |  | Repository default branch, null when GitHub did not report it. |
-| `result.sections.needsFix [oneOf 1].items[].checks` | string / null | yes |  | Head commit rollup. Null means no checks; UNKNOWN means GitHub did not return it. |
-| `result.sections.needsFix [oneOf 1].items[].reviewDecision` | string / null | yes |  | Null means the base branch requires no review. |
-| `result.sections.needsFix [oneOf 1].items[].mergeable` | `["MERGEABLE","CONFLICTING","UNKNOWN"]` | yes |  |  |
-| `result.sections.needsFix [oneOf 1].items[].mergeQueue` | varies | yes |  |  |
-| `result.sections.needsFix [oneOf 1].items[].mergeQueue [anyOf 1]` | null | yes |  |  |
-| `result.sections.needsFix [oneOf 1].items[].mergeQueue [anyOf 2]` | object | yes |  |  |
-| `result.sections.needsFix [oneOf 1].items[].mergeQueue [anyOf 2].position` | integer / null | yes |  |  |
-| `result.sections.needsFix [oneOf 1].items[].request` | object | no |  | Review requests only. |
-| `result.sections.needsFix [oneOf 1].items[].request.direct` | boolean | yes |  |  |
-| `result.sections.needsFix [oneOf 1].items[].request.teams` | array | yes |  |  |
-| `result.sections.needsFix [oneOf 1].items[].request.teams[]` | string | no |  |  |
-| `result.sections.needsFix [oneOf 1].items[].reasons` | array | yes |  |  |
-| `result.sections.needsFix [oneOf 1].items[].reasons[]` | `["requested_directly","requested_via_team","checks_failing","changes_requested","conflicts","merge_queue","approved","no_review_required","checks_passing","no_checks","mergeable","stacked"]` | no |  |  |
-| `result.sections.needsFix [oneOf 1].items[].stackedOn` | integer | no |  | PR number this one is stacked on, present with the stacked reason. |
-| `result.sections.needsFix [oneOf 1].items[].local` | varies | yes |  |  |
-| `result.sections.needsFix [oneOf 1].items[].local [anyOf 1]` | null | yes |  |  |
-| `result.sections.needsFix [oneOf 1].items[].local [anyOf 2]` | object | yes |  |  |
-| `result.sections.needsFix [oneOf 1].items[].local [anyOf 2].name` | string | yes |  | Argument for ggh go. |
-| `result.sections.needsFix [oneOf 1].items[].local [anyOf 2].path` | string | yes |  |  |
-| `result.sections.needsFix [oneOf 1].items[].local [anyOf 2].branchCheckedOut` | boolean | yes |  |  |
-| `result.sections.needsFix [oneOf 1].items[].local [anyOf 2].clones` | integer | yes |  |  |
-| `result.sections.needsFix [oneOf 1].items[].next` | array | yes |  | Suggested shell commands, one per entry. Each is self-contained and works from any directory; ggh never runs them. |
-| `result.sections.needsFix [oneOf 1].items[].next[]` | string | no |  |  |
-| `result.sections.needsFix [oneOf 2]` | object | yes |  |  |
-| `result.sections.needsFix [oneOf 2].state` | `"unavailable"` | yes |  |  |
-| `result.sections.needsFix [oneOf 2].reason` | string | yes |  |  |
-| `result.sections.needsFix [oneOf 2].retryAt` | string | no |  |  |
-| `result.sections.readyToMerge` | varies | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1]` | object | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].state` | `"available"` | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].total` | integer | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].complete` | boolean | yes |  | False when more PRs matched than were fetched, or some were hidden. |
-| `result.sections.readyToMerge [oneOf 1].skipped` | integer | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].skippedReason` | string | no |  |  |
-| `result.sections.readyToMerge [oneOf 1].items` | array | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[]` | object | no |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[].repo` | string | yes |  | owner/name |
-| `result.sections.readyToMerge [oneOf 1].items[].number` | integer | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[].title` | string | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[].url` | string | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[].draft` | boolean | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[].author` | string / null | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[].updatedAt` | string | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[].headRefName` | string | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[].baseRefName` | string | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[].defaultBranch` | string / null | no |  | Repository default branch, null when GitHub did not report it. |
-| `result.sections.readyToMerge [oneOf 1].items[].checks` | string / null | yes |  | Head commit rollup. Null means no checks; UNKNOWN means GitHub did not return it. |
-| `result.sections.readyToMerge [oneOf 1].items[].reviewDecision` | string / null | yes |  | Null means the base branch requires no review. |
-| `result.sections.readyToMerge [oneOf 1].items[].mergeable` | `["MERGEABLE","CONFLICTING","UNKNOWN"]` | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[].mergeQueue` | varies | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[].mergeQueue [anyOf 1]` | null | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[].mergeQueue [anyOf 2]` | object | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[].mergeQueue [anyOf 2].position` | integer / null | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[].request` | object | no |  | Review requests only. |
-| `result.sections.readyToMerge [oneOf 1].items[].request.direct` | boolean | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[].request.teams` | array | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[].request.teams[]` | string | no |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[].reasons` | array | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[].reasons[]` | `["requested_directly","requested_via_team","checks_failing","changes_requested","conflicts","merge_queue","approved","no_review_required","checks_passing","no_checks","mergeable","stacked"]` | no |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[].stackedOn` | integer | no |  | PR number this one is stacked on, present with the stacked reason. |
-| `result.sections.readyToMerge [oneOf 1].items[].local` | varies | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[].local [anyOf 1]` | null | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[].local [anyOf 2]` | object | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[].local [anyOf 2].name` | string | yes |  | Argument for ggh go. |
-| `result.sections.readyToMerge [oneOf 1].items[].local [anyOf 2].path` | string | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[].local [anyOf 2].branchCheckedOut` | boolean | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[].local [anyOf 2].clones` | integer | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[].next` | array | yes |  | Suggested shell commands, one per entry. Each is self-contained and works from any directory; ggh never runs them. |
-| `result.sections.readyToMerge [oneOf 1].items[].next[]` | string | no |  |  |
-| `result.sections.readyToMerge [oneOf 2]` | object | yes |  |  |
-| `result.sections.readyToMerge [oneOf 2].state` | `"unavailable"` | yes |  |  |
-| `result.sections.readyToMerge [oneOf 2].reason` | string | yes |  |  |
-| `result.sections.readyToMerge [oneOf 2].retryAt` | string | no |  |  |
-| `result.waiting` | integer / null | yes |  | Your open PRs in neither section. |
-| `result.local` | object | yes |  |  |
-| `result.local.indexedAt` | string | yes |  |  |
-| `result.local.clones` | integer | yes |  |  |
-| `result.requests` | integer | yes |  |  |
-| `result.cost` | integer | yes |  |  |
 
 ## sync
 
@@ -912,7 +661,7 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | --- | --- | --- | --- | --- |
 | `result` | object | no |  |  |
 | `result.schemaVersion` | `1` | yes |  |  |
-| `result.updatedAt` | string | no |  | When the index was last scanned. A rescan that changes nothing but scan timestamps reports no projects_index_updated effect. |
+| `result.updatedAt` | string | no |  |  |
 | `result.remote` | object | no |  |  |
 | `result.remote.requests` | integer | yes |  |  |
 | `result.remote.cost` | integer | yes |  |  |
@@ -1574,7 +1323,7 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 
 | Field | Type / values | Required in parent | Default | Meaning |
 | --- | --- | --- | --- | --- |
-| `result` | object | no |  | Agent result only. Outside a repository, status --agent fails with invalid_arguments. Legacy --json retains result.repository with explicit counts, null outside a repository. |
+| `result` | object / null | no |  | Agent result only. Null outside a repository. Legacy --json retains result.repository with explicit counts. |
 | `result.root` | string | no |  | Absolute checkout root. Omitted only when equal to the invocation cwd. |
 | `result.branch` | string / null | yes |  | Null means detached HEAD. |
 | `result.head` | string / null | yes |  | Full HEAD object ID; null for an unborn branch. |
@@ -1638,6 +1387,8 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.completed[]` | string | no |  |  |
 | `result.remaining` | array | no |  |  |
 | `result.remaining[]` | string | no |  |  |
+| `result.failed` | array | no |  | Remaining steps that definitively did not happen, such as a push blocked by push protection. |
+| `result.failed[]` | string | no |  |  |
 | `result.url` | string | no |  |  |
 | `result.operationId` | string | no |  |  |
 | `result.resources` | array | no |  |  |
@@ -1655,6 +1406,8 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result [anyOf 1].completed[]` | string | no |  |  |
 | `result [anyOf 1].remaining` | array | no |  |  |
 | `result [anyOf 1].remaining[]` | string | no |  |  |
+| `result [anyOf 1].failed` | array | no |  | Remaining steps that definitively did not happen, such as a push blocked by push protection. |
+| `result [anyOf 1].failed[]` | string | no |  |  |
 | `result [anyOf 1].url` | string | no |  |  |
 | `result [anyOf 1].operationId` | string | no |  |  |
 | `result [anyOf 1].resources` | array | no |  |  |

@@ -11,7 +11,7 @@ import { readAttachmentBodyFile } from "../services/github/attachments.ts";
 import { generatePrWithFallback, type AIAttempt, type AIAttemptFailure } from "../services/ai/index.ts";
 import { sanitizeDiffForAI } from "../utils/diff.ts";
 import { dryRun } from "../utils/flags.ts";
-import { confirmOrAbort, jsonOut, fail, failFromGitHub, formatAIFallback, header, p, promptInput, reportAIFailure } from "../utils/ui.ts";
+import { confirmOrAbort, jsonOut, fail, failFromGitHub, failPublication, formatAIFallback, header, p, promptInput, reportAIFailure } from "../utils/ui.ts";
 
 export interface PrCreateOptions {
   approvePlan?: string; title?: string; body?: string; bodyFile?: string; base?: string; draft?: boolean;
@@ -124,7 +124,7 @@ export async function openPullRequest(options: PrCreateOptions): Promise<void> {
     else if (editorSession) reportRetainedDraft(editorSession.path, options);
     const completed = [...(options.priorCompleted ?? []), ...result.completed];
     const status = result.status === "failed" && options.priorCompleted?.length ? "partially_completed" : result.status;
-    if (status !== "succeeded") fail(result.error ?? "Publication did not complete.");
+    if (status !== "succeeded") failPublication(result, "Publication did not complete.");
     if (jsonOut({ ...result, status, completed, title, body, base: plan.base, head: plan.head, draft: Boolean(options.draft), ...(options.web ? { action: "open_create_page" } : {}) })) return;
     if (result.url) p.log.message(result.url);
     if (status === "succeeded") p.outro(options.web ? "Finish creating the pull request in your browser." : "Pull request ready.");

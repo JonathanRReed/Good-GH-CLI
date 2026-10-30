@@ -12,6 +12,7 @@ import { type CommandIssue, getFlags, isNonInteractive, recordCommandIssue, reme
 import { cancel, emitJson, intro, log, note, outro, spinner } from "./output.ts";
 import { confirmPrompt, selectMenu } from "./prompts.ts";
 import { PartialGitHubMutationError, PartialAttachmentOperationError } from "../services/github/attachments.ts";
+import { pushProtectionBypassNote, PushProtectionError, type PushProtectionDetails } from "../services/git/push-protection.ts";
 
 /**
  * Drop-in replacement for the @clack/prompts surface this CLI still used
@@ -67,7 +68,7 @@ export type {
  * Reports a command failure and marks the process as failed, so `ggh` can be
  * used in scripts and CI without every caller remembering to set exitCode.
  */
-export function fail(message: string, metadata: Pick<CommandIssue, "code" | "requiredInputs" | "retryAfterSeconds"> = {}): void {
+export function fail(message: string, metadata: Pick<CommandIssue, "code" | "requiredInputs" | "retryAfterSeconds" | "pushProtection"> = {}): void {
   process.exitCode = 1;
   const asks = (metadata.code === "missing_input" || metadata.code === "confirmation_required") && Boolean(metadata.requiredInputs?.length);
   recordCommandIssue({ status: asks ? "needs_input" : "failed", message, ...metadata });
@@ -80,6 +81,7 @@ export function fail(message: string, metadata: Pick<CommandIssue, "code" | "req
  * same ternary across command files.
  */
 export function failFromGitHub(err: unknown): void {
+  if (err instanceof PushProtectionError) { failFromPush(err); return; }
   fail(err instanceof Error ? err.message : String(err), {
     code: err instanceof CapabilityError ? "provider_unavailable" : err instanceof GitHubError ? gitHubErrorCode(err) : undefined,
     ...(err instanceof GitHubError && err.retryAfterSeconds !== undefined ? { retryAfterSeconds: err.retryAfterSeconds } : {}),
@@ -98,6 +100,26 @@ export function gitHubErrorCode(err: GitHubError): AgentErrorCode | undefined {
     not_found: "not_found", forbidden: "forbidden", rate_limit: "rate_limited", network: "network",
   };
   return codes[err.kind];
+}
+
+/**
+ * Reports a failed push. A push-protection rejection keeps its code, findings
+ * and next steps, and offers GitHub's bypass page only as a person's decision.
+ * Anything else is reported as `context` followed by the error.
+ */
+export function failFromPush(err: unknown, context = ""): void {
+  if (err instanceof PushProtectionError) {
+    fail(err.message, { code: "push_protection_blocked", pushProtection: err.details });
+    const note = pushProtectionBypassNote(err.details);
+    if (note) p.log.message(note);
+    return;
+  }
+  fail(`${context}${err instanceof Error ? err.message : String(err)}`);
+}
+
+/** Reports a publication result that did not succeed, keeping push-protection details. */
+export function failPublication(result: { error?: string; pushProtection?: PushProtectionDetails }, fallback: string): void {
+  failFromPush(result.pushProtection ? new PushProtectionError(result.pushProtection) : result.error ?? fallback);
 }
 
 /**

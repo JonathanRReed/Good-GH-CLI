@@ -7,6 +7,7 @@ import type { OperationRecord } from "./operations.ts";
 import type { CommandIssue } from "./runtime.ts";
 import type { CloneMode } from "./config.ts";
 import type { CloneProtocol } from "./git/clone.ts";
+import type { PushProtectionDetails } from "./git/push-protection.ts";
 
 export interface CloneResult {
   version: 1;
@@ -38,6 +39,7 @@ export const AGENT_ERRORS = {
   partial_completion: { retryability: "after_inspection", definitive: false },
   operation_failed: { retryability: "after_inspection", definitive: false },
   outcome_uncertain: { retryability: "after_inspection", definitive: false },
+  push_protection_blocked: { retryability: "never", definitive: true },
 } as const satisfies Record<string, { retryability: Retryability; definitive: boolean }>;
 export type AgentErrorCode = keyof typeof AGENT_ERRORS;
 export type RequiredInput = { name: string; description: string; alternatives?: string[] };
@@ -48,7 +50,7 @@ export interface AgentEnvelope {
   command: string[];
   status: AgentStatus;
   result?: unknown;
-  error?: { code: AgentErrorCode; message: string; retryability: Retryability; retryAfterSeconds?: number };
+  error?: { code: AgentErrorCode; message: string; retryability: Retryability; retryAfterSeconds?: number; pushProtection?: PushProtectionDetails };
   requiredInputs?: RequiredInput[];
   effects?: { completed: string[]; pending: string[]; uncertain: string[] };
   operationId?: string;
@@ -73,11 +75,14 @@ export function agentEnvelope(input: { command: string[]; result?: unknown; issu
   let status: AgentStatus = operation?.status.state === "running" ? "failed" : operation?.status.state ?? (issue?.status ?? (input.failed ? "failed" : input.dryRun ? "planned" : "succeeded"));
   if (managedStatus === "partially_completed" || managedStatus === "needs_input" || managedStatus === "cancelled" || managedStatus === "failed" || managedStatus === "no_op") status = managedStatus;
   if (input.dryRun && !issue && !input.failed) status = "planned";
+  const blocked = issue?.code === "push_protection_blocked";
   const effects = {
     completed: operation?.steps.filter(step => step.state === "completed").map(step => step.name) ?? (workflow && result && "completed" in result ? strings(result.completed) : []),
     pending: operation?.steps.filter(step => step.state === "pending").map(step => step.name) ?? (workflow && result && "remaining" in result ? strings(result.remaining) : input.preview.length ? ["command_effects"] : []),
-    uncertain: operation?.steps.filter(step => step.state === "unknown" || step.state === "failed" || step.state === "uncertain").map(step => step.name) ?? (path === "tidy" && result && "uncertain" in result ? strings(result.uncertain) : []),
+    uncertain: operation?.steps.filter(step => step.state === "unknown" || (step.state === "failed" && !blocked) || step.state === "uncertain").map(step => step.name) ?? (path === "tidy" && result && "uncertain" in result ? strings(result.uncertain) : []),
   };
+  // A push-protection rejection is definitive: the blocked push did not happen.
+  if (blocked && operation) effects.pending.push(...operation.steps.filter(step => step.state === "failed").map(step => step.name));
   effects.completed = [...new Set([...effects.completed, ...input.completedEffects ?? []])];
   effects.uncertain = [...new Set([...effects.uncertain, ...input.uncertainEffects ?? []])];
   if (bulkSync) {
@@ -102,7 +107,7 @@ export function agentEnvelope(input: { command: string[]; result?: unknown; issu
   }
   // Rerunning review at the same head changes nothing.
   if (path === "review" && status === "succeeded" && result && "checkout" in result && result.checkout === "reused" && !effects.completed.length && !effects.uncertain.length) status = "no_op";
-  let code: AgentErrorCode = status === "partially_completed" ? "partial_completion" : issue?.code ?? (status === "cancelled" ? "cancelled" : status === "needs_input" ? "missing_input" : "operation_failed");
+  let code: AgentErrorCode = blocked ? "push_protection_blocked" : status === "partially_completed" ? "partial_completion" : issue?.code ?? (status === "cancelled" ? "cancelled" : status === "needs_input" ? "missing_input" : "operation_failed");
   // needs_input always names what to supply; asking codes without inputs are plain failures.
   const requiredInputs = issue?.requiredInputs?.length ? issue.requiredInputs : undefined;
   const asks = code === "missing_input" || code === "confirmation_required";
@@ -115,10 +120,11 @@ export function agentEnvelope(input: { command: string[]; result?: unknown; issu
   if (failed && !bulkSync && !effects.uncertain.length && !AGENT_ERRORS[code].definitive && input.mutating !== false) effects.uncertain.push("command_effects");
   // Waiting cannot settle an uncertain mutation; inspect it first.
   const retryability: Retryability = AGENT_ERRORS[code].retryability === "after_delay" && effects.uncertain.length ? "after_inspection" : AGENT_ERRORS[code].retryability;
+  effects.pending = [...new Set(effects.pending)];
   return {
     contract: "ggh.agent", version: 1, command: input.command, status,
     ...(input.result !== undefined ? { result: input.result } : {}),
-    ...(failed ? { error: { code, message: issue?.message ?? "Command did not complete.", retryability, ...(code === "rate_limited" && issue?.retryAfterSeconds !== undefined ? { retryAfterSeconds: issue.retryAfterSeconds } : {}) } satisfies AgentEnvelope["error"] } : {}),
+    ...(failed ? { error: { code, message: issue?.message ?? "Command did not complete.", retryability, ...(code === "rate_limited" && issue?.retryAfterSeconds !== undefined ? { retryAfterSeconds: issue.retryAfterSeconds } : {}), ...(issue?.pushProtection ? { pushProtection: issue.pushProtection } : {}) } satisfies AgentEnvelope["error"] } : {}),
     ...(status === "needs_input" && requiredInputs ? { requiredInputs } : {}),
     ...((path === "status" || path === "agent brief") && !operation && !Object.values(effects).some(items => items.length) ? {} : { effects }),
     ...(operation ? { operationId: operation.id, resources: operation.resources } : workflow && result ? { ...("operationId" in result && typeof result.operationId === "string" ? { operationId: result.operationId } : {}), ...("resources" in result ? { resources: strings(result.resources) } : {}) } : {}),
@@ -143,6 +149,7 @@ function isProjectSyncResult(value: unknown): value is ProjectSyncResult {
     });
 }
 
+const stringArraySchema = { type: "array", items: { type: "string" } };
 export const envelopeSchema = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   type: "object", required: ["contract", "version", "command", "status"],
@@ -152,21 +159,26 @@ export const envelopeSchema = {
     status: { enum: ["succeeded", "planned", "no_op", "needs_input", "cancelled", "failed", "partially_completed"] },
     result: { description: "Command-specific payload. Detailed result schemas are not yet guaranteed." },
     error: { type: "object", required: ["code", "message", "retryability"], properties: {
-      code: { enum: Object.keys(AGENT_ERRORS), description: "not_found: the named PR, issue, repository or plan does not exist or is hidden. forbidden: the account lacks permission; a person must grant access. rate_limited: GitHub throttled the request. network: GitHub or the proxy was unreachable. precondition_failed: local or remote state blocks the command before any effect, such as nothing staged or a stale base; fix the state the message names, then retry. invalid_arguments also covers running a checkout command outside a Git repository." },
+      code: { enum: Object.keys(AGENT_ERRORS), description: "not_found: the named PR, issue, repository or plan does not exist or is hidden. forbidden: the account lacks permission; a person must grant access. rate_limited: GitHub throttled the request. network: GitHub or the proxy was unreachable. precondition_failed: local or remote state blocks the command before any effect, such as nothing staged or a stale base; fix the state the message names, then retry. invalid_arguments also covers running a checkout command outside a Git repository. push_protection_blocked: GitHub push protection found a secret in the pushed commits and the push did not happen; stop and report pushProtection to the user." },
       message: { type: "string", description: "Human-readable cause and next step. Never contains raw GraphQL response bodies." },
       retryability: { enum: ["after_input", "after_delay", "after_inspection", "never"], description: "after_input: retry only with changed or added input. after_delay: nothing changed; retry the same command after waiting (retryAfterSeconds when known). after_inspection: inspect effects and state before any retry. never: retrying the same inputs cannot succeed; report to the user." },
       retryAfterSeconds: { type: "integer", minimum: 0, description: "Present only with rate_limited when GitHub reported a reset time." },
+      pushProtection: { type: "object", required: ["findings", "bypassUrls", "remoteLines"], description: "Present only with push_protection_blocked. Fields GitHub did not report are omitted.", properties: {
+        findings: { type: "array", items: { type: "object", properties: { secretType: { type: "string" }, commit: { type: "string" }, path: { type: "string" }, line: { type: "integer", minimum: 1 } } } },
+        bypassUrls: { ...stringArraySchema, description: "GitHub bypass pages for a person to judge. Agents must never open or follow them." },
+        remoteLines: { ...stringArraySchema, description: "Raw remote lines without the remote: prefix, kept when parsing is incomplete." },
+      } },
     } },
     requiredInputs: { type: "array", minItems: 1, description: "Present exactly when status is needs_input, whose code is then missing_input or confirmation_required. Names are flags (--yes, -m) or positional arguments (file).", items: { type: "object", required: ["name", "description"], properties: { name: { type: "string" }, description: { type: "string" }, alternatives: { type: "array", items: { type: "string" } } } } },
-    effects: { description: "Completed effects include explicit local mutations and launches, even when a later step fails. Review uses review_checkout_created/updated, review_objects_fetched, review_refs_updated and review_ledger_marked. Clone uses repository_cloned. Projects use projects_index_updated and projects_roots_updated/projects_exclusions_updated. Go launches use editor_opened/t3_opened. Single-repo sync uses refs_fetched_pruned and branch_deleted:<name>. A failed read never reports uncertain effects; command_effects in uncertain means a mutating command stopped without proof of what changed. Omitted only for read-only status and agent brief when all arrays are empty; defaults to completed: [], pending: [], uncertain: [].", type: "object", required: ["completed", "pending", "uncertain"], properties: Object.fromEntries(["completed", "pending", "uncertain"].map(key => [key, { type: "array", items: { type: "string" } }])) },
+    effects: { description: "Completed effects include explicit local mutations and launches, even when a later step fails. Review uses review_checkout_created/updated, review_objects_fetched, review_refs_updated and review_ledger_marked. Clone uses repository_cloned. Projects use projects_index_updated and projects_roots_updated/projects_exclusions_updated. Go launches use editor_opened/t3_opened. Single-repo sync uses refs_fetched_pruned and branch_deleted:<name>. A failed read never reports uncertain effects; a push blocked by push protection stays pending, never uncertain; command_effects in uncertain means a mutating command stopped without proof of what changed. Omitted only for read-only status and agent brief when all arrays are empty; defaults to completed: [], pending: [], uncertain: [].", type: "object", required: ["completed", "pending", "uncertain"], properties: Object.fromEntries(["completed", "pending", "uncertain"].map(key => [key, { type: "array", items: { type: "string" } }])) },
     operationId: { type: "string" }, resources: { type: "array", items: { type: "string" } },
   },
 };
 
 
-const stringArraySchema = { type: "array", items: { type: "string" } };
 const workflowResultSchema = { type: "object", additionalProperties: true, properties: {
   status: { type: "string" }, target: { type: "string" }, completed: stringArraySchema, remaining: stringArraySchema,
+  failed: { ...stringArraySchema, description: "Remaining steps that definitively did not happen, such as a push blocked by push protection." },
   url: { type: "string" }, operationId: { type: "string" }, resources: stringArraySchema,
 } };
 const operationResultSchema = { type: "object", additionalProperties: true, properties: {

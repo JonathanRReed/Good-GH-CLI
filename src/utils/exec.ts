@@ -7,6 +7,8 @@ export interface RunOptions {
   /** Inherit only these keys and basic process essentials; filter overrides too. */
   envAllowlist?: readonly string[];
   stdio?: "pipe" | "inherit";
+  /** With inherited stdio, stream stderr live and also capture it for classification. */
+  teeStderr?: boolean;
   input?: string;
   timeoutMs?: number;
   reject?: boolean;
@@ -25,10 +27,11 @@ export class ExecError extends Error {
   readonly stderr: string;
   readonly exitCode: number;
 
-  constructor(command: string, args: string[], result: RunResult, reason?: "timeout" | "output_limit") {
+  constructor(command: string, args: string[], result: RunResult, reason?: "timeout" | "output_limit", options: { stderrShown?: boolean } = {}) {
     const label = `${command} ${args.join(" ")}`.trim();
     const detail = reason === "timeout" ? "timed out" : reason === "output_limit" ? "exceeded output limit" : `exited with code ${result.exitCode}`;
-    const stderrPart = result.stderr.trim() ? `\n${result.stderr.trim().slice(0, 4000)}` : "";
+    // Streamed stderr is already on the terminal; repeating it buries the summary.
+    const stderrPart = result.stderr.trim() && !options.stderrShown ? `\n${result.stderr.trim().slice(0, 4000)}` : "";
     super(`${label} ${detail}${stderrPart}`);
     this.name = "ExecError";
     this.stdout = result.stdout;
@@ -37,6 +40,7 @@ export class ExecError extends Error {
   }
 }
 
+const TEE_TAIL_BYTES = 1024 * 1024;
 const liveChildren = new Set<{ pid: number; kill: (signal?: number | NodeJS.Signals) => void }>();
 const terminationPromises = new WeakMap<object, Promise<void>>();
 const WINDOWS_TREE_KILL_TIMEOUT_MS = 2_000;
@@ -142,6 +146,7 @@ export function commandExists(command: string): boolean {
  */
 export async function run(command: string, args: string[], options: RunOptions = {}): Promise<RunResult> {
   const inherit = options.stdio === "inherit" && !getFlags().json;
+  const tee = inherit && options.teeStderr === true;
   const inheritedEnv = { ...process.env, ...options.env };
   const allowed = new Set([
     "PATH", "HOME", "TMPDIR", "TMP", "TEMP", "LANG", "LANGUAGE", "LC_ALL", "LC_CTYPE",
@@ -155,7 +160,7 @@ export async function run(command: string, args: string[], options: RunOptions =
     env,
     stdin: options.input !== undefined ? "pipe" : inherit ? "inherit" : "ignore",
     stdout: inherit ? "inherit" : "pipe",
-    stderr: inherit ? "inherit" : "pipe",
+    stderr: inherit && !tee ? "inherit" : "pipe",
     // Piped children get their own process group so a timeout or Ctrl-C can
     // take their helpers down with them. Inherited-stdio children (git log in
     // a pager, an editor) must stay in ours to keep the terminal's job control.
@@ -193,14 +198,24 @@ export async function run(command: string, args: string[], options: RunOptions =
         })()
       : Promise.resolve();
 
-  async function capture(stream: ReadableStream<Uint8Array> | null | undefined): Promise<string> {
+  async function capture(stream: ReadableStream<Uint8Array> | null | undefined, echo = false): Promise<string> {
     if (!stream) return "";
     const reader = stream.getReader();
     const chunks: Uint8Array[] = [];
+    let retained = 0;
     try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        if (echo) {
+          // Streamed output is the user's progress: never cut the child off.
+          // Keep a bounded tail; remote verdicts arrive at the end.
+          process.stderr.write(value);
+          chunks.push(value);
+          retained += value.byteLength;
+          while (retained > TEE_TAIL_BYTES && chunks.length > 1) retained -= chunks.shift()?.byteLength ?? 0;
+          continue;
+        }
         outputBytes += value.byteLength;
         if (outputBytes > maxOutputBytes) {
           outputExceeded = true;
@@ -214,7 +229,7 @@ export async function run(command: string, args: string[], options: RunOptions =
   try {
     const [stdout, stderr, exitCode] = await Promise.all([
       capture(proc.stdout),
-      capture(proc.stderr),
+      capture(proc.stderr, tee),
       proc.exited,
       stdinDone,
     ]);
@@ -226,7 +241,7 @@ export async function run(command: string, args: string[], options: RunOptions =
       throw new ExecError(command, args, result, "timeout");
     }
     if (result.exitCode !== 0 && options.reject !== false) {
-      throw new ExecError(command, args, result);
+      throw new ExecError(command, args, result, undefined, { stderrShown: tee });
     }
     return result;
   } finally {

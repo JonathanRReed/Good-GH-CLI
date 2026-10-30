@@ -56,12 +56,14 @@ import {
   confirmOrAbort, jsonOut,
   fail,
   failFromGitHub,
+  failFromPush,
   header,
   p,
   pc,
   promptInput,
   searchablePicker,
 } from "../utils/ui.ts";
+import { PushProtectionError } from "../services/git/push-protection.ts";
 
 interface StackRemoteCheck {
   name: string;
@@ -842,15 +844,25 @@ export function registerStackCommand(program: Command): void {
               await saveStackProgress(checkpoint, { state: "running" }, cwd);
               pushSpinner.stop(pc.green(entry.branch + " pushed."));
             } catch (error) {
-              entry.pushState = "unknown";
-              entry.state = "unknown";
+              // GitHub rejected a push-protection violation outright: the push
+              // definitively did not happen, so record it as failed, not unknown.
+              const blocked = error instanceof PushProtectionError;
+              entry.pushState = blocked ? "failed" : "unknown";
+              entry.state = blocked ? "failed" : "unknown";
               await writeStackRecovery(checkpoint, cwd);
-              await saveStackProgress(checkpoint, { state: "partially_completed" }, cwd).catch(() => undefined);
-              pushSpinner.stop(pc.red("Failed to push " + entry.branch + "."));
+              const anyCompleted = checkpoint.entries.some((item) => item.state === "completed");
+              await saveStackProgress(checkpoint, { state: blocked && !anyCompleted ? "failed" : "partially_completed" }, cwd).catch(() => undefined);
+              pushSpinner.stop(pc.red((blocked ? "GitHub push protection blocked " : "Failed to push ") + entry.branch + "."));
               const message = error instanceof Error ? error.message : String(error);
-              fail(message);
+              failFromPush(error);
+              // Removing the secret rewrites this branch, which invalidates the
+              // saved plan; no remote outcome is uncertain, so drop the checkpoint.
+              if (blocked) {
+                await discardRecovery(checkpoint, cwd).catch(() => undefined);
+                p.log.info("After removing the secret, run ggh stack restack so descendants pick up the rewritten commits, then ggh stack submit again.");
+              }
               await switchBranch(original, false, cwd).catch(() => undefined);
-              jsonOut({ status: "partially_completed", operationId: checkpoint.operationId, completed: checkpoint.entries.filter((item) => item.state === "completed").map((item) => item.branch), remaining: checkpoint.entries.filter((item) => item.state !== "completed").map((item) => item.branch), opened, resources: checkpoint.resources, error: { message } });
+              jsonOut({ status: anyCompleted || !blocked ? "partially_completed" : "failed", operationId: checkpoint.operationId, completed: checkpoint.entries.filter((item) => item.state === "completed").map((item) => item.branch), remaining: checkpoint.entries.filter((item) => item.state !== "completed").map((item) => item.branch), ...(blocked ? { failed: [entry.branch], pushProtection: error.details } : {}), opened, resources: checkpoint.resources, error: { message } });
               return;
             }
           }

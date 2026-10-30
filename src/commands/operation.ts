@@ -8,7 +8,7 @@ import { recordCommandIssue, setActiveOperation } from "../services/runtime.ts";
 import { finishCommandOperation } from "../services/command-operations.ts";
 import type { RequiredInput } from "../services/agent-contract.ts";
 import { isDryRun } from "../utils/flags.ts";
-import { confirmOrAbort, fail, header, jsonOut, p, pc } from "../utils/ui.ts";
+import { confirmOrAbort, fail, failPublication, header, jsonOut, p, pc } from "../utils/ui.ts";
 
 export function registerOperationCommand(program: Command): void {
   const operation = program.command("operation").alias("op").description("List and inspect local operation records");
@@ -20,7 +20,7 @@ export function registerOperationCommand(program: Command): void {
         const guide = operationRecoveryGuide(await readOperation(id));
         if (jsonOut(guide)) return;
         header("Operation Recovery");
-        p.log.message(`State: ${guide.state}\nCompleted: ${guide.completed.join(", ") || "none"}\nRemaining: ${guide.remaining.join(", ") || "none"}\nUncertain: ${guide.uncertain.join(", ") || "none"}`);
+        p.log.message(`State: ${guide.state}\nCompleted: ${guide.completed.join(", ") || "none"}\nRemaining: ${guide.remaining.join(", ") || "none"}\nFailed: ${guide.failed.join(", ") || "none"}\nUncertain: ${guide.uncertain.join(", ") || "none"}`);
         for (const command of guide.inspection) p.log.message(command);
         p.log.info(guide.resumable ? `Resume with ggh operation resume ${id}; required content must be supplied again.` : guide.guidance ?? "This operation is already complete.");
       } catch (error) { fail(error instanceof Error ? error.message : String(error)); }
@@ -103,7 +103,7 @@ export function registerOperationCommand(program: Command): void {
         await updateOperation(id, { status: { state: "running" } });
         setActiveOperation({ id: record.id, cwd: record.resume.plan.cwd, command: record.command });
         const result = await executePublication(plan, content, { claimHeld: true, priorCompleted: guide.completed, intent: record.resume, approvedSnapshot: snapshotId });
-        if (result.status !== "succeeded") fail(result.error ?? "Publication recovery did not complete.");
+        if (result.status !== "succeeded") failPublication(result, "Publication recovery did not complete.");
         if (!jsonOut({ ...result, completed: [...new Set([...guide.completed, ...result.completed])], operationId: id })) {
           if (result.url) p.log.message(result.url);
           p.outro(result.status === "succeeded" ? "Publication recovered." : "Inspect completed and remaining effects before retrying.");

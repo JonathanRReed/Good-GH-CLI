@@ -48,6 +48,7 @@ import {
   jsonOut,
   confirmPrompt,
   fail,
+  failFromPush,
   formatAIFallback,
   header,
   multiSelectMenu,
@@ -60,6 +61,7 @@ import {
   selectMenu,
 } from "../utils/ui.ts";
 import { openPullRequest } from "./pr-create.ts";
+import { PushProtectionError } from "../services/git/push-protection.ts";
 import { run } from "../utils/exec.ts";
 import { dryRun, isDryRun } from "../utils/flags.ts";
 
@@ -1008,14 +1010,14 @@ export function registerCommitCommand(program: Command): void {
           });
           pushSpinner.stop(pc.green("Pushed to remote successfully!"));
         } catch (err) {
-          pushSpinner.stop(pc.yellow("Push failed or was rejected."));
-          fail(
-            `Push did not complete. The local commit is preserved. Inspect the remote before retrying. ${String(err)}`,
-          );
+          const blocked = err instanceof PushProtectionError;
+          pushSpinner.stop(pc.yellow(blocked ? "Push blocked by GitHub push protection. The local commit is preserved." : "Push failed or was rejected."));
+          failFromPush(err, "Push did not complete. The local commit is preserved. Inspect the remote before retrying. ");
           jsonOut({
             status: "partially_completed",
             completed: ["commit"],
             remaining: ["push"],
+            ...(blocked ? { failed: ["push"], pushProtection: err.details } : {}),
             branch: status.branch,
             revision: (await run("git", ["rev-parse", "HEAD"])).stdout.trim(),
           }); return;
