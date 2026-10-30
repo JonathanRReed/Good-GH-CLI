@@ -291,6 +291,88 @@
         "unexpected": [],
         "stderr": ""
       }
+    },
+    {
+      "case": "good-gh-brief",
+      "question": "Where am I: branch, HEAD, drift, cleanliness, branch PR, CI, unresolved threads, linked issues and stack?",
+      "expectedEvidence": [
+        {
+          "label": "branch",
+          "pattern": "feat/universe-2026"
+        },
+        {
+          "label": "full HEAD",
+          "pattern": "0b4979114fa2e9c00bb30285ceab79f171209913"
+        },
+        {
+          "label": "tracking branch",
+          "pattern": "origin/feat/universe-2026"
+        },
+        {
+          "label": "zero drift, clean checkout",
+          "pattern": "# branch\\.ab \\+0 -0\\n\\{|\"ahead\":0,\"behind\":0,\"staged\":0,\"unstaged\":0,\"untracked\":0,\"conflicts\":0"
+        },
+        {
+          "label": "PR number and state",
+          "pattern": "\"number\":17,[^}]*\"(?:prState|state)\":\"OPEN\""
+        },
+        {
+          "label": "PR head SHA",
+          "pattern": "\"headRefOid\":\"0b4979114fa2e9c00bb30285ceab79f171209913\"|\"headSha\":\"0b4979114fa2e9c00bb30285ceab79f171209913\""
+        },
+        {
+          "label": "mergeable",
+          "pattern": "\"mergeable\":\"MERGEABLE\""
+        },
+        {
+          "label": "pending check",
+          "pattern": "\"bucket\":\"pending\"|\"pending\":1"
+        },
+        {
+          "label": "no failing check",
+          "pattern": "\"failing\":\\[\\]|(?<![\\s\\S])(?![\\s\\S]*\"bucket\":\"(?:fail|cancel)\")(?=[\\s\\S]*\"bucket\":\"pass\")"
+        },
+        {
+          "label": "two unresolved threads",
+          "pattern": "\"nodes\":\\[\\{\"isResolved\":false\\},\\{\"isResolved\":false\\}\\]|\"unresolved\":2"
+        },
+        {
+          "label": "no linked issues",
+          "pattern": "\"closingIssuesReferences\":\\[\\]|\"linkedIssues\":\\{\"state\":\"available\",\"items\":\\[\\]\\}"
+        },
+        {
+          "label": "not stacked",
+          "pattern": "\\[\\]$|\"stack\":\\{\"state\":\"none\"\\}"
+        }
+      ],
+      "nativeCommands": [
+        "git status --porcelain=v2 --branch",
+        "gh pr view --json number,url,state,isDraft,headRefOid,baseRefName,reviewDecision,mergeable,closingIssuesReferences",
+        "gh pr checks 17 --json name,bucket",
+        "gh api graphql -f query='query{repository(owner:\"JonathanRReed\",name:\"Good-GH-CLI\"){pullRequest(number:17){reviewThreads(first:100){nodes{isResolved}}}}}'",
+        "gh api -H 'X-GitHub-Api-Version: 2026-03-10' 'repos/JonathanRReed/Good-GH-CLI/stacks?pull_request=17'"
+      ],
+      "gghCommand": "ggh agent brief --agent",
+      "native": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 1710,
+        "tokens": 427.5,
+        "toolCalls": 5
+      },
+      "ggh": {
+        "recall": 1,
+        "missing": [],
+        "bytes": 945,
+        "tokens": 236.25,
+        "toolCalls": 1,
+        "byteRatio": 0.5526315789473685,
+        "maxByteRatio": 1.5,
+        "subprocessCalls": 8,
+        "exitCode": 0,
+        "unexpected": [],
+        "stderr": ""
+      }
     }
   ],
   "dirtyResults": [

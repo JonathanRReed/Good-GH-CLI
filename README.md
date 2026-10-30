@@ -76,6 +76,7 @@ Review prepares a separate checkout without copying `.env` files or initializing
 Read the [ggh skill](skills/ggh/SKILL.md) and its [generated command reference](skills/ggh/reference.md). The pack covers Claude Code, Codex, T3 Code, and Cursor.
 
 ```bash
+ggh agent brief --agent
 ggh agent skill
 ggh agent skill --install claude --dry-run --agent
 ggh agent skill --install codex --yes --agent
@@ -85,6 +86,8 @@ ggh projects repo --agent
 ggh pr threads 42 --agent
 ggh ci why 42 --agent --max-bytes 6144 --context 2
 ```
+
+Start a session with `ggh agent brief --agent`. One call returns checkout identity, the branch PR, its CI counts and failing check names, the unresolved thread count, linked issues with their artifacts, and native stack position. Each GitHub section reports `available`, `none`, `unavailable` with a reason, or `skipped`, so one failed read never hides the rest. Remote reads share a 15-second deadline; `--local` makes no GitHub calls.
 
 Skill installation copies both files, requires approval, and refuses differing files unless explicitly forced. `--install t3` explains provider directories; an explicit path names the final skill directory. Dry runs write nothing.
 
@@ -98,7 +101,7 @@ After PR creation, the calling agent must register the returned URL with its hos
 
 ### What the benchmark proves
 
-The [offline benchmark](bench/agent/README.md) reports both wins and losses with 100% declared evidence recall across eight cases. VS Code CI output falls from 133,470 native bytes to 8,625 ggh bytes. A tuned native Zod CI filter wins at 5,402 versus 7,231 bytes. Clean status costs 181 versus 121 porcelain-v2 bytes; dirty porcelain-v1 and native run-detail output are smaller too.
+The [offline benchmark](bench/agent/README.md) reports both wins and losses with 100% declared evidence recall across nine cases. VS Code CI output falls from 133,470 native bytes to 8,625 ggh bytes. A recorded session-start brief costs 945 bytes in one call versus 1,710 bytes across five tuned native calls. A tuned native Zod CI filter wins at 5,402 versus 7,231 bytes. Clean status costs 181 versus 121 porcelain-v2 bytes; dirty porcelain-v1 and native run-detail output are smaller too.
 
 Use native `git log`, `diff`, and `blame` for ordinary history and patches. ggh earns its place when checkout identity, bounded CI evidence, structured project state, or guarded mutations save work. Benchmark tokens are bytes divided by four. No tokenizer, blind repair trial, or latency comparison supports broader savings claims. Native scripts can combine their commands into one tool call.
 

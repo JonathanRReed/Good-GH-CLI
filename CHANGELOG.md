@@ -12,6 +12,10 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   opt out with `--no-native-stack`.
 - Show issue artifacts (plans, documents, links) in `issue <number>` and its
   JSON. Older GitHub CLI versions report them as unavailable.
+- Add `agent brief`, one session-start read of checkout identity, the branch
+  PR, CI counts with failing check names, the unresolved thread count, linked
+  issues with artifacts, and native stack position. Each GitHub section reports
+  its own availability under one 15-second deadline; `--local` skips GitHub.
 
 ### Fixed
 

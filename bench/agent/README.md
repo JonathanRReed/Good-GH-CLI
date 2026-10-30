@@ -19,6 +19,7 @@ or billed-token measurement has run.
 | VS Code CI | 133,470 | 8,625 | 33,367.5 | 2,156.25 | 100% / 100% | 5 / 1 |
 | VS Code status | 121 | 181 | 30.25 | 45.25 | 100% / 100% | 1 / 1 |
 | VS Code run | 11,533 | 11,846 | 2,883.25 | 2,961.5 | 100% / 100% | 2 / 1 |
+| Good GH brief | 1,710 | 945 | 427.5 | 236.25 | 100% / 100% | 5 / 1 |
 
 Tokens are UTF-8 bytes divided by four. No offline tokenizer is installed among
 the project's dev dependencies. These estimates cannot establish tokenizer savings.
@@ -81,6 +82,25 @@ codes such as `UU`. `submodules` holds `[path, S<c><m><u>]` markers. `--full` ad
 conflict stages and separate rename sources. Generated tests cover newline and
 space paths, renames, submodule markers, conflicts, detached/unborn HEAD,
 subdirectories, operations, separate routing targets and fetch metadata.
+
+## Session-start brief
+
+`brief.ts` replays `ggh agent brief --agent` against Good-GH-CLI PR #17 at
+`0b49791`, captured on 29 October 2026 from a clean checkout. The PR had 21
+checks (17 pass, 1 pending, 3 skipping), two unresolved review threads, no
+linked issues, and no native stack. Native and ggh read the same recorded
+responses. The native side is five tuned calls: porcelain-v2 status, a
+field-projected `gh pr view`, `gh pr checks --json name,bucket`, a GraphQL query
+for only `isResolved`, and the stacks API. The 1,710 native bytes are their
+concatenated stdout.
+
+ggh also reads full review-thread comments to count them; it prints only the
+count. Its output includes the absolute replay root, here 78 bytes, so the ggh
+byte count varies with checkout path length. Twelve declared evidence items
+cover branch, full HEAD, upstream, drift, cleanliness, PR number, state, head SHA,
+mergeability, pending and failing checks, the unresolved count, linked issues, and
+stack membership. One capture with no failing checks or linked issues is a single
+data point, not a general size claim. A native `--jq` projection can be smaller.
 
 ## Dirty status comparison
 

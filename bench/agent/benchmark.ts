@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { ciResponses, recordedRun, specimens, statusResponses } from "./cases.ts";
 import { recorded, replayCli } from "./replay.ts";
 import { dirtyStatusCase } from "./dirty-status.ts";
+import { briefCase, briefNativeOutput, briefResponses } from "./brief.ts";
 import { nativeCi } from "./native.ts";
 
 interface ExpectedEvidence { label: string; pattern: string }
@@ -76,6 +77,12 @@ for (const specimen of specimens) {
     const ggh = { ...metrics(output, expected, 1), ...(kind === "status" ? { byteRatio: Buffer.byteLength(output) / native.bytes, maxByteRatio: 1.5 } : {}), subprocessCalls: out.calls.length, exitCode: out.exitCode, unexpected: out.unexpected, stderr: out.stderr };
     results.push({ case: `${specimen.name}-${kind}`, question: kind === "ci" ? "Why did CI fail at this PR head?" : kind === "status" ? "Which branch and tracking branch, what drift, and is it clean?" : "Which run/jobs failed and what did the failed steps print?", expectedEvidence: expected, nativeCommands: commands, gghCommand: `ggh ${command.join(" ")}`, native, ggh });
   }
+}
+{
+  const out = await replayCli(briefCase.command, briefResponses());
+  const native = metrics(briefNativeOutput(), briefCase.expected, briefCase.nativeCommands.length);
+  results.push({ case: "good-gh-brief", question: briefCase.question, expectedEvidence: briefCase.expected, nativeCommands: briefCase.nativeCommands, gghCommand: `ggh ${briefCase.command.join(" ")}`, native,
+    ggh: { ...metrics(out.stdout, briefCase.expected, 1), byteRatio: Buffer.byteLength(out.stdout) / native.bytes, maxByteRatio: 1.5, subprocessCalls: out.calls.length, exitCode: out.exitCode, unexpected: out.unexpected, stderr: out.stderr } });
 }
 const dirtyResults = [];
 for (const count of [5, 25]) {

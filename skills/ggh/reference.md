@@ -23,7 +23,7 @@ All fields below come from the installed command tree and result schemas. Requir
 | `requiredInputs[].description` | string | yes |  |  |
 | `requiredInputs[].alternatives` | array | no |  |  |
 | `requiredInputs[].alternatives[]` | string | no |  |  |
-| `effects` | object | no |  | Completed effects include explicit local mutations and launches, even when a later step fails. Review uses review_checkout_created/updated, review_objects_fetched, review_refs_updated and review_ledger_marked. Clone uses repository_cloned. Projects use projects_index_updated and projects_roots_updated/projects_exclusions_updated. Go launches use editor_opened/t3_opened. Single-repo sync uses refs_fetched_pruned and branch_deleted:<name>. Omitted only for read-only status when all arrays are empty; defaults to completed: [], pending: [], uncertain: []. |
+| `effects` | object | no |  | Completed effects include explicit local mutations and launches, even when a later step fails. Review uses review_checkout_created/updated, review_objects_fetched, review_refs_updated and review_ledger_marked. Clone uses repository_cloned. Projects use projects_index_updated and projects_roots_updated/projects_exclusions_updated. Go launches use editor_opened/t3_opened. Single-repo sync uses refs_fetched_pruned and branch_deleted:<name>. Omitted only for read-only status and agent brief when all arrays are empty; defaults to completed: [], pending: [], uncertain: []. |
 | `effects.completed` | array | yes |  |  |
 | `effects.completed[]` | string | no |  |  |
 | `effects.pending` | array | yes |  |  |
@@ -164,6 +164,7 @@ Every managed command accepts `--agent`. It wraps this payload in `result` and d
 | `ggh operation prune` |  | --older-than value, --yes, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
 | `ggh agent` |  | --agent, --quiet, --no-input | Unspecified |
 | `ggh agent skill` |  | --install value, --force, --yes, --dry-run, --agent, --quiet, --no-input | [agentSkill](#agentskill) |
+| `ggh agent brief` |  | --local, --agent, --quiet, --no-input | [agentBrief](#agentbrief) |
 | `ggh agent schema` |  | --agent, --quiet, --no-input | Unspecified |
 
 Coverage: Partial field schemas. Optional fields vary by outcome. Other command result payloads are not yet specified.
@@ -182,6 +183,99 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.writes` | array | no |  | Files that would change during a dry run. |
 | `result.writes[]` | string | no |  |  |
 | `result.unchanged` | `true` | no |  | All bundled files already match; no writes performed. |
+
+## agentBrief
+
+| Field | Type / values | Required in parent | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `result` | object | no |  |  |
+| `result.schemaVersion` | `1` | yes |  |  |
+| `result.checkout` | object | yes |  | Local and always read. Same porcelain-v2 parse as status --agent, with explicit counts. |
+| `result.checkout.root` | string | yes |  |  |
+| `result.checkout.branch` | string / null | yes |  | Null means detached HEAD. |
+| `result.checkout.head` | string / null | yes |  | Full HEAD object ID; null for an unborn branch. |
+| `result.checkout.upstream` | string / null | yes |  |  |
+| `result.checkout.ahead` | integer | yes |  |  |
+| `result.checkout.behind` | integer | yes |  |  |
+| `result.checkout.staged` | integer | yes |  |  |
+| `result.checkout.unstaged` | integer | yes |  |  |
+| `result.checkout.untracked` | integer | yes |  |  |
+| `result.checkout.conflicts` | integer | yes |  |  |
+| `result.checkout.operation` | `["rebase","merge","cherry-pick","revert","sequencer","bisect"]` | no |  | Omitted when no operation is in progress. |
+| `result.pullRequest` | varies | yes |  |  |
+| `result.pullRequest [anyOf 1]` | object | yes |  |  |
+| `result.pullRequest [anyOf 1].state` | `"available"` | yes |  |  |
+| `result.pullRequest [anyOf 1].number` | integer | yes |  |  |
+| `result.pullRequest [anyOf 1].url` | string | yes |  |  |
+| `result.pullRequest [anyOf 1].prState` | string | yes |  | GitHub state: OPEN, CLOSED or MERGED. |
+| `result.pullRequest [anyOf 1].draft` | boolean | yes |  |  |
+| `result.pullRequest [anyOf 1].headSha` | string | yes |  |  |
+| `result.pullRequest [anyOf 1].base` | string | yes |  |  |
+| `result.pullRequest [anyOf 1].reviewDecision` | string / null | yes |  |  |
+| `result.pullRequest [anyOf 1].mergeable` | string | yes |  |  |
+| `result.pullRequest [anyOf 1].headMatchesLocal` | boolean | yes |  | PR head equals the local full HEAD. False can mean unpushed or unpulled commits. |
+| `result.pullRequest [anyOf 2]` | object | yes |  | The branch has no pull request. |
+| `result.pullRequest [anyOf 2].state` | `"none"` | yes |  |  |
+| `result.pullRequest [anyOf 3]` | object | yes |  | unavailable: the read failed or missed the deadline. skipped: not attempted because of --local, a detached HEAD, or no readable branch PR. |
+| `result.pullRequest [anyOf 3].state` | `["unavailable","skipped"]` | yes |  |  |
+| `result.pullRequest [anyOf 3].reason` | string | yes |  |  |
+| `result.ci` | varies | yes |  |  |
+| `result.ci [anyOf 1]` | object | yes |  |  |
+| `result.ci [anyOf 1].state` | `"available"` | yes |  |  |
+| `result.ci [anyOf 1].total` | integer | yes |  |  |
+| `result.ci [anyOf 1].counts` | object | yes |  | Non-zero check counts by gh bucket: pass, fail, pending, skipping, cancel. |
+| `result.ci [anyOf 1].failing` | array | yes |  | Names of failed and cancelled checks. Logs are not fetched; use ggh ci why. |
+| `result.ci [anyOf 1].failing[]` | string | no |  |  |
+| `result.ci [anyOf 2]` | object | yes |  | unavailable: the read failed or missed the deadline. skipped: not attempted because of --local, a detached HEAD, or no readable branch PR. |
+| `result.ci [anyOf 2].state` | `["unavailable","skipped"]` | yes |  |  |
+| `result.ci [anyOf 2].reason` | string | yes |  |  |
+| `result.reviewThreads` | varies | yes |  |  |
+| `result.reviewThreads [anyOf 1]` | object | yes |  |  |
+| `result.reviewThreads [anyOf 1].state` | `"available"` | yes |  |  |
+| `result.reviewThreads [anyOf 1].unresolved` | integer | yes |  |  |
+| `result.reviewThreads [anyOf 1].complete` | `false` | no |  | Present when pagination stopped early; unresolved is then a lower bound. |
+| `result.reviewThreads [anyOf 2]` | object | yes |  | unavailable: the read failed or missed the deadline. skipped: not attempted because of --local, a detached HEAD, or no readable branch PR. |
+| `result.reviewThreads [anyOf 2].state` | `["unavailable","skipped"]` | yes |  |  |
+| `result.reviewThreads [anyOf 2].reason` | string | yes |  |  |
+| `result.linkedIssues` | varies | yes |  |  |
+| `result.linkedIssues [anyOf 1]` | object | yes |  |  |
+| `result.linkedIssues [anyOf 1].state` | `"available"` | yes |  |  |
+| `result.linkedIssues [anyOf 1].items` | array | yes |  | Issues the PR closes, from closingIssuesReferences. At most 10. |
+| `result.linkedIssues [anyOf 1].items[]` | object | no |  |  |
+| `result.linkedIssues [anyOf 1].items[].number` | integer | yes |  |  |
+| `result.linkedIssues [anyOf 1].items[].repo` | string | no |  | OWNER/REPO, present only for issues in another repository. |
+| `result.linkedIssues [anyOf 1].items[].artifacts` | varies | yes |  |  |
+| `result.linkedIssues [anyOf 1].items[].artifacts [anyOf 1]` | object | yes |  |  |
+| `result.linkedIssues [anyOf 1].items[].artifacts [anyOf 1].state` | `"available"` | yes |  |  |
+| `result.linkedIssues [anyOf 1].items[].artifacts [anyOf 1].items` | array | yes |  |  |
+| `result.linkedIssues [anyOf 1].items[].artifacts [anyOf 1].items[]` | object | no |  |  |
+| `result.linkedIssues [anyOf 1].items[].artifacts [anyOf 1].items[].number` | integer | yes |  |  |
+| `result.linkedIssues [anyOf 1].items[].artifacts [anyOf 1].items[].name` | string | yes |  |  |
+| `result.linkedIssues [anyOf 1].items[].artifacts [anyOf 1].items[].type` | string | yes |  |  |
+| `result.linkedIssues [anyOf 1].items[].artifacts [anyOf 2]` | object | yes |  | unavailable: the artifact read failed. skipped: the issue is in another repository. |
+| `result.linkedIssues [anyOf 1].items[].artifacts [anyOf 2].state` | `["unavailable","skipped"]` | yes |  |  |
+| `result.linkedIssues [anyOf 1].items[].artifacts [anyOf 2].reason` | string | yes |  |  |
+| `result.linkedIssues [anyOf 1].more` | integer | no |  | Linked issues beyond the first 10. |
+| `result.linkedIssues [anyOf 2]` | object | yes |  | unavailable: the read failed or missed the deadline. skipped: not attempted because of --local, a detached HEAD, or no readable branch PR. |
+| `result.linkedIssues [anyOf 2].state` | `["unavailable","skipped"]` | yes |  |  |
+| `result.linkedIssues [anyOf 2].reason` | string | yes |  |  |
+| `result.stack` | varies | yes |  |  |
+| `result.stack [anyOf 1]` | object | yes |  |  |
+| `result.stack [anyOf 1].state` | `"available"` | yes |  |  |
+| `result.stack [anyOf 1].number` | integer | yes |  |  |
+| `result.stack [anyOf 1].position` | integer | yes |  | 1-based position from the bottom of the stack. |
+| `result.stack [anyOf 1].size` | integer | yes |  |  |
+| `result.stack [anyOf 1].below` | array | yes |  | PRs below this one, bottom first. Merging this PR merges every unmerged PR below it. |
+| `result.stack [anyOf 1].below[]` | object | no |  |  |
+| `result.stack [anyOf 1].below[].number` | integer | yes |  |  |
+| `result.stack [anyOf 1].below[].prState` | string | yes |  |  |
+| `result.stack [anyOf 2]` | object | yes |  | The PR is not in a GitHub native stack. |
+| `result.stack [anyOf 2].state` | `"none"` | yes |  |  |
+| `result.stack [anyOf 3]` | object | yes |  | unavailable: the read failed or missed the deadline. skipped: not attempted because of --local, a detached HEAD, or no readable branch PR. |
+| `result.stack [anyOf 3].state` | `["unavailable","skipped"]` | yes |  |  |
+| `result.stack [anyOf 3].reason` | string | yes |  |  |
+| `result.next` | array | no |  | Suggested follow-up reads, such as ggh ci why or ggh pr threads. Data, not permission to mutate. |
+| `result.next[]` | string | no |  |  |
 
 ## tidy
 

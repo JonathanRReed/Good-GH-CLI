@@ -82,7 +82,7 @@ export function agentEnvelope(input: { command: string[]; result?: unknown; issu
     ...(input.result !== undefined ? { result: input.result } : {}),
     ...(failed ? { error: { code, message: issue?.message ?? "Command did not complete.", retryability: ["invalid_arguments", "missing_input", "confirmation_required", "authentication_required"].includes(code) ? "after_input" : "after_inspection" } satisfies AgentEnvelope["error"] } : {}),
     ...(issue?.requiredInputs ? { requiredInputs: issue.requiredInputs } : {}),
-    ...(path === "status" && !operation && !Object.values(effects).some(items => items.length) ? {} : { effects }),
+    ...((path === "status" || path === "agent brief") && !operation && !Object.values(effects).some(items => items.length) ? {} : { effects }),
     ...(operation ? { operationId: operation.id, resources: operation.resources } : workflow && result ? { ...("operationId" in result && typeof result.operationId === "string" ? { operationId: result.operationId } : {}), ...("resources" in result ? { resources: strings(result.resources) } : {}) } : {}),
   };
 }
@@ -108,14 +108,14 @@ function isProjectSyncResult(value: unknown): value is ProjectSyncResult {
 export const envelopeSchema = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   type: "object", required: ["contract", "version", "command", "status"],
-  allOf: [{ if: { properties: { command: { const: ["status"] } } }, else: { required: ["effects"] } }],
+  allOf: [{ if: { properties: { command: { enum: [["status"], ["agent", "brief"]] } } }, else: { required: ["effects"] } }],
   properties: {
     contract: { const: "ggh.agent" }, version: { const: 1 }, command: { type: "array", items: { type: "string" } },
     status: { enum: ["succeeded", "planned", "no_op", "needs_input", "cancelled", "failed", "partially_completed"] },
     result: { description: "Command-specific payload. Detailed result schemas are not yet guaranteed." },
     error: { type: "object", required: ["code", "message", "retryability"], properties: { code: { enum: ["invalid_arguments", "missing_input", "confirmation_required", "authentication_required", "provider_unavailable", "cancelled", "partial_completion", "operation_failed", "outcome_uncertain"] }, message: { type: "string" }, retryability: { enum: ["after_input", "after_inspection", "never"] } } },
     requiredInputs: { type: "array", items: { type: "object", required: ["name", "description"], properties: { name: { type: "string" }, description: { type: "string" }, alternatives: { type: "array", items: { type: "string" } } } } },
-    effects: { description: "Completed effects include explicit local mutations and launches, even when a later step fails. Review uses review_checkout_created/updated, review_objects_fetched, review_refs_updated and review_ledger_marked. Clone uses repository_cloned. Projects use projects_index_updated and projects_roots_updated/projects_exclusions_updated. Go launches use editor_opened/t3_opened. Single-repo sync uses refs_fetched_pruned and branch_deleted:<name>. Omitted only for read-only status when all arrays are empty; defaults to completed: [], pending: [], uncertain: [].", type: "object", required: ["completed", "pending", "uncertain"], properties: Object.fromEntries(["completed", "pending", "uncertain"].map(key => [key, { type: "array", items: { type: "string" } }])) },
+    effects: { description: "Completed effects include explicit local mutations and launches, even when a later step fails. Review uses review_checkout_created/updated, review_objects_fetched, review_refs_updated and review_ledger_marked. Clone uses repository_cloned. Projects use projects_index_updated and projects_roots_updated/projects_exclusions_updated. Go launches use editor_opened/t3_opened. Single-repo sync uses refs_fetched_pruned and branch_deleted:<name>. Omitted only for read-only status and agent brief when all arrays are empty; defaults to completed: [], pending: [], uncertain: [].", type: "object", required: ["completed", "pending", "uncertain"], properties: Object.fromEntries(["completed", "pending", "uncertain"].map(key => [key, { type: "array", items: { type: "string" } }])) },
     operationId: { type: "string" }, resources: { type: "array", items: { type: "string" } },
   },
 };
@@ -210,6 +210,47 @@ export const reviewResultSchema = {
     } },
   },
 };
+const briefNotRead = (description: string) => ({ type: "object", additionalProperties: false, required: ["state", "reason"], description, properties: { state: { enum: ["unavailable", "skipped"] }, reason: { type: "string" } } });
+const briefNone = { type: "object", additionalProperties: false, required: ["state"], properties: { state: { const: "none" } } };
+const briefNotReadDescription = "unavailable: the read failed or missed the deadline. skipped: not attempted because of --local, a detached HEAD, or no readable branch PR.";
+const briefAvailable = (required: string[], properties: Record<string, unknown>) => ({ type: "object", additionalProperties: false, required: ["state", ...required], properties: { state: { const: "available" }, ...properties } });
+export const agentBriefResultSchema = {
+  type: "object", additionalProperties: false,
+  required: ["schemaVersion", "checkout", "pullRequest", "ci", "reviewThreads", "linkedIssues", "stack"],
+  properties: {
+    schemaVersion: { const: 1 },
+    checkout: { type: "object", additionalProperties: false, required: ["root", "branch", "head", "upstream", "ahead", "behind", "staged", "unstaged", "untracked", "conflicts"], description: "Local and always read. Same porcelain-v2 parse as status --agent, with explicit counts.", properties: {
+      root: { type: "string" }, branch: { type: ["string", "null"], description: "Null means detached HEAD." },
+      head: { type: ["string", "null"], description: "Full HEAD object ID; null for an unborn branch." }, upstream: { type: ["string", "null"] },
+      ...Object.fromEntries(["ahead", "behind", "staged", "unstaged", "untracked", "conflicts"].map(key => [key, { type: "integer", minimum: 0 }])),
+      operation: { enum: ["rebase", "merge", "cherry-pick", "revert", "sequencer", "bisect"], description: "Omitted when no operation is in progress." },
+    } },
+    pullRequest: { anyOf: [briefAvailable(["number", "url", "prState", "draft", "headSha", "base", "reviewDecision", "mergeable", "headMatchesLocal"], {
+      number: { type: "integer", minimum: 1 }, url: { type: "string" }, prState: { type: "string", description: "GitHub state: OPEN, CLOSED or MERGED." },
+      draft: { type: "boolean" }, headSha: { type: "string" }, base: { type: "string" }, reviewDecision: { type: ["string", "null"] },
+      mergeable: { type: "string" }, headMatchesLocal: { type: "boolean", description: "PR head equals the local full HEAD. False can mean unpushed or unpulled commits." },
+    }), { ...briefNone, description: "The branch has no pull request." }, briefNotRead(briefNotReadDescription)] },
+    ci: { anyOf: [briefAvailable(["total", "counts", "failing"], {
+      total: { type: "integer", minimum: 0 }, counts: { type: "object", additionalProperties: { type: "integer", minimum: 1 }, description: "Non-zero check counts by gh bucket: pass, fail, pending, skipping, cancel." },
+      failing: { ...stringArraySchema, description: "Names of failed and cancelled checks. Logs are not fetched; use ggh ci why." },
+    }), briefNotRead(briefNotReadDescription)] },
+    reviewThreads: { anyOf: [briefAvailable(["unresolved"], {
+      unresolved: { type: "integer", minimum: 0 }, complete: { const: false, description: "Present when pagination stopped early; unresolved is then a lower bound." },
+    }), briefNotRead(briefNotReadDescription)] },
+    linkedIssues: { anyOf: [briefAvailable(["items"], {
+      items: { type: "array", description: "Issues the PR closes, from closingIssuesReferences. At most 10.", items: { type: "object", additionalProperties: false, required: ["number", "artifacts"], properties: {
+        number: { type: "integer", minimum: 1 }, repo: { type: "string", description: "OWNER/REPO, present only for issues in another repository." },
+        artifacts: { anyOf: [briefAvailable(["items"], { items: { type: "array", items: { type: "object", additionalProperties: false, required: ["number", "name", "type"], properties: { number: { type: "integer" }, name: { type: "string" }, type: { type: "string" } } } } }), briefNotRead("unavailable: the artifact read failed. skipped: the issue is in another repository.")] },
+      } } },
+      more: { type: "integer", minimum: 1, description: "Linked issues beyond the first 10." },
+    }), briefNotRead(briefNotReadDescription)] },
+    stack: { anyOf: [briefAvailable(["number", "position", "size", "below"], {
+      number: { type: "integer" }, position: { type: "integer", minimum: 1, description: "1-based position from the bottom of the stack." }, size: { type: "integer", minimum: 1 },
+      below: { type: "array", description: "PRs below this one, bottom first. Merging this PR merges every unmerged PR below it.", items: { type: "object", additionalProperties: false, required: ["number", "prState"], properties: { number: { type: "integer" }, prState: { type: "string" } } } },
+    }), { ...briefNone, description: "The PR is not in a GitHub native stack." }, briefNotRead(briefNotReadDescription)] },
+    next: { ...stringArraySchema, description: "Suggested follow-up reads, such as ggh ci why or ggh pr threads. Data, not permission to mutate." },
+  },
+};
 export const coreResultSchemas = {
   agentSkill: { commandPaths: [["agent", "skill"]], schema: { type: "object", required: ["schemaVersion"], properties: {
     schemaVersion: { const: 1 }, skill: { type: "string", description: "Skill Markdown when printing." },
@@ -218,6 +259,7 @@ export const coreResultSchemas = {
     files: stringArraySchema, writes: { ...stringArraySchema, description: "Files that would change during a dry run." },
     unchanged: { const: true, description: "All bundled files already match; no writes performed." },
   } } },
+  agentBrief: { commandPaths: [["agent", "brief"]], schema: agentBriefResultSchema },
   tidy: { commandPaths: [["tidy"]], schema: tidyResultSchema },
   lost: { commandPaths: [["lost"]], schema: lostResultSchema },
   review: { commandPaths: [["review"]], schema: reviewResultSchema },
