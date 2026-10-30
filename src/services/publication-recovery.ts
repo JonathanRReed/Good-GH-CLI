@@ -9,7 +9,8 @@ export function operationRecoveryGuide(record: OperationRecord) {
     resumable: Boolean(record.resume) && !complete,
     completed: record.steps.filter(step => step.state === "completed").map(step => step.name),
     remaining: record.steps.filter(step => step.state === "pending").map(step => step.name),
-    uncertain: record.steps.filter(step => step.state === "unknown" || step.state === "failed").map(step => step.name),
+    failed: record.steps.filter(step => step.state === "failed").map(step => step.name),
+    uncertain: record.steps.filter(step => step.state === "unknown" || step.state === "uncertain").map(step => step.name),
     resources: record.resources,
     requiredContent: record.resume ? {
       pullRequest: record.resume.requiresPrContent,

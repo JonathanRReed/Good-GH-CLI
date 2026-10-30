@@ -12,6 +12,15 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   opt out with `--no-native-stack`.
 - Show issue artifacts (plans, documents, links) in `issue <number>` and its
   JSON. Older GitHub CLI versions report them as unavailable.
+- Classify GitHub push-protection rejections (GH013/GH009, including AI-detected
+  secrets) from `commit --push`, `pr create`, `repo create`, `operation resume`,
+  `stack submit`, and `rename`. Git's remote output still streams live. ggh
+  never retries the push, lists each secret's type, commit, path, and line,
+  explains how to rewrite the unpublished commits and rotate the secret, and
+  shows GitHub's bypass page only as a person's decision. `--agent` reports
+  `push_protection_blocked` with retryability `never`, the findings in
+  `error.pushProtection`, and the push as pending. Operation records mark the
+  push `failed`, not uncertain.
 
 ### Fixed
 

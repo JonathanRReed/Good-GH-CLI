@@ -1,4 +1,5 @@
 import type { AgentErrorCode, RequiredInput } from "./agent-contract.ts";
+import type { PushProtectionDetails } from "./git/push-protection.ts";
 import type { OperationRecord } from "./operations.ts";
 /**
  * Process-wide flags that cut across every command. Commander writes them here
@@ -34,7 +35,7 @@ const defaults: RuntimeFlags = {
 let flags: RuntimeFlags = { ...defaults };
 let aiExplicitlyDisabled = false;
 
-export type CommandIssue = { status: "failed" | "needs_input" | "cancelled"; message: string; code?: AgentErrorCode; requiredInputs?: RequiredInput[] };
+export type CommandIssue = { status: "failed" | "needs_input" | "cancelled"; message: string; code?: AgentErrorCode; requiredInputs?: RequiredInput[]; pushProtection?: PushProtectionDetails };
 let commandPath: string[] = [];
 let finishedOperation: OperationRecord | undefined;
 export function setCommandPath(value: string[]): void { commandPath = value; }

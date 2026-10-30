@@ -20,6 +20,8 @@ import {
   promptInput,
 } from "../utils/ui.ts";
 import { dryRun } from "../utils/flags.ts";
+import { execGitPush } from "../services/git/exec.ts";
+import { pushProtectionBypassNote, PushProtectionError } from "../services/git/push-protection.ts";
 import { validateBranchName } from "../utils/branch-name.ts";
 
 export function registerRenameCommand(program: Command): void {
@@ -140,12 +142,15 @@ export function registerRenameCommand(program: Command): void {
             const remoteSpinner = p.spinner();
             remoteSpinner.start("Updating remote tracking branch...");
             try {
-              await run("git", ["push", "-u", remoteName, newName]);
+              await execGitPush(["push", "-u", remoteName, newName]);
               await run("git", ["push", remoteName, "--delete", current]);
               remoteSpinner.stop(pc.green("Remote branch updated successfully!"));
             } catch (remoteErr) {
               remoteSpinner.stop(pc.yellow("Remote branch update could not be fully completed."));
-              p.log.warn(String(remoteErr));
+              // The local rename stands; the old remote branch is kept because the new one was not pushed.
+              p.log.warn(String(remoteErr instanceof Error ? remoteErr.message : remoteErr));
+              const note = remoteErr instanceof PushProtectionError ? pushProtectionBypassNote(remoteErr.details) : undefined;
+              if (note) p.log.message(note);
             }
           }
         }

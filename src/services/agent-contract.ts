@@ -6,6 +6,7 @@ import type { OperationRecord } from "./operations.ts";
 import type { CommandIssue } from "./runtime.ts";
 import type { CloneMode } from "./config.ts";
 import type { CloneProtocol } from "./git/clone.ts";
+import type { PushProtectionDetails } from "./git/push-protection.ts";
 
 export interface CloneResult {
   version: 1;
@@ -17,7 +18,7 @@ export interface CloneResult {
   alreadyCloned: boolean;
 }
 
-export type AgentErrorCode = "invalid_arguments" | "missing_input" | "confirmation_required" | "authentication_required" | "provider_unavailable" | "cancelled" | "partial_completion" | "operation_failed" | "outcome_uncertain";
+export type AgentErrorCode = "invalid_arguments" | "missing_input" | "confirmation_required" | "authentication_required" | "provider_unavailable" | "cancelled" | "partial_completion" | "operation_failed" | "outcome_uncertain" | "push_protection_blocked";
 export type RequiredInput = { name: string; description: string; alternatives?: string[] };
 export type AgentStatus = "succeeded" | "planned" | "no_op" | "needs_input" | "cancelled" | "failed" | "partially_completed";
 export interface AgentEnvelope {
@@ -26,7 +27,7 @@ export interface AgentEnvelope {
   command: string[];
   status: AgentStatus;
   result?: unknown;
-  error?: { code: AgentErrorCode; message: string; retryability: "after_input" | "after_inspection" | "never" };
+  error?: { code: AgentErrorCode; message: string; retryability: "after_input" | "after_inspection" | "never"; pushProtection?: PushProtectionDetails };
   requiredInputs?: RequiredInput[];
   effects?: { completed: string[]; pending: string[]; uncertain: string[] };
   operationId?: string;
@@ -47,11 +48,14 @@ export function agentEnvelope(input: { command: string[]; result?: unknown; issu
   let status: AgentStatus = operation?.status.state === "running" ? "failed" : operation?.status.state ?? (issue?.status ?? (input.failed ? "failed" : input.dryRun ? "planned" : "succeeded"));
   if (managedStatus === "partially_completed" || managedStatus === "needs_input" || managedStatus === "cancelled" || managedStatus === "failed" || managedStatus === "no_op") status = managedStatus;
   if (input.dryRun && !issue && !input.failed) status = "planned";
+  const blocked = issue?.code === "push_protection_blocked";
   const effects = {
     completed: operation?.steps.filter(step => step.state === "completed").map(step => step.name) ?? (workflow && result && "completed" in result ? strings(result.completed) : []),
     pending: operation?.steps.filter(step => step.state === "pending").map(step => step.name) ?? (workflow && result && "remaining" in result ? strings(result.remaining) : input.preview.length ? ["command_effects"] : []),
-    uncertain: operation?.steps.filter(step => step.state === "unknown" || step.state === "failed" || step.state === "uncertain").map(step => step.name) ?? (path === "tidy" && result && "uncertain" in result ? strings(result.uncertain) : []),
+    uncertain: operation?.steps.filter(step => step.state === "unknown" || (step.state === "failed" && !blocked) || step.state === "uncertain").map(step => step.name) ?? (path === "tidy" && result && "uncertain" in result ? strings(result.uncertain) : []),
   };
+  // A push-protection rejection is definitive: the blocked push did not happen.
+  if (blocked && operation) effects.pending.push(...operation.steps.filter(step => step.state === "failed").map(step => step.name));
   effects.completed = [...new Set([...effects.completed, ...input.completedEffects ?? []])];
   effects.uncertain = [...new Set([...effects.uncertain, ...input.uncertainEffects ?? []])];
   if (bulkSync) {
@@ -74,13 +78,14 @@ export function agentEnvelope(input: { command: string[]; result?: unknown; issu
     if (input.command[0] === "api") effects.uncertain.push("command_effects");
     else if (!effects.completed.length && !effects.uncertain.length) effects.completed.push("command");
   }
-  const code = status === "partially_completed" ? "partial_completion" : issue?.code ?? (status === "cancelled" ? "cancelled" : status === "needs_input" ? "missing_input" : "operation_failed");
+  const code = blocked ? "push_protection_blocked" : status === "partially_completed" ? "partial_completion" : issue?.code ?? (status === "cancelled" ? "cancelled" : status === "needs_input" ? "missing_input" : "operation_failed");
   const failed = ["failed", "partially_completed", "cancelled", "needs_input"].includes(status);
-  if (failed && !bulkSync && !effects.uncertain.length && !["invalid_arguments", "missing_input", "confirmation_required", "authentication_required", "provider_unavailable"].includes(code)) effects.uncertain.push("command_effects");
+  if (failed && !bulkSync && !effects.uncertain.length && !["invalid_arguments", "missing_input", "confirmation_required", "authentication_required", "provider_unavailable", "push_protection_blocked"].includes(code)) effects.uncertain.push("command_effects");
+  effects.pending = [...new Set(effects.pending)];
   return {
     contract: "ggh.agent", version: 1, command: input.command, status,
     ...(input.result !== undefined ? { result: input.result } : {}),
-    ...(failed ? { error: { code, message: issue?.message ?? "Command did not complete.", retryability: ["invalid_arguments", "missing_input", "confirmation_required", "authentication_required"].includes(code) ? "after_input" : "after_inspection" } satisfies AgentEnvelope["error"] } : {}),
+    ...(failed ? { error: { code, message: issue?.message ?? "Command did not complete.", retryability: code === "push_protection_blocked" ? "never" : ["invalid_arguments", "missing_input", "confirmation_required", "authentication_required"].includes(code) ? "after_input" : "after_inspection", ...(issue?.pushProtection ? { pushProtection: issue.pushProtection } : {}) } satisfies AgentEnvelope["error"] } : {}),
     ...(issue?.requiredInputs ? { requiredInputs: issue.requiredInputs } : {}),
     ...(path === "status" && !operation && !Object.values(effects).some(items => items.length) ? {} : { effects }),
     ...(operation ? { operationId: operation.id, resources: operation.resources } : workflow && result ? { ...("operationId" in result && typeof result.operationId === "string" ? { operationId: result.operationId } : {}), ...("resources" in result ? { resources: strings(result.resources) } : {}) } : {}),
@@ -105,6 +110,7 @@ function isProjectSyncResult(value: unknown): value is ProjectSyncResult {
     });
 }
 
+const stringArraySchema = { type: "array", items: { type: "string" } };
 export const envelopeSchema = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   type: "object", required: ["contract", "version", "command", "status"],
@@ -113,17 +119,25 @@ export const envelopeSchema = {
     contract: { const: "ggh.agent" }, version: { const: 1 }, command: { type: "array", items: { type: "string" } },
     status: { enum: ["succeeded", "planned", "no_op", "needs_input", "cancelled", "failed", "partially_completed"] },
     result: { description: "Command-specific payload. Detailed result schemas are not yet guaranteed." },
-    error: { type: "object", required: ["code", "message", "retryability"], properties: { code: { enum: ["invalid_arguments", "missing_input", "confirmation_required", "authentication_required", "provider_unavailable", "cancelled", "partial_completion", "operation_failed", "outcome_uncertain"] }, message: { type: "string" }, retryability: { enum: ["after_input", "after_inspection", "never"] } } },
+    error: { type: "object", required: ["code", "message", "retryability"], properties: {
+      code: { enum: ["invalid_arguments", "missing_input", "confirmation_required", "authentication_required", "provider_unavailable", "cancelled", "partial_completion", "operation_failed", "outcome_uncertain", "push_protection_blocked"], description: "push_protection_blocked: GitHub push protection found a secret in the pushed commits and the push did not happen. Stop and report pushProtection to the user." },
+      message: { type: "string" }, retryability: { enum: ["after_input", "after_inspection", "never"], description: "never: retrying the same inputs cannot succeed." },
+      pushProtection: { type: "object", required: ["findings", "bypassUrls", "remoteLines"], description: "Present only with push_protection_blocked. Fields GitHub did not report are omitted.", properties: {
+        findings: { type: "array", items: { type: "object", properties: { secretType: { type: "string" }, commit: { type: "string" }, path: { type: "string" }, line: { type: "integer", minimum: 1 } } } },
+        bypassUrls: { ...stringArraySchema, description: "GitHub bypass pages for a person to judge. Agents must never open or follow them." },
+        remoteLines: { ...stringArraySchema, description: "Raw remote lines without the remote: prefix, kept when parsing is incomplete." },
+      } },
+    } },
     requiredInputs: { type: "array", items: { type: "object", required: ["name", "description"], properties: { name: { type: "string" }, description: { type: "string" }, alternatives: { type: "array", items: { type: "string" } } } } },
-    effects: { description: "Completed effects include explicit local mutations and launches, even when a later step fails. Review uses review_checkout_created/updated, review_objects_fetched, review_refs_updated and review_ledger_marked. Clone uses repository_cloned. Projects use projects_index_updated and projects_roots_updated/projects_exclusions_updated. Go launches use editor_opened/t3_opened. Single-repo sync uses refs_fetched_pruned and branch_deleted:<name>. Omitted only for read-only status when all arrays are empty; defaults to completed: [], pending: [], uncertain: [].", type: "object", required: ["completed", "pending", "uncertain"], properties: Object.fromEntries(["completed", "pending", "uncertain"].map(key => [key, { type: "array", items: { type: "string" } }])) },
+    effects: { description: "Completed effects include explicit local mutations and launches, even when a later step fails. Review uses review_checkout_created/updated, review_objects_fetched, review_refs_updated and review_ledger_marked. Clone uses repository_cloned. Projects use projects_index_updated and projects_roots_updated/projects_exclusions_updated. Go launches use editor_opened/t3_opened. Single-repo sync uses refs_fetched_pruned and branch_deleted:<name>. A push blocked by push protection stays pending, never uncertain. Omitted only for read-only status when all arrays are empty; defaults to completed: [], pending: [], uncertain: [].", type: "object", required: ["completed", "pending", "uncertain"], properties: Object.fromEntries(["completed", "pending", "uncertain"].map(key => [key, { type: "array", items: { type: "string" } }])) },
     operationId: { type: "string" }, resources: { type: "array", items: { type: "string" } },
   },
 };
 
 
-const stringArraySchema = { type: "array", items: { type: "string" } };
 const workflowResultSchema = { type: "object", additionalProperties: true, properties: {
   status: { type: "string" }, target: { type: "string" }, completed: stringArraySchema, remaining: stringArraySchema,
+  failed: { ...stringArraySchema, description: "Remaining steps that definitively did not happen, such as a push blocked by push protection." },
   url: { type: "string" }, operationId: { type: "string" }, resources: stringArraySchema,
 } };
 const operationResultSchema = { type: "object", additionalProperties: true, properties: {

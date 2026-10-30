@@ -93,9 +93,11 @@ export async function finishCommandOperation(): Promise<void> {
   const workflowResult = /^(?:stack |repo create$|pr create$|commit$)/.test(active.command ?? "");
   const completed = workflowResult && object(result) && Array.isArray(result.completed) ? result.completed.filter((step): step is string => typeof step === "string") : [];
   const remaining = workflowResult && object(result) && Array.isArray(result.remaining) ? result.remaining.filter((step): step is string => typeof step === "string") : [];
+  // Remaining steps that definitively did not happen, such as a push GitHub rejected.
+  const failed = workflowResult && object(result) && Array.isArray(result.failed) ? result.failed.filter((step): step is string => typeof step === "string") : [];
   const steps: OperationStep[] = [
     ...completed.map(name => ({ name, state: "completed" as const })),
-    ...remaining.map(name => ({ name, state: "pending" as const })),
+    ...remaining.map(name => ({ name, state: failed.includes(name) ? "failed" as const : "pending" as const })),
   ];
   if (!steps.length && issue?.status === "cancelled" && prior?.steps.length) {
     let markedUnknown = false;

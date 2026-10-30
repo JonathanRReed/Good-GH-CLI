@@ -14,16 +14,27 @@ All fields below come from the installed command tree and result schemas. Requir
 | `status` | `["succeeded","planned","no_op","needs_input","cancelled","failed","partially_completed"]` | yes |  |  |
 | `result` | varies | no |  | Command-specific payload. Detailed result schemas are not yet guaranteed. |
 | `error` | object | no |  |  |
-| `error.code` | `["invalid_arguments","missing_input","confirmation_required","authentication_required","provider_unavailable","cancelled","partial_completion","operation_failed","outcome_uncertain"]` | yes |  |  |
+| `error.code` | `["invalid_arguments","missing_input","confirmation_required","authentication_required","provider_unavailable","cancelled","partial_completion","operation_failed","outcome_uncertain","push_protection_blocked"]` | yes |  | push_protection_blocked: GitHub push protection found a secret in the pushed commits and the push did not happen. Stop and report pushProtection to the user. |
 | `error.message` | string | yes |  |  |
-| `error.retryability` | `["after_input","after_inspection","never"]` | yes |  |  |
+| `error.retryability` | `["after_input","after_inspection","never"]` | yes |  | never: retrying the same inputs cannot succeed. |
+| `error.pushProtection` | object | no |  | Present only with push_protection_blocked. Fields GitHub did not report are omitted. |
+| `error.pushProtection.findings` | array | yes |  |  |
+| `error.pushProtection.findings[]` | object | no |  |  |
+| `error.pushProtection.findings[].secretType` | string | no |  |  |
+| `error.pushProtection.findings[].commit` | string | no |  |  |
+| `error.pushProtection.findings[].path` | string | no |  |  |
+| `error.pushProtection.findings[].line` | integer | no |  |  |
+| `error.pushProtection.bypassUrls` | array | yes |  | GitHub bypass pages for a person to judge. Agents must never open or follow them. |
+| `error.pushProtection.bypassUrls[]` | string | no |  |  |
+| `error.pushProtection.remoteLines` | array | yes |  | Raw remote lines without the remote: prefix, kept when parsing is incomplete. |
+| `error.pushProtection.remoteLines[]` | string | no |  |  |
 | `requiredInputs` | array | no |  |  |
 | `requiredInputs[]` | object | no |  |  |
 | `requiredInputs[].name` | string | yes |  |  |
 | `requiredInputs[].description` | string | yes |  |  |
 | `requiredInputs[].alternatives` | array | no |  |  |
 | `requiredInputs[].alternatives[]` | string | no |  |  |
-| `effects` | object | no |  | Completed effects include explicit local mutations and launches, even when a later step fails. Review uses review_checkout_created/updated, review_objects_fetched, review_refs_updated and review_ledger_marked. Clone uses repository_cloned. Projects use projects_index_updated and projects_roots_updated/projects_exclusions_updated. Go launches use editor_opened/t3_opened. Single-repo sync uses refs_fetched_pruned and branch_deleted:<name>. Omitted only for read-only status when all arrays are empty; defaults to completed: [], pending: [], uncertain: []. |
+| `effects` | object | no |  | Completed effects include explicit local mutations and launches, even when a later step fails. Review uses review_checkout_created/updated, review_objects_fetched, review_refs_updated and review_ledger_marked. Clone uses repository_cloned. Projects use projects_index_updated and projects_roots_updated/projects_exclusions_updated. Go launches use editor_opened/t3_opened. Single-repo sync uses refs_fetched_pruned and branch_deleted:<name>. A push blocked by push protection stays pending, never uncertain. Omitted only for read-only status when all arrays are empty; defaults to completed: [], pending: [], uncertain: []. |
 | `effects.completed` | array | yes |  |  |
 | `effects.completed[]` | string | no |  |  |
 | `effects.pending` | array | yes |  |  |
@@ -1376,6 +1387,8 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.completed[]` | string | no |  |  |
 | `result.remaining` | array | no |  |  |
 | `result.remaining[]` | string | no |  |  |
+| `result.failed` | array | no |  | Remaining steps that definitively did not happen, such as a push blocked by push protection. |
+| `result.failed[]` | string | no |  |  |
 | `result.url` | string | no |  |  |
 | `result.operationId` | string | no |  |  |
 | `result.resources` | array | no |  |  |
@@ -1393,6 +1406,8 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result [anyOf 1].completed[]` | string | no |  |  |
 | `result [anyOf 1].remaining` | array | no |  |  |
 | `result [anyOf 1].remaining[]` | string | no |  |  |
+| `result [anyOf 1].failed` | array | no |  | Remaining steps that definitively did not happen, such as a push blocked by push protection. |
+| `result [anyOf 1].failed[]` | string | no |  |  |
 | `result [anyOf 1].url` | string | no |  |  |
 | `result [anyOf 1].operationId` | string | no |  |  |
 | `result [anyOf 1].resources` | array | no |  |  |

@@ -15,7 +15,7 @@ import { getConfig } from "../services/config.ts";
 import { isNonInteractive, recordCommandIssue } from "../services/runtime.ts";
 import { invalidateCache } from "../services/cache.ts";
 import { dryRun } from "../utils/flags.ts";
-import { fail, failFromGitHub, header, p, pc, promptInput, jsonOut, confirmOrAbort } from "../utils/ui.ts";
+import { fail, failFromGitHub, failPublication, header, p, pc, promptInput, jsonOut, confirmOrAbort } from "../utils/ui.ts";
 
 export function registerRepoCommand(program: Command): void {
   const repo = program
@@ -153,7 +153,7 @@ export function registerRepoCommand(program: Command): void {
         const confirmSetting = options?.confirm ?? getConfig().repo_create_confirm;
         if (!(await confirmOrAbort(`Create or publish ${plan.target}${plan.steps.includes("create_repository") ? ` as ${plan.visibility}` : " using its existing visibility"}?`, { assumeYes: Boolean(options?.approvePlan) || options?.yes || !confirmSetting }))) return;
         const result = await executePublication(plan, undefined, { approvedSnapshot: snapshotId });
-        if (result.status !== "succeeded") fail(result.error ?? "Repository publication did not complete.");
+        if (result.status !== "succeeded") failPublication(result, "Repository publication did not complete.");
         if (jsonOut({ ...result, name: plan.target.split("/").at(-1), ...(plan.steps.includes("create_repository") ? { visibility: plan.visibility } : {}) })) return;
         if (result.url) p.log.message(result.url);
         if (result.status === "succeeded") p.outro("Repository ready.");
