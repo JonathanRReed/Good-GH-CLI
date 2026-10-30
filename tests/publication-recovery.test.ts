@@ -96,7 +96,7 @@ describe("publication recovery", () => {
         const record=await startOperation({command:'repo create',cwd:process.cwd()});
         setActiveOperation({id:record.id,cwd:process.cwd(),command:record.command});
         try {
-          const result=await executePublication({kind:'repo',cwd:process.cwd(),root:repositoryRoot,source:repositoryRoot,host:'github.com',target:'fixture/project',remote:'origin',remoteUrl:'https://github.com/fixture/project.git',visibility:'private',push:false,steps:['add_remote']});
+          const result=await executePublication({kind:'repo',cwd:process.cwd(),root:repositoryRoot,source:repositoryRoot,host:'github.com',target:'fixture/project',remote:'origin',remoteUrl:'https://github.com/fixture/project.git',pushUrl:'https://github.com/fixture/project.git',visibility:'private',push:false,steps:['add_remote']});
           let held='';
           try { const release=await claimOperationResume(record.id,process.cwd(),0);await release(); }
           catch(error) { held=error.message; }

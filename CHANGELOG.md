@@ -5,8 +5,34 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Changed
+
+- **Breaking:** `stack submit --agent` requires `--approve-plan <snapshotId>` from
+  an identical `--dry-run --agent`; `--yes` no longer authorizes an agent
+  submission. The snapshot binds the GitHub repository, each push URL, every
+  branch's exact tip and parent tip, the draft flag, and the GitHub-stack choice.
+  Humans can still pass `--yes`.
+- **Breaking:** `stack submit` refuses a push remote whose URL is not a GitHub
+  repository, more than one push URL, and branches behind their recorded parent.
+  Run `ggh stack restack` first, or pass `--allow-stale`.
+- **Breaking:** `stack submit` JSON reports `completed`, `remaining`, and
+  `uncertain` as named effects (`push:<branch>`, `create_pr:<branch>`,
+  `link_native_stack`) instead of branch names, and adds `snapshotId` and
+  `plan`. It always opens Pull Requests in the planned repository.
+- **Breaking:** `pr create` and `repo create` plans add `pushUrl`, the exact URL
+  `git push` uses, and refuse more than one push URL or one with embedded
+  credentials. Recovery records saved before this change cannot be resumed.
+- Tidy plans a merged branch's deletion right after its checkout's removal in
+  the same plan, with the same proofs, instead of in a second pass.
+- Tidy prunes missing-worktree metadata per entry with `git worktree remove`, so
+  one unsafe entry no longer blocks the others. A branch-backed entry can be
+  pruned while its branch holds unpushed commits; the branch stays.
+
 ### Added
 
+- `tidy --allow-unknown-under <dir>` approves plain Git checkouts strictly below
+  one directory. Host worktrees (T3, Claude, Cursor, Codex) stay manual-only, and
+  home directories and filesystem roots are refused.
 - Link `stack submit` PRs as a native GitHub stack when the branches form one
   chain. Extend a matching stack, report conflicts without changing them, and
   opt out with `--no-native-stack`.
@@ -15,6 +41,15 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `tidy --fetch` snapshots can now be approved. They bind the exact refs and
+  OIDs the fetch observed instead of its timestamp, and the fetch is reported as
+  a completed `fetch:<clone>:<remote>` effect, including in a dry run.
+- `pr create` plans showed the fetch URL while publication pushed to the push
+  URL. The plan now shows and binds the push URL, and execution refuses if it
+  changed before any push.
+- Missing-worktree pruning also keeps entries with staged index content,
+  per-worktree refs, an operation in progress, or reflog commits nothing else
+  keeps.
 - Merge stacked PRs through GitHub's async merge API; the legacy merge path
   refuses them. Disclose every PR the merge lands, recheck their heads after
   confirmation, refuse `--auto`, and report merged, queued, or unknown.

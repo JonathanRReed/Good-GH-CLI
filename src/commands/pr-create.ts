@@ -110,7 +110,7 @@ export async function openPullRequest(options: PrCreateOptions): Promise<void> {
     const content = { title, body, draft: options.draft, web: options.web, attachments: options.attachments };
     const snapshotId = await publicationSnapshot(plan, content);
     assertPublicationApproval(options.approvePlan, snapshotId);
-    p.note(`${plan.host}/${plan.target} (${plan.visibility})\n${plan.remote}: ${plan.remoteUrl}\n${plan.base} ${plan.baseTip.slice(0, 12)} ← ${plan.head} ${plan.headTip.slice(0, 12)}\n${steps.join(" → ")}\n${options.draft ? "Draft pull request" : "Ready for review"} · ${options.web ? "Open browser create page" : "Create pull request directly"}\n\n${title}\n${body}`, "Publication plan");
+    p.note(`${plan.host}/${plan.target} (${plan.visibility})\n${plan.remote}: ${plan.remoteUrl}${plan.pushUrl !== plan.remoteUrl ? `\npush: ${plan.pushUrl}` : ""}\n${plan.base} ${plan.baseTip.slice(0, 12)} ← ${plan.head} ${plan.headTip.slice(0, 12)}\n${steps.join(" → ")}\n${options.draft ? "Draft pull request" : "Ready for review"} · ${options.web ? "Open browser create page" : "Create pull request directly"}\n\n${title}\n${body}`, "Publication plan");
     if (dryRun(`publish ${plan.target}: ${steps.join(", ")}${options.attachments?.length ? `; attach ${options.attachments.join(", ")}` : ""}`)) {
       jsonOut({ status: "planned", snapshotId, plan, target: plan.target, host: plan.host, base: plan.base, head: plan.head, title, body, steps, attachments: options.attachments ?? [], ...(options.editor !== undefined ? { editorRun: false, snapshotProvisional: true } : {}) });
       return;

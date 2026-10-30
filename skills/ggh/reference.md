@@ -23,7 +23,7 @@ All fields below come from the installed command tree and result schemas. Requir
 | `requiredInputs[].description` | string | yes |  |  |
 | `requiredInputs[].alternatives` | array | no |  |  |
 | `requiredInputs[].alternatives[]` | string | no |  |  |
-| `effects` | object | no |  | Completed effects include explicit local mutations and launches, even when a later step fails. Review uses review_checkout_created/updated, review_objects_fetched, review_refs_updated and review_ledger_marked. Clone uses repository_cloned. Projects use projects_index_updated and projects_roots_updated/projects_exclusions_updated. Go launches use editor_opened/t3_opened. Single-repo sync uses refs_fetched_pruned and branch_deleted:<name>. Omitted only for read-only status when all arrays are empty; defaults to completed: [], pending: [], uncertain: []. |
+| `effects` | object | no |  | Completed effects include explicit local mutations and launches, even when a later step fails. Review uses review_checkout_created/updated, review_objects_fetched, review_refs_updated and review_ledger_marked. Clone uses repository_cloned. Projects use projects_index_updated and projects_roots_updated/projects_exclusions_updated. Go launches use editor_opened/t3_opened. Single-repo sync uses refs_fetched_pruned and branch_deleted:<name>. Tidy and lost --fetch use fetch:<commonDir>:<remote>, also in dry runs. Stack submit uses push:<branch>, create_pr:<branch> and link_native_stack. Omitted only for read-only status when all arrays are empty; defaults to completed: [], pending: [], uncertain: []. |
 | `effects.completed` | array | yes |  |  |
 | `effects.completed[]` | string | no |  |  |
 | `effects.pending` | array | yes |  |  |
@@ -49,7 +49,7 @@ Every managed command accepts `--agent`. It wraps this payload in `result` and d
 | `ggh projects register` | `<path>` | --agent, --quiet, --no-input, --json | [projects](#projects) |
 | `ggh projects exclude` | `<path>` | --agent, --quiet, --no-input, --json | [projects](#projects) |
 | `ggh projects forget` | `<path>` | --agent, --quiet, --no-input, --json | [projects](#projects) |
-| `ggh tidy` | `[projects...]` | --audit value, --proceed-without-audit, --all, --fetch, --wide, --verbose, --remote-branches, --allow-ignored value, --allow-unknown value, --stale-days value, --yes, --approve-plan value, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run | [tidy](#tidy) |
+| `ggh tidy` | `[projects...]` | --audit value, --proceed-without-audit, --all, --fetch, --wide, --verbose, --remote-branches, --allow-ignored value, --allow-unknown value, --allow-unknown-under value, --stale-days value, --yes, --approve-plan value, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run | [tidy](#tidy) |
 | `ggh lost` | `[projects...]` | --all, --fetch, --wide, --verbose, --agent, --quiet, --no-input, --json | [lost](#lost) |
 | `ggh go` | `<query>` | --wide, --print, --editor, --t3, --agent, --quiet, --no-input, --json | [go](#go) |
 | `ggh status` |  | --full, --remote, --providers, --watch, --interval value, --agent, --quiet, --no-input, --json, --dry-run | [status](#status) |
@@ -60,7 +60,7 @@ Every managed command accepts `--agent`. It wraps this payload in `result` and d
 | `ggh stack list` |  | --all, --remote, --agent, --quiet, --no-input, --json, --dry-run, --repo value | [stack](#stack) |
 | `ggh stack on` | `<parent>` | --agent, --quiet, --no-input, --json, --dry-run, --repo value | [stack](#stack) |
 | `ggh stack restack` | `[branch]` | --yes, --continue, --abort, --agent, --quiet, --no-input, --json, --dry-run, --repo value | [stack](#stack) |
-| `ggh stack submit` | `[branch]` | --draft, --no-native-stack, --yes, --agent, --quiet, --no-input, --json, --dry-run, --repo value | [stack](#stack) |
+| `ggh stack submit` | `[branch]` | --draft, --no-native-stack, --allow-stale, --approve-plan value, --yes, --agent, --quiet, --no-input, --json, --dry-run, --repo value | [stack](#stack) |
 | `ggh stack next` | `[name]` | --agent, --quiet, --no-input, --json, --dry-run, --repo value | [stack](#stack) |
 | `ggh stack checkout` |  | --agent, --quiet, --no-input, --json, --dry-run, --repo value | [stack](#stack) |
 | `ggh worktree` |  | --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run | Unspecified |
@@ -293,6 +293,8 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.plan.options.allowIgnored[]` | string | no |  |  |
 | `result.plan.options.allowUnknown` | array | no |  |  |
 | `result.plan.options.allowUnknown[]` | string | no |  |  |
+| `result.plan.options.allowUnknownUnder` | array | no |  |  |
+| `result.plan.options.allowUnknownUnder[]` | string | no |  |  |
 | `result.plan.options.staleDays` | integer | no |  |  |
 | `result.plan.clones` | array | yes |  |  |
 | `result.plan.clones[]` | object | no |  |  |

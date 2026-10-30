@@ -148,7 +148,7 @@ export function registerRepoCommand(program: Command): void {
         const plan = prepared.plan;
         const snapshotId = await publicationSnapshot(plan);
         assertPublicationApproval(options?.approvePlan, snapshotId);
-        p.note(`${plan.host}/${plan.target} (${plan.visibility})\n${plan.remote}: ${plan.remoteUrl}\n${plan.steps.join(" → ")}\n${plan.root ?? "Remote repository only"}${plan.headTip ? `\n${plan.head} ${plan.headTip.slice(0, 12)}` : ""}`, "Publication plan");
+        p.note(`${plan.host}/${plan.target} (${plan.visibility})\n${plan.remote}: ${plan.remoteUrl}${plan.pushUrl !== plan.remoteUrl ? `\npush: ${plan.pushUrl}` : ""}\n${plan.steps.join(" → ")}\n${plan.root ?? "Remote repository only"}${plan.headTip ? `\n${plan.head} ${plan.headTip.slice(0, 12)}` : ""}`, "Publication plan");
         if (dryRun(`publish ${plan.target}: ${plan.steps.join(", ")}`)) { jsonOut({ status: "planned", snapshotId, plan }); return; }
         const confirmSetting = options?.confirm ?? getConfig().repo_create_confirm;
         if (!(await confirmOrAbort(`Create or publish ${plan.target}${plan.steps.includes("create_repository") ? ` as ${plan.visibility}` : " using its existing visibility"}?`, { assumeYes: Boolean(options?.approvePlan) || options?.yes || !confirmSetting }))) return;

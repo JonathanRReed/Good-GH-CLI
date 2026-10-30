@@ -3,7 +3,8 @@ import { acquireProcessLock } from "../process-lock.ts";
 import { startOperation, updateOperation, type StepState } from "../operations.ts";
 import { ExecError, run } from "../../utils/exec.ts";
 import { inventoryGitOptions, projectLockPath, projectNetworkOptions } from "./git.ts";
-import { checkoutFileState, classifyTidyClone, directoryIdentity, remoteOwnership, tidyDigest, tidySnapshot, type TidyAction, type TidyPlan } from "./tidy-plan.ts";
+import { worktreeList } from "../git/worktree.ts";
+import { checkoutFileState, classifyTidyClone, directoryIdentity, missingPath, remoteOwnership, tidyDigest, tidySnapshot, type TidyAction, type TidyPlan } from "./tidy-plan.ts";
 import type { Clone } from "./types.ts";
 
 export interface TidyOutcome { id: string; kind: TidyAction["kind"]; commonDir: string; state: "completed" | "skipped" | "refused" | "failed" | "uncertain"; reason: string; operationId: string }
@@ -16,6 +17,8 @@ async function effect(action: TidyAction): Promise<void> {
   const options = { ...inventoryGitOptions, cwd, timeoutMs: 30000 };
   switch (action.kind) {
     case "delete-local-branch":
+      // A branch planned after its checkout's removal must never be deleted under a live checkout.
+      if ((await worktreeList(cwd, inventoryGitOptions)).some(tree => tree.branch === action.branch)) throw new Error("Branch is checked out in a worktree; changed after preview");
       // update-ref supplies an atomic expected-old-OID check. No branch -D race.
       await run("git", ["-c", "core.hooksPath=", "update-ref", "--no-deref", "-d", `refs/heads/${action.branch}`, action.tip], options);
       return;
@@ -34,7 +37,11 @@ async function effect(action: TidyAction): Promise<void> {
       await run("git", ["worktree", "remove", "--", action.checkout.path], options);
       return;
     case "prune-worktree-metadata":
-      await run("git", ["worktree", "prune", "--verbose", `--expire=${action.expire}`], options);
+      // Remove only the approved entries. A clone-wide prune would act on entries nobody approved.
+      for (const entry of action.entries) {
+        if (!missingPath(entry.path)) throw new Error("Checkout path reappeared; changed after preview");
+        await run("git", ["worktree", "remove", "--", entry.path], options);
+      }
       return;
   }
 }

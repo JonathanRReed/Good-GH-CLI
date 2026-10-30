@@ -37,7 +37,7 @@ export const tidyResultSchema = { type: "object", required: ["schemaVersion", "p
   plan: { type: "object", required: ["schemaVersion", "snapshotId", "options", "clones"], properties: {
     audit: tidyAuditSchema,
     schemaVersion: { const: 1 }, snapshotId: { type: "string", pattern: "^[a-f0-9]{64}$" },
-    options: { type: "object", properties: { remoteBranches: { type: "boolean" }, allowIgnored: paths, allowUnknown: paths, staleDays: { type: "integer", minimum: 1 } } },
+    options: { type: "object", properties: { remoteBranches: { type: "boolean" }, allowIgnored: paths, allowUnknown: paths, allowUnknownUnder: paths, staleDays: { type: "integer", minimum: 1 } } },
     clones: { type: "array", items: { type: "object", required: ["commonDir", "name", "fetchedAt", "actions", "kept", "hostManual", "hints"], properties: {
       commonDir: text, name: text, fetchedAt: nullableText, actions: { type: "array", items: tidyActionSchema }, kept: { type: "array", items: notice },
       hostManual: { type: "array", items: { ...notice, required: ["target", "reason", "host"], properties: { ...notice.properties, host: { enum: ["t3", "claude", "cursor", "codex"] } } } },

@@ -98,7 +98,7 @@ export function registerOperationCommand(program: Command): void {
           jsonOut({ status: "needs_input", requiredInputs, ...guide });
           return;
         }
-        p.note(`${plan.host}/${plan.target} (${plan.visibility})\n${plan.remote}: ${plan.remoteUrl}\n${plan.steps.join(" → ")}${plan.headTip ? `\n${plan.head} ${plan.headTip.slice(0, 12)}` : ""}`, "Recovery publication plan");
+        p.note(`${plan.host}/${plan.target} (${plan.visibility})\n${plan.remote}: ${plan.remoteUrl}${plan.pushUrl !== plan.remoteUrl ? `\npush: ${plan.pushUrl}` : ""}\n${plan.steps.join(" → ")}${plan.headTip ? `\n${plan.head} ${plan.headTip.slice(0, 12)}` : ""}`, "Recovery publication plan");
         if (!(await confirmOrAbort("Resume this publication after inspecting its completed effects?", { assumeYes: options.yes || Boolean(options.approvePlan) }))) return;
         if (snapshotId) assertPublicationApproval(snapshotId, await publicationSnapshot(plan, content));
         await updateOperation(id, { status: { state: "running" } });

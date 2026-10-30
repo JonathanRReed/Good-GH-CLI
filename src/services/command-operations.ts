@@ -93,9 +93,12 @@ export async function finishCommandOperation(): Promise<void> {
   const workflowResult = /^(?:stack |repo create$|pr create$|commit$)/.test(active.command ?? "");
   const completed = workflowResult && object(result) && Array.isArray(result.completed) ? result.completed.filter((step): step is string => typeof step === "string") : [];
   const remaining = workflowResult && object(result) && Array.isArray(result.remaining) ? result.remaining.filter((step): step is string => typeof step === "string") : [];
+  // A started effect without a confirmed result stays uncertain; it is never relabeled pending.
+  const uncertain = workflowResult && object(result) && Array.isArray(result.uncertain) ? result.uncertain.filter((step): step is string => typeof step === "string") : [];
   const steps: OperationStep[] = [
     ...completed.map(name => ({ name, state: "completed" as const })),
-    ...remaining.map(name => ({ name, state: "pending" as const })),
+    ...uncertain.map(name => ({ name, state: "unknown" as const })),
+    ...remaining.filter(name => !uncertain.includes(name)).map(name => ({ name, state: "pending" as const })),
   ];
   if (!steps.length && issue?.status === "cancelled" && prior?.steps.length) {
     let markedUnknown = false;
