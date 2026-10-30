@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { isAIExplicitlyDisabled, setFlags } from "../services/runtime.ts";
+import { isAIExplicitlyDisabled, isNonInteractive, setFlags } from "../services/runtime.ts";
 import {
   checkoutPullRequest,
   commentOnPullRequest,
@@ -11,6 +11,7 @@ import {
   setPullRequestState,
   viewPullRequest,
   viewPullRequestInBrowser,
+  type PullRequestDetail,
 } from "../services/github.ts";
 import { detectDefaultBranch, fetchPullRequestBranch, requireGitRepo, checkoutForReview } from "../services/git.ts";
 import { registerPrCreateCommand } from "./pr-create.ts";
@@ -29,12 +30,32 @@ import {
   header,
   p,
   pc,
+  printListing,
   promptInput,
   renderDiff,
   reportAIFailure,
   searchablePicker,
   selectMenu,
 } from "../utils/ui.ts";
+
+/**
+ * Plain-text summary of a pull request, used when a read-only browse cannot
+ * prompt for an action.
+ */
+function pullRequestSummary(detail: PullRequestDetail): string[] {
+  const lines = [
+    `#${detail.number} ${detail.title}`,
+    `  State:     ${detail.state.toLowerCase()}${detail.isDraft ? " (draft)" : ""}`,
+    `  Author:    @${detail.author?.login ?? "unknown"}`,
+    `  Branches:  ${detail.headRefName} → ${detail.baseRefName}`,
+    `  Size:      +${detail.additions} -${detail.deletions} across ${detail.changedFiles} file(s)`,
+    `  Review:    ${detail.reviewDecision ?? "none yet"}`,
+    `  Mergeable: ${detail.mergeable.toLowerCase()}`,
+  ];
+  if (detail.labels?.length) lines.push(`  Labels:    ${detail.labels.map((label) => label.name).join(", ")}`);
+  lines.push(detail.url);
+  return lines;
+}
 
 export function registerPrCommand(program: Command): void {
   const pr = program
@@ -228,6 +249,13 @@ export function registerPrCommand(program: Command): void {
       return;
     }
 
+    // Read-only browse: with no terminal there is nobody to pick, so print the
+    // listing to stdout and exit 0 instead of cancelling a prompt.
+    if (isNonInteractive()) {
+      printListing(prs.map((pr) => `#${pr.number} ${pr.title}  by @${pr.author.login} (${pr.headRefName})`));
+      return;
+    }
+
     const selectedPrNum = await searchablePicker<number>({
       title: "Select a Pull Request to inspect:",
       items: prs.map((pr) => ({
@@ -265,6 +293,13 @@ export function registerPrCommand(program: Command): void {
     s.stop("Pull Request loaded.");
 
     if (jsonOut(detail)) return;
+
+    // Read-only browse: with no terminal there is nobody to act, so print the
+    // summary to stdout and exit 0 instead of cancelling a prompt.
+    if (isNonInteractive()) {
+      printListing(pullRequestSummary(detail));
+      return;
+    }
 
     const action = await selectMenu<string>({
       message: `Action for PR #${detail.number} (${detail.title}):`,

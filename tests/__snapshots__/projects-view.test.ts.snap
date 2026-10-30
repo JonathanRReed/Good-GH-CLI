@@ -2,21 +2,21 @@
 
 exports[`project views keeps rows within 80 columns including the log prefix 1`] = `
 [
-  "Name     Branch  State     ↑/↓    Unpublished        Stashes  Worktrees  Age",
-  "project  main    11 dirty  ↑2 ↓1  5 br / 21 commits  2        10 t3      -",
+  "Name     Branch  State          ↑/↓    Unpublished    Stashes  Worktrees  Age",
+  "project  main    11 dirty che…  ↑2 ↓1  5 br / 21 co…  2        10 t3      -",
 ]
 `;
 
 exports[`project views keeps rows within 100 columns including the log prefix 1`] = `
 [
-  "Name     Branch  State     ↑/↓    Unpublished        Stashes  Worktrees  Age",
-  "project  main    11 dirty  ↑2 ↓1  5 br / 21 commits  2        10 t3      -",
+  "Name     Branch  State               ↑/↓    Unpublished        Stashes  Worktrees  Age",
+  "project  main    11 dirty checkouts  ↑2 ↓1  5 br / 21 commits  2        10 t3      -",
 ]
 `;
 
 exports[`project views keeps rows within 160 columns including the log prefix 1`] = `
 [
-  "Name     Branch  State     ↑/↓    Unpublished        Stashes  Worktrees  Age",
-  "project  main    11 dirty  ↑2 ↓1  5 br / 21 commits  2        10 t3      -",
+  "Name     Branch  State               ↑/↓    Unpublished        Stashes  Worktrees  Age",
+  "project  main    11 dirty checkouts  ↑2 ↓1  5 br / 21 commits  2        10 t3      -",
 ]
 `;

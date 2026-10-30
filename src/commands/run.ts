@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { getFlags, isAIExplicitlyDisabled, setFlags } from "../services/runtime.ts";
+import { getFlags, isAIExplicitlyDisabled, isNonInteractive, setFlags } from "../services/runtime.ts";
 import {
   cancelWorkflowRun,
   getFailedRunLog,
@@ -7,6 +7,7 @@ import {
   requireAuth,
   rerunWorkflowRun,
   viewWorkflowRun,
+  type WorkflowJob,
   type WorkflowRun,
 } from "../services/github.ts";
 import { getCurrentBranch, requireGitRepo } from "../services/git.ts";
@@ -22,10 +23,24 @@ import {
   header,
   p,
   pc,
+  printListing,
   reportAIFailure,
   searchablePicker,
   selectMenu,
 } from "../utils/ui.ts";
+
+/** Plain-text run summary, used when a read-only browse cannot prompt. */
+function runSummary(run: WorkflowRun, jobs: WorkflowJob[]): string[] {
+  const state = (value: { status: string; conclusion: string }) => value.status === "completed" ? value.conclusion || "completed" : value.status;
+  const lines = [
+    `${run.workflowName} · ${run.displayTitle}`,
+    `  Status: ${state(run)}`,
+    `  Branch: ${run.headBranch} · ${run.event}`,
+  ];
+  for (const job of jobs) lines.push(`  ${job.name}: ${state(job)}`);
+  lines.push(run.url);
+  return lines;
+}
 
 function conclusionTag(run: { status: string; conclusion: string }): string {
   if (run.status !== "completed") return pc.yellow("◷ " + run.status.replace("_", " "));
@@ -111,6 +126,13 @@ export function registerRunCommand(program: Command): void {
         return;
       }
 
+      // Read-only browse: with no terminal there is nobody to pick, so print
+      // the listing to stdout and exit 0 instead of cancelling a prompt.
+      if (isNonInteractive()) {
+        printListing(runs.map((run: WorkflowRun) => `${run.databaseId} ${run.workflowName} · ${run.displayTitle}  ${run.status === "completed" ? run.conclusion : run.status} · ${run.headBranch} · ${run.createdAt.slice(0, 10)}`));
+        return;
+      }
+
       const picked = await searchablePicker<number>({
         title: "Select a run:",
         items: runs.map((r: WorkflowRun) => ({
@@ -154,6 +176,13 @@ export function registerRunCommand(program: Command): void {
         }
       }
       jsonOut({ ...detail, log, logStatus, ...(logError ? { logError } : {}) });
+      return;
+    }
+
+    // Read-only browse: with no terminal there is nobody to act, so print the
+    // summary to stdout and exit 0 instead of cancelling a prompt.
+    if (isNonInteractive()) {
+      printListing(runSummary(detail.run, detail.jobs));
       return;
     }
 

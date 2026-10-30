@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { getFlags } from "../services/runtime.ts";
+import { getFlags, isNonInteractive } from "../services/runtime.ts";
 import { resolve } from "node:path";
 import {
   getRepoRoot,
@@ -15,6 +15,7 @@ import {
   header,
   p,
   pc,
+  printListing,
   type PickerItem,
   promptInput,
   searchablePicker,
@@ -159,6 +160,13 @@ export function registerSwitchCommand(program: Command): void {
             hint: wt.path,
           });
         }
+      }
+
+      // Read-only browse: with no terminal there is nobody to pick, so list the
+      // branches and worktrees on stdout and exit 0 instead of cancelling.
+      if (isNonInteractive()) {
+        printListing(choices.filter(choice => choice.value !== "__create__").map(choice => `${choice.label}${choice.hint ? `  ${choice.hint}` : ""}`));
+        return;
       }
 
       const selected = await searchablePicker({

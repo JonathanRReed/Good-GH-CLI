@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { getFlags } from "../services/runtime.ts";
+import { getFlags, isNonInteractive } from "../services/runtime.ts";
 import {
   commentOnIssueWithAttachments,
   createIssue,
@@ -10,11 +10,14 @@ import {
   gh,
   listIssues,
   requireAuth,
+  requireGitHubRepo,
   setIssueState,
   listIssueArtifacts,
   viewIssue,
   readAttachmentBodyFile,
   prepareAttachmentPlan,
+  type IssueArtifacts,
+  type IssueDetail,
 } from "../services/github.ts";
 import { requireGitRepo, switchBranch } from "../services/git.ts";
 import { getStagedDiff, getStagedDiffStat, getStatus } from "../services/git.ts";
@@ -39,6 +42,7 @@ import {
   header,
   p,
   pc,
+  printListing,
   promptInput,
   reportAIFailure,
   searchablePicker,
@@ -47,6 +51,22 @@ import {
 
 function stateTag(state: string): string {
   return state.toUpperCase() === "OPEN" ? pc.green("open") : pc.magenta("closed");
+}
+
+/** Plain-text issue summary, used when a read-only browse cannot prompt. */
+function issueSummary(detail: IssueDetail, artifacts: IssueArtifacts): string[] {
+  const lines = [
+    `#${detail.number} ${detail.title}`,
+    `  State:  ${detail.state.toLowerCase()}`,
+    `  Author: @${detail.author?.login ?? "unknown"}`,
+  ];
+  if (detail.labels?.length) lines.push(`  Labels: ${detail.labels.map((label) => label.name).join(", ")}`);
+  if (detail.comments?.length) lines.push(`  Comments: ${detail.comments.length}`);
+  if (artifacts.state === "available" && artifacts.items.length) {
+    lines.push(`  Artifacts: ${artifacts.items.map((artifact) => `#${artifact.number} ${artifact.name}`).join(", ")}`);
+  }
+  lines.push(detail.url);
+  return lines;
 }
 
 export function registerIssueCommand(program: Command): void {
@@ -77,12 +97,15 @@ export function registerIssueCommand(program: Command): void {
 
       header("GitHub Issues");
 
+      // Read-only browse: with no checkout, `-R owner/repo` is the explicit
+      // target, and without one we say so instead of leaking gh's raw error.
+      const [isRepo, authed] = await Promise.all([requireGitHubRepo(), requireAuth()]);
+      if (!isRepo || !authed) return;
+
       if (num !== undefined) {
-        if (!(await requireAuth())) return;
         await showIssue(num);
         return;
       }
-      if (!(await requireAuth())) return;
 
       // Read-only: --dry-run does not block listing.
       const s = p.spinner();
@@ -108,6 +131,13 @@ export function registerIssueCommand(program: Command): void {
 
       if (issues.length === 0) {
         p.log.info(pc.dim("No issues matched."));
+        return;
+      }
+
+      // Read-only browse: with no terminal there is nobody to pick, so print
+      // the listing to stdout and exit 0 instead of cancelling a prompt.
+      if (isNonInteractive()) {
+        printListing(issues.map((issue) => `#${issue.number} ${issue.title}  ${issue.state.toLowerCase()} by @${issue.author?.login ?? "unknown"}${issue.labels?.length ? ` [${issue.labels.map((label) => label.name).join(", ")}]` : ""}`));
         return;
       }
 
@@ -144,6 +174,13 @@ export function registerIssueCommand(program: Command): void {
     }
 
     if (jsonOut({ ...detail, artifacts })) return;
+
+    // Read-only browse: with no terminal there is nobody to act, so print the
+    // summary to stdout and exit 0 instead of cancelling a prompt.
+    if (isNonInteractive()) {
+      printListing(issueSummary(detail, artifacts));
+      return;
+    }
 
     p.log.step(`#${detail.number} ${pc.bold(detail.title)}`);
     p.log.message(`  State:  ${stateTag(detail.state)}`);

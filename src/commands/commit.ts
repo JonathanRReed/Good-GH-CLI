@@ -127,7 +127,7 @@ export function registerCommitCommand(program: Command): void {
   program
     .command("commit")
     .alias("c")
-    .description("Stage, write a message with AI, commit, push, and open a PR")
+    .description("Stage, commit, push, and open a pull request")
     .option("-m, --message <message>", "Commit message (skips AI generation)")
     .option(
       "-a, --all",
