@@ -142,10 +142,18 @@ describe("agent error codes", () => {
   });
 
   test("every checkout command outside a repository fails with one code and message", async () => {
-    const results = await Promise.all([["status"], ["agent", "brief"], ["commit", "-m", "x"], ["ci", "why"], ["pr"]].map(args => envelope(args, { cwd: outside })));
-    for (const value of results) {
+    // Commands that accept -R name it; checkout-only commands suggest a checkout. The code is always the same.
+    const cases: Array<[string[], string]> = [
+      [["status"], "Not a git repository. Run from inside a checkout, or run `git init`."],
+      [["agent", "brief"], "Not a git repository. Run from inside a checkout, or run `git init`."],
+      [["commit", "-m", "x"], "Not a git repository. Run from inside a checkout, or run `git init`."],
+      [["ci", "why"], "Not in a GitHub repository; pass -R owner/repo."],
+      [["pr"], "Not in a GitHub repository; pass -R owner/repo."],
+    ];
+    const results = await Promise.all(cases.map(([args]) => envelope(args, { cwd: outside })));
+    for (const [index, value] of results.entries()) {
       expect(value.exitCode).toBe(1);
-      expect(value).toMatchObject({ status: "failed", error: { code: "invalid_arguments", retryability: "after_input", message: "Not a git repository. Run from inside a checkout, or run `git init`." } });
+      expect(value).toMatchObject({ status: "failed", error: { code: "invalid_arguments", retryability: "after_input", message: cases[index]?.[1] } });
       expect(value.effects?.uncertain ?? []).toEqual([]);
     }
   });

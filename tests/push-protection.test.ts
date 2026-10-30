@@ -299,15 +299,19 @@ describe("push protection through ggh commands", () => {
     git(["add", "child.env"], repo);
     git(["commit", "-m", "child"], repo);
     git(["switch", "main"], repo);
+    // Submit requires a GitHub origin; Git redirects it to the protected bare repository.
+    const bare = git(["remote", "get-url", "origin"], repo);
+    git(["remote", "set-url", "origin", "https://github.com/test/repo.git"], repo);
+    git(["config", "url." + pathToFileURL(bare).href + ".insteadOf", "https://github.com/test/repo.git"], repo);
+    const responses = [
+      { prefix: ["pr", "view"], stdout: "" },
+      { prefix: ["pr", "create", "--title", "parent"], stdout: "https://github.com/test/repo/pull/10" },
+    ];
+    const planned = JSON.parse((await runFixture(["stack", "submit", "child", "--dry-run", "--agent"], { root, cwd: repo, responses })).stdout);
+    expect(planned.status).toBe("planned");
     const before = attempts();
 
-    const result = await runFixture(["stack", "submit", "child", "--yes", "--agent"], {
-      root, cwd: repo,
-      responses: [
-        { prefix: ["pr", "view"], stdout: "" },
-        { prefix: ["pr", "create", "--title", "parent"], stdout: "https://github.com/test/repo/pull/10" },
-      ],
-    });
+    const result = await runFixture(["stack", "submit", "child", "--approve-plan", planned.result.snapshotId, "--agent"], { root, cwd: repo, responses });
 
     expect(result.exitCode).toBe(1);
     // parent pushed once, child was attempted once and never retried.
@@ -317,14 +321,16 @@ describe("push protection through ggh commands", () => {
     expect(envelope).toMatchObject({
       status: "partially_completed",
       error: { code: "push_protection_blocked", retryability: "never" },
-      result: { completed: ["parent"], remaining: ["child"], failed: ["child"] },
-      effects: { completed: ["parent"], pending: ["child"], uncertain: [] },
+      result: { failed: ["push:child"] },
+      effects: { uncertain: [] },
     });
+    expect(envelope.effects.completed).toEqual(expect.arrayContaining(["push:parent", "create_pr:parent"]));
+    expect(envelope.effects.pending).toEqual(expect.arrayContaining(["push:child", "create_pr:child"]));
     expect(envelope.error.pushProtection.findings[0]).toMatchObject({ commit: git(["rev-parse", "child"], repo) });
     expect(git(["branch", "--show-current"], repo)).toBe("main");
     // The checkpoint is dropped: removing the secret rewrites the branch anyway.
     expect(existsSync(join(repo, ".git", "ggh-stack-recovery", "active.json"))).toBe(false);
     const operation = JSON.parse((await runFixture(["operation", "view", envelope.operationId, "--json"], { root, cwd: repo })).stdout);
-    expect(operation.steps).toContainEqual({ name: "child", state: "failed" });
+    expect(operation.steps).toContainEqual({ name: "push:child", state: "failed" });
   });
 });

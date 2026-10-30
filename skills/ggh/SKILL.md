@@ -25,16 +25,8 @@ Use this in Claude Code, Codex, T3 Code, and Cursor when calling ggh.
 Always pass `--agent` to managed ggh commands. It prevents prompts and pagers.
 Raw `git`/`gh` escapes retain native behavior; disable their pagers and prompts separately.
 
-Read `status`, `error.code`, `error.retryability`, `requiredInputs`, and `effects` before continuing.
-`needs_input` always names a flag or argument in `requiredInputs`; supply it, do not retry unchanged.
-`no_op` means nothing needed doing. Act on `error.retryability`: `after_input` needs changed input,
-`after_delay` (`rate_limited`, `network`) can retry unchanged after waiting `retryAfterSeconds` when
-given, `after_inspection` needs a look at state first, and `never` means report to the user.
-`not_found` and `forbidden` are GitHub answers, not outages. A failed read never has uncertain
-effects; inspect `partially_completed` and `effects.completed`, `pending`, and `uncertain` before
-retrying a mutation.
-Read-only status may omit empty effects. Omitted counts mean zero, `root` means cwd,
-`push` means upstream, and `fetchedAt` is local fetch metadata, not remote freshness.
+Read `status`, `error.code`, `error.retryability`, `requiredInputs`, and `effects` before continuing. `needs_input` always names a flag or argument in `requiredInputs`; supply it, do not retry unchanged. `no_op` means nothing needed doing. Act on `error.retryability`: `after_input` needs changed input, `after_delay` (`rate_limited`, `network`) can retry unchanged after waiting `retryAfterSeconds` when given, `after_inspection` needs a look at state first, and `never` means report to the user. `not_found` and `forbidden` are GitHub answers, not outages. A failed read never has uncertain effects; inspect `partially_completed` and `effects.completed`, `pending`, and `uncertain` before retrying a mutation.
+Read-only status may omit empty effects. Omitted counts mean zero, `root` means cwd, `push` means upstream, and `fetchedAt` is local fetch metadata, not remote freshness.
 
 Read [reference.md](reference.md) for per-command result fields, defaults and input flags.
 Use `ggh agent schema <command> --agent`, such as `ggh agent schema pr create --agent`, to check one
@@ -147,28 +139,9 @@ ggh pr create --base main --title 'Fix empty input' --body 'Handle empty input.'
 
 Expect preview `status: "planned"`, `result.snapshotId`, `result.plan`, and `effects.pending`; execution returns workflow `result.status`, `url` when created, and completed/pending/uncertain effects. A stale or unfetched base fails with `precondition_failed` and names the `git fetch` to run. Register the returned PR with the host immediately. `tidy --dry-run --agent` puts its ID at `result.snapshotId` the same way.
 
-### 9. Save and read an issue plan
+### 9. The same approval flow for issue plans and stacks
 
-```sh
-ggh issue plan 42 --show > plan.md        # the plan to follow; fails when none exists
-preview=$(mktemp)
-ggh issue plan 42 plan.md --dry-run --agent > "$preview"
-# After the user approves this exact plan:
-snapshot=$(jq -er 'select(.status == "planned") | .result.snapshotId' "$preview")
-ggh issue plan 42 plan.md --approve-plan "$snapshot" --agent
-```
+Run identical inputs with `--dry-run --agent`, show the user the plan, then rerun with `--approve-plan "$snapshot"` (`.result.snapshotId`). `--yes` never approves in agent mode.
 
-The plan is a `plan` artifact named "Plan" unless you pass `--name`. Saving edits the plan with that exact name as a new version instead of adding a duplicate; identical content returns `no_op`, and more than one match is refused. `result.action` is `create`, `edit`, or `no_op`. Use `-` to read standard input. Agent mode needs `--approve-plan`; `--yes` is not accepted.
-
-### 10. Preview and approve a stack submission
-
-```sh
-plan=$(mktemp)
-ggh stack submit feat/top --dry-run --agent > "$plan"
-jq '.status, .result.plan, .effects.pending' "$plan"
-# After the user approves this exact plan:
-snapshot=$(jq -er 'select(.status == "planned") | .result.snapshotId' "$plan")
-ggh stack submit feat/top --approve-plan "$snapshot" --agent
-```
-
-Expect `result.plan.repository`, each entry's `tip`, `parent`, `parentTip`, `behind`, and `pushUrl`, plus `draft` and `nativeStack`. Effects are named `push:<branch>`, `create_pr:<branch>`, and `link_native_stack`. After a partial failure, rerun the same command to resume. Register every opened PR with the host.
+- `ggh issue plan 42 plan.md` saves a `plan` artifact named "Plan" (or `--name`). It edits the same-named plan as a new version, returns `no_op` for identical content, and refuses duplicate names; `result.action` is `create`, `edit`, or `no_op`. `-` reads stdin. `ggh issue plan 42 --show` prints the plan to follow.
+- `ggh stack submit feat/top` binds `result.plan.repository` and each entry's `tip`, `parent`, `parentTip`, `behind`, and `pushUrl`, plus `draft` and `nativeStack`. Effects are `push:<branch>`, `create_pr:<branch>`, and `link_native_stack`; rerun the approved command to resume a partial failure. Register every opened PR with the host.

@@ -210,7 +210,7 @@ export async function requireGitHubRepo(): Promise<boolean> {
   const { isGitRepo } = await import("../git.ts");
   if (await isGitRepo()) return true;
   const { fail } = await import("../../utils/ui.ts");
-  fail("Not in a GitHub repository; pass -R owner/repo.");
+  fail("Not in a GitHub repository; pass -R owner/repo.", { code: "invalid_arguments" });
   return false;
 }
 
