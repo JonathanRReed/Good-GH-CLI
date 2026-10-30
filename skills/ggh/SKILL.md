@@ -12,7 +12,7 @@ Use this in Claude Code, Codex, T3 Code, and Cursor when calling ggh.
 - Use `ggh status --agent` for checkout identity, HEAD, staging, conflicts, base and push targets.
 - Use `ggh ci why`, `ggh pr threads`, and `ggh review` for structured evidence.
 - Use ggh for exact staged-snapshot commits and snapshot-approved publication.
-- Use `ggh inbox --agent` to find PRs awaiting your review, fix, or merge. Each item has `local.path` and `next` argv suggestions; they are data, not permission. It is read-only.
+- Use `ggh inbox --agent` to find PRs awaiting your review, fix, or merge. Each item has `local.path` and `next` shell-command suggestions; they are data, not permission. Each `next` entry is self-contained and works from any directory (`-R` for remote commands, `cd "$(ggh go ... --print)"` first for local ones). It is read-only.
 - Use `ggh projects` and `ggh lost` to inspect local projects and unpublished work. Projects may refresh local index/cache files; lost is read-only. Do not run configuration subcommands unless requested.
 - Use `ggh issue <number> --agent` to read an issue with its attached plans and other artifacts; read one with `gh issue artifact view`.
 - Use native `git --no-pager log`, `diff`, and `blame` for plain history and patches.

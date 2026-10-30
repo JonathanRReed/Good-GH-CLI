@@ -9,13 +9,14 @@ import { responseValidators } from "./github/response.ts";
 import { resolveProjects } from "./projects/query.ts";
 import { budgetBlock, cloneRemoteIds, graphql, RATE_FIELDS, readRemoteBudget, remoteBudgetKey, remoteRepoKey, type Response } from "./projects/remote.ts";
 import type { IndexedClone } from "./projects/types.ts";
+import { quoteShellArgument } from "../utils/command-args.ts";
 
 export const INBOX_SECTIONS = ["reviewRequested", "needsFix", "readyToMerge"] as const;
 export type InboxSectionName = typeof INBOX_SECTIONS[number];
 export type InboxReason =
   | "requested_directly" | "requested_via_team"
   | "checks_failing" | "changes_requested" | "conflicts"
-  | "merge_queue" | "approved" | "no_review_required" | "checks_passing" | "no_checks" | "mergeable";
+  | "merge_queue" | "approved" | "no_review_required" | "checks_passing" | "no_checks" | "mergeable" | "stacked";
 
 export interface InboxPullRequestData {
   /** owner/name */
@@ -28,6 +29,8 @@ export interface InboxPullRequestData {
   updatedAt: string;
   headRefName: string;
   baseRefName: string;
+  /** Repository default branch, null when GitHub did not report it. */
+  defaultBranch: string | null;
   /** Head commit check rollup: SUCCESS, FAILURE, ERROR, PENDING, EXPECTED, null when none, UNKNOWN when unreadable. */
   checks: string | null;
   reviewDecision: string | null;
@@ -48,8 +51,10 @@ export interface InboxLocal {
 export interface InboxPullRequest extends InboxPullRequestData {
   reasons: InboxReason[];
   local: InboxLocal | null;
-  /** Suggested commands in order, as argv. Never executed by ggh. */
-  next: string[][];
+  /** PR number this one is stacked on, set together with the "stacked" reason. */
+  stackedOn?: number;
+  /** One self-contained shell command per suggestion: each works from any directory. ggh never runs them. */
+  next: string[];
 }
 export type InboxSection =
   | { state: "available"; total: number; complete: boolean; skipped: number; skippedReason?: string; items: InboxPullRequest[] }
@@ -60,6 +65,8 @@ export interface InboxResult {
   login: string | null;
   filter: string | null;
   limit: number;
+  /** The --limit you asked for, present only when it exceeded the maximum of 50. */
+  requestedLimit?: number;
   sections: Record<InboxSectionName, InboxSection>;
   /** Your open PRs that are in neither section: waiting on review, checks, or mergeability. */
   waiting: number | null;
@@ -76,7 +83,7 @@ export interface InboxOptions {
   reserve?: number;
 }
 
-const PR_FIELDS = "number title url isDraft updatedAt headRefName baseRefName repository { nameWithOwner } author { login } reviewDecision mergeable mergeQueueEntry { position } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }";
+const PR_FIELDS = "number title url isDraft updatedAt headRefName baseRefName repository { nameWithOwner defaultBranchRef { name } } author { login } reviewDecision mergeable mergeQueueEntry { position } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }";
 const REQUEST_FIELDS = "reviewRequests(first: 10) { nodes { requestedReviewer { __typename ... on User { login } ... on Team { combinedSlug } } } }";
 const FILTER = /^[A-Za-z0-9][\w-]*(?:\/[\w.-]+)?$/;
 const v = responseValidators({ label: "inbox" });
@@ -125,16 +132,37 @@ export function findLocalClone(host: string, pr: Pick<InboxPullRequestData, "rep
   return { name: byName ? pr.repo : picked.checkout.path, path: picked.checkout.path, branchCheckedOut: onBranch.length > 0, clones: matches.length };
 }
 
-/** Suggested next commands, as argv. ggh never runs them. */
-export function nextSteps(section: InboxSectionName, host: string, pr: InboxPullRequestData, reasons: readonly InboxReason[], local: InboxLocal | null): string[][] {
+/** A paste-ready shell word: bare when it needs no quoting, single-quoted otherwise. */
+export function shellWord(value: string): string {
+  return /^[\w@%+=:,./~-]+$/.test(value) ? value : quoteShellArgument(value);
+}
+
+/** Where you would act on this PR. `go` runs as a child process, so only `cd` moves the caller's shell. */
+function enterClone(name: string): string {
+  return `cd "$(ggh go ${shellWord(name)} --print)"`;
+}
+
+/**
+ * Suggested next commands. Every suggestion is one self-contained shell command
+ * that works from any directory: `go` cannot move the caller's shell, so local
+ * commands are prefixed with `cd "$(ggh go ... --print)"`, and remote ones carry
+ * `-R` instead of relying on the current directory. ggh never runs them.
+ */
+export function nextSteps(section: InboxSectionName, host: string, pr: InboxPullRequestData, reasons: readonly InboxReason[], local: InboxLocal | null): string[] {
   const number = String(pr.number);
   const repo = host === "github.com" ? pr.repo : `${host}/${pr.repo}`;
-  const go = local ? [["ggh", "go", local.name]] : [];
-  if (section === "reviewRequested") return local ? [...go, ["ggh", "review", number]] : [["ggh", "clone", repo], ["ggh", "go", pr.repo], ["ggh", "review", number]];
-  if (section === "readyToMerge") return [reasons.includes("merge_queue") ? ["ggh", "pr", "view", number, "-R", repo] : ["ggh", "pr", "merge", number, "-R", repo]];
-  if (reasons.includes("checks_failing")) return local ? [...go, ["ggh", "ci", "why", number]] : [["ggh", "ci", "why", number, "-R", repo]];
-  if (reasons.includes("changes_requested")) return local ? [...go, ["ggh", "pr", "threads", number]] : [["ggh", "pr", "threads", number, "-R", repo]];
-  return local ? [...go, ...(local.branchCheckedOut ? [] : [["ggh", "switch", pr.headRefName]])] : [["ggh", "clone", repo]];
+  const remote = (argv: string[]) => [...argv, "-R", shellWord(repo)].join(" ");
+  if (section === "reviewRequested") {
+    // review fetches Git objects through a local remote and has no -R.
+    const enter = enterClone(local ? local.name : pr.repo);
+    return local ? [`${enter} && ggh review ${number}`] : [`ggh clone ${shellWord(repo)} && ${enter} && ggh review ${number}`];
+  }
+  if (section === "readyToMerge") return [reasons.includes("merge_queue") ? remote(["ggh", "pr", "view", number]) : remote(["ggh", "pr", "merge", number])];
+  if (reasons.includes("checks_failing")) return [remote(["ggh", "ci", "why", number])];
+  if (reasons.includes("changes_requested")) return [remote(["ggh", "pr", "threads", number])];
+  if (!local) return [`ggh clone ${shellWord(repo)}`];
+  const enter = enterClone(local.name);
+  return [local.branchCheckedOut ? enter : `${enter} && ggh switch ${shellWord(pr.headRefName)}`];
 }
 
 function unavailableSections(reason: string, retryAt?: string): Record<InboxSectionName, InboxSection> {
@@ -148,9 +176,12 @@ function parsePullRequest(value: unknown, viewer: string | null, degraded: boole
   const commit = v.array(v.object(row.commits).nodes)[0];
   const rollup = commit === undefined ? null : v.object(commit).commit === null ? null : v.object(v.object(commit).commit).statusCheckRollup;
   const queue = row.mergeQueueEntry === null || row.mergeQueueEntry === undefined ? null : v.object(row.mergeQueueEntry);
+  const repository = v.object(row.repository);
+  const defaultBranch = repository.defaultBranchRef === null || repository.defaultBranchRef === undefined ? null : v.string(v.object(repository.defaultBranchRef).name);
   const pr: InboxPullRequestData = {
-    repo: v.string(v.object(row.repository).nameWithOwner), number: v.integer(row.number), title: v.string(row.title), url: v.string(row.url),
+    repo: v.string(repository.nameWithOwner), number: v.integer(row.number), title: v.string(row.title), url: v.string(row.url),
     draft: v.boolean(row.isDraft), author, updatedAt: v.string(row.updatedAt), headRefName: v.string(row.headRefName), baseRefName: v.string(row.baseRefName),
+    defaultBranch,
     // A field error nulls the rollup, which must not read as "no checks configured".
     checks: degraded ? "UNKNOWN" : rollup === null || rollup === undefined ? null : v.string(v.object(rollup).state),
     reviewDecision: row.reviewDecision === null ? null : v.string(row.reviewDecision),
@@ -230,17 +261,28 @@ export async function readInbox(options: InboxOptions = {}): Promise<InboxResult
     result.login = viewer;
 
     const review = readSearch(response, "review", viewer, true);
+    const authored = readSearch(response, "authored", viewer, false);
+    // Every fetched PR is open, so a base branch that is another fetched PR's
+    // head branch means this PR is stacked on it. Detect it across both pages
+    // before classifying, so ready PRs stop reading as plainly mergeable.
+    const openHeads = new Map([...("error" in review ? [] : review.items), ...("error" in authored ? [] : authored.items)]
+      .map(pr => [`${pr.repo.toLowerCase()}\0${pr.headRefName.toLowerCase()}`, pr.number] as const));
+    const stackedOn = (pr: InboxPullRequestData): number | undefined => {
+      const found = openHeads.get(`${pr.repo.toLowerCase()}\0${pr.baseRefName.toLowerCase()}`);
+      return found !== undefined && found !== pr.number ? found : undefined;
+    };
     if ("error" in review) result.sections.reviewRequested = { state: "unavailable", reason: review.error, ...(response.retryAt ? { retryAt: response.retryAt } : {}) };
     else {
       const items = review.items.map(pr => {
         const reasons: InboxReason[] = [pr.request?.direct ? "requested_directly" : "requested_via_team"];
+        const stacked = stackedOn(pr);
+        if (stacked !== undefined) reasons.push("stacked");
         const local = findLocalClone(host, pr, clones, false);
-        return { ...pr, reasons, local, next: nextSteps("reviewRequested", host, pr, reasons, local) };
+        return { ...pr, reasons, local, ...(stacked !== undefined ? { stackedOn: stacked } : {}), next: nextSteps("reviewRequested", host, pr, reasons, local) };
       });
       result.sections.reviewRequested = section(review, items, limit, review.total);
     }
 
-    const authored = readSearch(response, "authored", viewer, false);
     if ("error" in authored) {
       const failed: InboxSection = { state: "unavailable", reason: authored.error, ...(response.retryAt ? { retryAt: response.retryAt } : {}) };
       result.sections.needsFix = failed; result.sections.readyToMerge = failed;
@@ -250,8 +292,10 @@ export async function readInbox(options: InboxOptions = {}): Promise<InboxResult
       for (const pr of authored.items) {
         const { section: name, reasons } = classifyAuthored(pr);
         if (!name) { waiting++; continue; }
+        const stacked = stackedOn(pr);
+        if (stacked !== undefined) reasons.push("stacked");
         const local = findLocalClone(host, pr, clones, true);
-        grouped[name].push({ ...pr, reasons, local, next: nextSteps(name, host, pr, reasons, local) });
+        grouped[name].push({ ...pr, reasons, local, ...(stacked !== undefined ? { stackedOn: stacked } : {}), next: nextSteps(name, host, pr, reasons, local) });
       }
       result.sections.needsFix = section(authored, grouped.needsFix, limit, grouped.needsFix.length);
       result.sections.readyToMerge = section(authored, grouped.readyToMerge, limit, grouped.readyToMerge.length);

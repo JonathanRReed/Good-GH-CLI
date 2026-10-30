@@ -531,6 +531,7 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.login` | string / null | yes |  |  |
 | `result.filter` | string / null | yes |  |  |
 | `result.limit` | integer | yes |  |  |
+| `result.requestedLimit` | integer | no |  | The --limit you asked for, present only when it exceeded the maximum of 50. |
 | `result.sections` | object | yes |  |  |
 | `result.sections.reviewRequested` | varies | yes |  |  |
 | `result.sections.reviewRequested [oneOf 1]` | object | yes |  |  |
@@ -550,6 +551,7 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.sections.reviewRequested [oneOf 1].items[].updatedAt` | string | yes |  |  |
 | `result.sections.reviewRequested [oneOf 1].items[].headRefName` | string | yes |  |  |
 | `result.sections.reviewRequested [oneOf 1].items[].baseRefName` | string | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].defaultBranch` | string / null | no |  | Repository default branch, null when GitHub did not report it. |
 | `result.sections.reviewRequested [oneOf 1].items[].checks` | string / null | yes |  | Head commit rollup. Null means no checks; UNKNOWN means GitHub did not return it. |
 | `result.sections.reviewRequested [oneOf 1].items[].reviewDecision` | string / null | yes |  | Null means the base branch requires no review. |
 | `result.sections.reviewRequested [oneOf 1].items[].mergeable` | `["MERGEABLE","CONFLICTING","UNKNOWN"]` | yes |  |  |
@@ -562,7 +564,8 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.sections.reviewRequested [oneOf 1].items[].request.teams` | array | yes |  |  |
 | `result.sections.reviewRequested [oneOf 1].items[].request.teams[]` | string | no |  |  |
 | `result.sections.reviewRequested [oneOf 1].items[].reasons` | array | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[].reasons[]` | `["requested_directly","requested_via_team","checks_failing","changes_requested","conflicts","merge_queue","approved","no_review_required","checks_passing","no_checks","mergeable"]` | no |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].reasons[]` | `["requested_directly","requested_via_team","checks_failing","changes_requested","conflicts","merge_queue","approved","no_review_required","checks_passing","no_checks","mergeable","stacked"]` | no |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].stackedOn` | integer | no |  | PR number this one is stacked on, present with the stacked reason. |
 | `result.sections.reviewRequested [oneOf 1].items[].local` | varies | yes |  |  |
 | `result.sections.reviewRequested [oneOf 1].items[].local [anyOf 1]` | null | yes |  |  |
 | `result.sections.reviewRequested [oneOf 1].items[].local [anyOf 2]` | object | yes |  |  |
@@ -570,9 +573,8 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.sections.reviewRequested [oneOf 1].items[].local [anyOf 2].path` | string | yes |  |  |
 | `result.sections.reviewRequested [oneOf 1].items[].local [anyOf 2].branchCheckedOut` | boolean | yes |  |  |
 | `result.sections.reviewRequested [oneOf 1].items[].local [anyOf 2].clones` | integer | yes |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[].next` | array | yes |  | Suggested argv steps in order. ggh never runs them. |
-| `result.sections.reviewRequested [oneOf 1].items[].next[]` | array | no |  |  |
-| `result.sections.reviewRequested [oneOf 1].items[].next[][]` | string | no |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].next` | array | yes |  | Suggested shell commands, one per entry. Each is self-contained and works from any directory; ggh never runs them. |
+| `result.sections.reviewRequested [oneOf 1].items[].next[]` | string | no |  |  |
 | `result.sections.reviewRequested [oneOf 2]` | object | yes |  |  |
 | `result.sections.reviewRequested [oneOf 2].state` | `"unavailable"` | yes |  |  |
 | `result.sections.reviewRequested [oneOf 2].reason` | string | yes |  |  |
@@ -595,6 +597,7 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.sections.needsFix [oneOf 1].items[].updatedAt` | string | yes |  |  |
 | `result.sections.needsFix [oneOf 1].items[].headRefName` | string | yes |  |  |
 | `result.sections.needsFix [oneOf 1].items[].baseRefName` | string | yes |  |  |
+| `result.sections.needsFix [oneOf 1].items[].defaultBranch` | string / null | no |  | Repository default branch, null when GitHub did not report it. |
 | `result.sections.needsFix [oneOf 1].items[].checks` | string / null | yes |  | Head commit rollup. Null means no checks; UNKNOWN means GitHub did not return it. |
 | `result.sections.needsFix [oneOf 1].items[].reviewDecision` | string / null | yes |  | Null means the base branch requires no review. |
 | `result.sections.needsFix [oneOf 1].items[].mergeable` | `["MERGEABLE","CONFLICTING","UNKNOWN"]` | yes |  |  |
@@ -607,7 +610,8 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.sections.needsFix [oneOf 1].items[].request.teams` | array | yes |  |  |
 | `result.sections.needsFix [oneOf 1].items[].request.teams[]` | string | no |  |  |
 | `result.sections.needsFix [oneOf 1].items[].reasons` | array | yes |  |  |
-| `result.sections.needsFix [oneOf 1].items[].reasons[]` | `["requested_directly","requested_via_team","checks_failing","changes_requested","conflicts","merge_queue","approved","no_review_required","checks_passing","no_checks","mergeable"]` | no |  |  |
+| `result.sections.needsFix [oneOf 1].items[].reasons[]` | `["requested_directly","requested_via_team","checks_failing","changes_requested","conflicts","merge_queue","approved","no_review_required","checks_passing","no_checks","mergeable","stacked"]` | no |  |  |
+| `result.sections.needsFix [oneOf 1].items[].stackedOn` | integer | no |  | PR number this one is stacked on, present with the stacked reason. |
 | `result.sections.needsFix [oneOf 1].items[].local` | varies | yes |  |  |
 | `result.sections.needsFix [oneOf 1].items[].local [anyOf 1]` | null | yes |  |  |
 | `result.sections.needsFix [oneOf 1].items[].local [anyOf 2]` | object | yes |  |  |
@@ -615,9 +619,8 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.sections.needsFix [oneOf 1].items[].local [anyOf 2].path` | string | yes |  |  |
 | `result.sections.needsFix [oneOf 1].items[].local [anyOf 2].branchCheckedOut` | boolean | yes |  |  |
 | `result.sections.needsFix [oneOf 1].items[].local [anyOf 2].clones` | integer | yes |  |  |
-| `result.sections.needsFix [oneOf 1].items[].next` | array | yes |  | Suggested argv steps in order. ggh never runs them. |
-| `result.sections.needsFix [oneOf 1].items[].next[]` | array | no |  |  |
-| `result.sections.needsFix [oneOf 1].items[].next[][]` | string | no |  |  |
+| `result.sections.needsFix [oneOf 1].items[].next` | array | yes |  | Suggested shell commands, one per entry. Each is self-contained and works from any directory; ggh never runs them. |
+| `result.sections.needsFix [oneOf 1].items[].next[]` | string | no |  |  |
 | `result.sections.needsFix [oneOf 2]` | object | yes |  |  |
 | `result.sections.needsFix [oneOf 2].state` | `"unavailable"` | yes |  |  |
 | `result.sections.needsFix [oneOf 2].reason` | string | yes |  |  |
@@ -640,6 +643,7 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.sections.readyToMerge [oneOf 1].items[].updatedAt` | string | yes |  |  |
 | `result.sections.readyToMerge [oneOf 1].items[].headRefName` | string | yes |  |  |
 | `result.sections.readyToMerge [oneOf 1].items[].baseRefName` | string | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].defaultBranch` | string / null | no |  | Repository default branch, null when GitHub did not report it. |
 | `result.sections.readyToMerge [oneOf 1].items[].checks` | string / null | yes |  | Head commit rollup. Null means no checks; UNKNOWN means GitHub did not return it. |
 | `result.sections.readyToMerge [oneOf 1].items[].reviewDecision` | string / null | yes |  | Null means the base branch requires no review. |
 | `result.sections.readyToMerge [oneOf 1].items[].mergeable` | `["MERGEABLE","CONFLICTING","UNKNOWN"]` | yes |  |  |
@@ -652,7 +656,8 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.sections.readyToMerge [oneOf 1].items[].request.teams` | array | yes |  |  |
 | `result.sections.readyToMerge [oneOf 1].items[].request.teams[]` | string | no |  |  |
 | `result.sections.readyToMerge [oneOf 1].items[].reasons` | array | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[].reasons[]` | `["requested_directly","requested_via_team","checks_failing","changes_requested","conflicts","merge_queue","approved","no_review_required","checks_passing","no_checks","mergeable"]` | no |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].reasons[]` | `["requested_directly","requested_via_team","checks_failing","changes_requested","conflicts","merge_queue","approved","no_review_required","checks_passing","no_checks","mergeable","stacked"]` | no |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].stackedOn` | integer | no |  | PR number this one is stacked on, present with the stacked reason. |
 | `result.sections.readyToMerge [oneOf 1].items[].local` | varies | yes |  |  |
 | `result.sections.readyToMerge [oneOf 1].items[].local [anyOf 1]` | null | yes |  |  |
 | `result.sections.readyToMerge [oneOf 1].items[].local [anyOf 2]` | object | yes |  |  |
@@ -660,9 +665,8 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.sections.readyToMerge [oneOf 1].items[].local [anyOf 2].path` | string | yes |  |  |
 | `result.sections.readyToMerge [oneOf 1].items[].local [anyOf 2].branchCheckedOut` | boolean | yes |  |  |
 | `result.sections.readyToMerge [oneOf 1].items[].local [anyOf 2].clones` | integer | yes |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[].next` | array | yes |  | Suggested argv steps in order. ggh never runs them. |
-| `result.sections.readyToMerge [oneOf 1].items[].next[]` | array | no |  |  |
-| `result.sections.readyToMerge [oneOf 1].items[].next[][]` | string | no |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].next` | array | yes |  | Suggested shell commands, one per entry. Each is self-contained and works from any directory; ggh never runs them. |
+| `result.sections.readyToMerge [oneOf 1].items[].next[]` | string | no |  |  |
 | `result.sections.readyToMerge [oneOf 2]` | object | yes |  |  |
 | `result.sections.readyToMerge [oneOf 2].state` | `"unavailable"` | yes |  |  |
 | `result.sections.readyToMerge [oneOf 2].reason` | string | yes |  |  |

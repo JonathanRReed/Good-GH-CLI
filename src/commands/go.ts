@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { projectPath } from "../services/projects/discovery.ts";
 import { getConfig } from "../services/config.ts";
 import { getFlags, recordCompletedEffect } from "../services/runtime.ts";
-import { refreshProjectIndex } from "../services/projects/index-store.ts";
+import { refreshProjectIndex, readProjectIndex } from "../services/projects/index-store.ts";
+import { resolveProjects } from "../services/projects/query.ts";
 import { readCloneStatus } from "../services/projects/status.ts";
 import { renderProjectCard } from "../services/projects/view.ts";
 import { parseCommandArguments } from "../utils/command-args.ts";
@@ -48,11 +49,17 @@ export function registerGoCommand(program: Command): void {
     .addOption(new Option("--shell", "Use the newline-safe shell path protocol").hideHelp())
     .action(async (query: string, options: { print?: boolean; editor?: boolean; t3?: boolean; shell?: boolean; wide?: boolean }) => {
       if ([options.print, options.editor, options.t3].filter(Boolean).length > 1 || options.shell && (!options.print || getFlags().json)) { fail("Choose one of --print, --editor, or --t3. --shell requires --print without JSON.", { code: "invalid_arguments" }); return; }
-      const index = await refreshProjectIndex();
-      const clone = await selectProject(index.clones, query); if (!clone) return;
+      // Resolve from the saved index first: a full root scan costs seconds, and
+      // most `go` calls repeat a project the index already knows. Refresh only
+      // when the index cannot answer (a miss, or every indexed checkout has
+      // vanished), then try once more before reporting the miss.
+      let index = readProjectIndex();
+      const answerable = resolveProjects(index.clones, query).some(clone => clone.checkouts.some(checkout => existsSync(checkout.path)));
+      if (!answerable) index = await refreshProjectIndex();
+      const clone = await selectProject(index.clones, query, { requireCheckout: true }); if (!clone) return;
       const requestedPath = clone.checkouts.find(checkout => checkout.path === projectPath(query))?.path;
       const checkout = clone.checkouts.find(checkout => checkout.path === requestedPath && existsSync(checkout.path)) ?? clone.checkouts.find(checkout => existsSync(checkout.path));
-      if (!checkout) { fail("Project has no available checkout. Refresh projects after mounting or restoring it."); return; }
+      if (!checkout) { fail(`A checkout of ${clone.displayName} vanished during resolution. Run ggh projects, then retry.`); return; }
       const path = checkout.path;
       const target = options.print ? "cd" : options.editor ? "editor" : options.t3 ? "t3" : getConfig().go_default ?? "cd";
       if (!options.print && !getFlags().json) renderProjectCard({ clone, status: await readCloneStatus(clone) }, undefined, true, { wide: options.wide });
