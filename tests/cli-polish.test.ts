@@ -228,12 +228,21 @@ describe("top-level help", () => {
   }
 
   beforeAll(async () => {
+    // Build the real command tree without the user's community plugins, then
+    // restore the environment: bun:test shares one process across every test
+    // file, and a leaked GGH_NO_PLUGINS would disable plugins for later files.
+    const priorNoPlugins = process.env.GGH_NO_PLUGINS;
     process.env.GGH_NO_PLUGINS = "1";
-    const result = await runFixture(["--help"], { root });
-    expect(result.exitCode).toBe(0);
-    stdout = result.stdout;
-    const program = await createProgram();
-    commands = program.commands.map(command => command.name());
+    try {
+      const result = await runFixture(["--help"], { root });
+      expect(result.exitCode).toBe(0);
+      stdout = result.stdout;
+      const program = await createProgram();
+      commands = program.commands.map(command => command.name());
+    } finally {
+      if (priorNoPlugins === undefined) delete process.env.GGH_NO_PLUGINS;
+      else process.env.GGH_NO_PLUGINS = priorNoPlugins;
+    }
   });
 
   it("leads with the pitch", () => {
