@@ -2,7 +2,7 @@
  * Issue operations. Depends on client only.
  */
 
-import { clampLimit, classifyGitHubError, gh, ghGlobal, parseRepoFlag, stdinTextRequest } from "./client.ts";
+import { clampLimit, classifyGitHubError, foundOrThrow, gh, ghGlobal, parseRepoFlag, stdinTextRequest } from "./client.ts";
 import { invalidateCache } from "../cache.ts";
 import { CapabilityError } from "../dependency-compatibility.ts";
 import { cachedGitHub } from "./cache.ts";
@@ -79,9 +79,9 @@ export async function viewIssue(issueNumber: number, cwd = process.cwd()): Promi
       "--json",
       "number,title,body,state,url,author,labels,createdAt,comments",
     ];
-    const { stdout } = await gh(args, { cwd, reject: false });
-    if (!stdout.trim()) return null;
-    return JSON.parse(stdout);
+    const result = await gh(args, { cwd, reject: false });
+    if (!foundOrThrow(result, "issue view") || !result.stdout.trim()) return null;
+    return JSON.parse(result.stdout);
   } catch (err) {
     throw classifyGitHubError(err, "issue view");
   }

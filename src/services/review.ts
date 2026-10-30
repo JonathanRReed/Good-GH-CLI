@@ -1,7 +1,8 @@
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { run } from "../utils/exec.ts";
 import { getRepoRoot, getRemotes } from "./git/branch.ts";
-import { checkoutForReview } from "./git/worktree.ts";
+import { checkoutForReview, worktreeList } from "./git/worktree.ts";
 import { gh, parseGitHubRepositoryNameWithOwnerFromRemoteUrl, parseRepoFlag } from "./github/client.ts";
 import { getReviewThreads } from "./github/review-threads.ts";
 import { recordCompletedEffect, setFlags } from "./runtime.ts";
@@ -17,6 +18,8 @@ export interface ReviewSnapshot {
 export interface ReviewResult extends ReviewSnapshot {
   schemaVersion: 1;
   checkoutPath: string;
+  /** created or updated a checkout, or reused one already at the PR head. */
+  checkout?: "created" | "updated" | "reused";
   surface: "editor" | "tuicr" | "delta" | "renderer" | "data";
   since?: ReviewSince;
   marked?: true;
@@ -40,12 +43,19 @@ export async function resolveReview(number: number, cwd = process.cwd()): Promis
   return { pr: { number, url: value.url, host: target.host, owner: target.owner, repo: target.repo }, headSha: value.headRefOid, baseSha: value.baseRefOid };
 }
 
+/** The main clone, so a review run from any linked worktree, including a review checkout, never nests another. */
+async function mainCheckout(cwd?: string): Promise<string> {
+  const root = await getRepoRoot(cwd);
+  const main = (await worktreeList(root).catch(() => []))[0];
+  return main && !main.isBare && existsSync(main.path) ? main.path : root;
+}
+
 export async function prepareReview(input: {
   snapshot: ReviewSnapshot; since?: string; mark?: boolean; cwd?: string;
 }): Promise<{ result: ReviewResult; from: string; files: string[] }> {
   const { snapshot, since } = input;
   const at = new Date().toISOString();
-  const cwd = await getRepoRoot(input.cwd);
+  const cwd = await mainCheckout(input.cwd);
   const { pr, headSha, baseSha } = snapshot;
   const key = `${pr.host}/${pr.owner}/${pr.repo}/${pr.number}`;
   const previous = since === "last" ? readReviewMark(key) : undefined;
@@ -59,9 +69,12 @@ export async function prepareReview(input: {
     if (identity.toLowerCase() === `${pr.host}/${pr.owner}/${pr.repo}`.toLowerCase()) { source = remote; break; }
   }
   if (!source) throw new Error("The PR repository must match a local Git remote. Run review from its clone.");
-  // Fetch immutable revisions, without moving a user branch or writing FETCH_HEAD.
-  await run("git", ["fetch", "--quiet", "--no-tags", "--no-write-fetch-head", source, headSha, baseSha], { cwd, env: { GIT_TERMINAL_PROMPT: "0" } });
-  recordCompletedEffect("review_objects_fetched");
+  // Fetch immutable revisions, without moving a user branch or writing FETCH_HEAD, unless both are already local.
+  const present = await Promise.all([headSha, baseSha].map(async sha => (await run("git", ["cat-file", "-e", `${sha}^{commit}`], { cwd, reject: false })).exitCode === 0));
+  if (!present.every(Boolean)) {
+    await run("git", ["fetch", "--quiet", "--no-tags", "--no-write-fetch-head", source, headSha, baseSha], { cwd, env: { GIT_TERMINAL_PROMPT: "0" } });
+    recordCompletedEffect("review_objects_fetched");
+  }
   if (fromHead && !isReviewSha(fromHead)) throw new Error("--since must be last or a full commit SHA.");
   if (fromHead) {
     const exists = await run("git", ["cat-file", "-e", `${fromHead}^{commit}`], { cwd, reject: false });
@@ -77,7 +90,8 @@ export async function prepareReview(input: {
   }
   const from = fromHead ?? mergeBase;
   const files = result.since?.files ?? (await run("git", ["diff", "--no-ext-diff", "--no-textconv", "--name-only", "-z", from, headSha, "--"], { cwd })).stdout.split("\0").filter(Boolean);
-  await checkoutForReview(headSha, result.checkoutPath, { cwd, detached: true, reuse: true });
+  const { checkout } = await checkoutForReview(headSha, result.checkoutPath, { cwd, detached: true, reuse: true });
+  if (checkout) result.checkout = checkout;
   if (input.mark) {
     // Keep marked commits reachable even after a force push and Git garbage collection.
     await run("git", ["update-ref", `refs/ggh/reviews/${pr.number}/${headSha}`, headSha], { cwd });

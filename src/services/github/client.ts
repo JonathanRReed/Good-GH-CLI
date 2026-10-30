@@ -13,6 +13,8 @@ export interface GitHubAccount {
   protocol?: "https" | "ssh";
   /** True when the `gh` binary itself is missing from PATH (distinct from being logged out). */
   notInstalled?: boolean;
+  /** gh could not reach the host to check the token; gh's own error text. Distinct from being logged out. */
+  unreachable?: string;
 }
 
 
@@ -29,15 +31,19 @@ export type GitHubErrorKind =
   | "not_found"
   | "forbidden"
   | "rate_limit"
+  | "network"
   | "unknown";
 
 
 export class GitHubError extends Error {
   readonly kind: GitHubErrorKind;
-  constructor(kind: GitHubErrorKind, message: string) {
+  /** Seconds until a rate limit resets, when GitHub reported it. */
+  readonly retryAfterSeconds?: number;
+  constructor(kind: GitHubErrorKind, message: string, options: { retryAfterSeconds?: number } = {}) {
     super(message);
     this.name = "GitHubError";
     this.kind = kind;
+    if (options.retryAfterSeconds !== undefined) this.retryAfterSeconds = options.retryAfterSeconds;
   }
 }
 
@@ -46,15 +52,55 @@ function isMissingBinary(err: unknown): boolean {
 }
 
 function extractText(err: unknown): string {
+  const captured = typeof err === "object" && err !== null && ("stdout" in err || "stderr" in err);
   return [
     (err as { stdout?: string })?.stdout,
     (err as { stderr?: string })?.stderr,
-    err instanceof Error ? err.message : String(err),
+    err instanceof Error ? err.message : captured ? "" : String(err),
   ]
     .filter((s): s is string => Boolean(s && s.trim()))
     .join("\n");
 }
 
+/** GraphQL `errors[]` from any JSON document in gh output, so raw response bodies never reach messages. */
+function graphqlErrors(text: string): Array<{ type?: string; message: string }> {
+  const errors: Array<{ type?: string; message: string }> = [];
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) continue;
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      const list = typeof parsed === "object" && parsed !== null && "errors" in parsed ? (parsed as { errors: unknown }).errors : undefined;
+      if (!Array.isArray(list)) continue;
+      for (const item of list) {
+        if (typeof item !== "object" || item === null) continue;
+        const { type, message } = item as { type?: unknown; message?: unknown };
+        if (typeof message === "string") errors.push({ ...(typeof type === "string" ? { type } : {}), message });
+      }
+    } catch { /* not a JSON document */ }
+  }
+  return errors;
+}
+
+/** Drops JSON documents and gh's duplicated prefixes, keeping gh's own words. */
+function readableDetail(text: string): string {
+  return text.split("\n").map(line => line.trim())
+    .filter(line => line && !line.startsWith("{") && !line.startsWith("["))
+    .map(line => line.replace(/^gh:\s*/, "").replace(/^GraphQL:\s*/, "").replace(/\s*\([A-Za-z0-9_.]+\)$/, ""))
+    .filter((line, index, lines) => lines.indexOf(line) === index)
+    .join(" ").slice(0, 200);
+}
+
+function retryAfter(text: string): number | undefined {
+  const header = /retry-after:\s*(\d+)/i.exec(text);
+  if (header?.[1]) return Number(header[1]);
+  const reset = /x-ratelimit-reset:\s*(\d{9,})/i.exec(text);
+  if (reset?.[1]) return Math.max(0, Number(reset[1]) - Math.floor(Date.now() / 1000));
+  return undefined;
+}
+
+/** gh output that describes a failed connection rather than a GitHub answer. */
+const NETWORK_ERROR = /dial tcp|proxyconnect|connection refused|connection reset|could not resolve host|no such host|i\/o timeout|tls handshake timeout|network is unreachable|context deadline exceeded|error connecting to|econnrefused|econnreset|enotfound|etimedout|eai_again/i;
 
 export function classifyGitHubError(err: unknown, context = ""): GitHubError {
   if (err instanceof GitHubError) return err;
@@ -65,34 +111,54 @@ export function classifyGitHubError(err: unknown, context = ""): GitHubError {
     );
   }
   const extracted = extractText(err);
+  const gql = graphqlErrors(extracted);
+  const gqlTypes = new Set(gql.map(error => error.type));
+  const gqlMessage = [...new Set(gql.map(error => error.message))].join("; ").slice(0, 200);
+  const detail = gqlMessage || readableDetail(extracted);
   const text = extracted.toLowerCase();
+  const prefixed = (fallback: string) => context ? `${context}: ${detail || fallback}` : detail || fallback;
+  if (!gql.length && NETWORK_ERROR.test(text)) {
+    return new GitHubError("network", `Could not reach GitHub: ${detail || "connection failed"}. Check the network or proxy, then retry.`);
+  }
   if (
-    /not logged|not authenticated|not signed in|please run:?\s*gh auth login|no oauth token|you are not logged|unauthorized|authentication failed/i.test(
+    /not logged|not authenticated|not signed in|please run:?\s*gh auth login|no oauth token|you are not logged|unauthorized|authentication failed|bad credentials|http 401\b/i.test(
       text,
     )
   ) {
     return new GitHubError("not_authenticated", "GitHub CLI is not authenticated. Run `gh auth login`.");
   }
-  if (/rate limit|api rate limit|too many requests|429/.test(text)) {
-    return new GitHubError("rate_limit", "GitHub API rate limit reached. Wait a moment and try again.");
+  if (gqlTypes.has("RATE_LIMITED") || /rate limit|too many requests|\bhttp 429\b/.test(text)) {
+    const seconds = retryAfter(extracted);
+    return new GitHubError("rate_limit", `GitHub API rate limit reached${seconds === undefined ? "" : `; retry in ${seconds}s`}. Wait, then retry.`, seconds === undefined ? {} : { retryAfterSeconds: seconds });
   }
-  if (/http 404|404: not found|404 not found|not found/.test(text)) {
+  if (gqlTypes.has("NOT_FOUND") || /http 404|404: not found|404 not found|not found|could not resolve to a/.test(text)) {
     return new GitHubError(
       "not_found",
-      context ? `${context} not found.` : "GitHub resource not found.",
+      detail ? prefixed("not found") : context ? `${context} not found.` : "GitHub resource not found.",
     );
   }
-  if (/http 403|403|forbidden/.test(text)) {
+  if (gqlTypes.has("FORBIDDEN") || gqlTypes.has("INSUFFICIENT_SCOPES") || /\bhttp 403\b|forbidden|resource not accessible|saml enforcement/.test(text)) {
     return new GitHubError(
       "forbidden",
-      context ? `${context} forbidden.` : "Permission denied by GitHub.",
+      detail ? prefixed("forbidden") : context ? `${context} forbidden.` : "Permission denied by GitHub.",
     );
   }
-  const detail = extracted.trim().slice(0, 200);
   return new GitHubError(
     "unknown",
     context ? `${context} failed: ${detail}` : `GitHub CLI error: ${detail}`,
   );
+}
+
+/**
+ * For `reject: false` reads: true on success, false when GitHub says the target
+ * does not exist, and throws every other classified failure (network, auth...).
+ */
+export function foundOrThrow(result: RunResult, context: string): boolean {
+  if (result.exitCode === 0) return true;
+  const error = classifyGitHubError(result, context);
+  // A missing repository is not a missing target; keep gh's words for it.
+  if (error.kind === "not_found" && !/to a repository with/i.test(error.message)) return false;
+  throw error;
 }
 
 let cachedHost: string | undefined;
@@ -272,8 +338,10 @@ export async function getGitHubAuthStatus(host = getActiveHost(), refresh = fals
 async function fetchAuthStatus(host: string, timeoutMs?: number): Promise<GitHubAccount> {
   const args = ["auth", "status", "--json", "hosts"];
   args.push("--hostname", host || "github.com");
+  let failure: string;
   try {
     const { stdout, stderr, exitCode } = await ghGlobal(args, { reject: false, timeoutMs });
+    failure = stderr.trim();
     if (stdout && stdout.trim()) {
       const parsed = JSON.parse(stdout);
       const hostsObj = parsed?.hosts;
@@ -290,8 +358,12 @@ async function fetchAuthStatus(host: string, timeoutMs?: number): Promise<GitHub
           const isAuthenticated = activeAccount.state === "success";
           const finalHost = String(activeAccount.host || hostKey || host || "github.com");
           cachedHost = finalHost;
+          // gh reports state "error" or "timeout" when the API check itself failed, such as offline or behind a dead proxy.
+          const checkError = typeof activeAccount.error === "string" ? activeAccount.error.trim() : "";
+          const unreachable = activeAccount.state === "timeout" || (activeAccount.state === "error" && !/\b401\b|bad credentials|invalid|expired|revoked/i.test(checkError));
           return {
             authenticated: isAuthenticated,
+            ...(unreachable ? { unreachable: checkError || `gh auth status reported ${String(activeAccount.state)}.` } : {}),
             login: typeof activeAccount.login === "string" ? activeAccount.login : undefined,
             host: finalHost,
             protocol: activeAccount.gitProtocol === "ssh" ? "ssh" : "https",
@@ -313,8 +385,9 @@ async function fetchAuthStatus(host: string, timeoutMs?: number): Promise<GitHub
     if (isMissingBinary(err)) {
       return { authenticated: false, notInstalled: true };
     }
+    failure = extractText(err);
   }
-  return { authenticated: false, host };
+  return { authenticated: false, host, ...(NETWORK_ERROR.test(failure) ? { unreachable: readableDetail(failure) } : {}) };
 }
 
 /**
@@ -328,6 +401,10 @@ export async function requireAuth(): Promise<boolean> {
   const auth = await getGitHubAuthStatus(parseRepoFlag()?.host ?? getActiveHost());
   if (auth.authenticated) return true;
   const { fail } = await import("../../utils/ui.ts");
+  if (auth.unreachable) {
+    fail(`Could not reach GitHub to check authentication: ${auth.unreachable.slice(0, 200)}. Check the network or proxy, then retry.`, { code: "network" });
+    return false;
+  }
   fail(
     auth.notInstalled
       ? "GitHub CLI (`gh`) is not installed. Install it from https://cli.github.com."

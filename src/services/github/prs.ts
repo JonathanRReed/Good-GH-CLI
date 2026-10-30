@@ -2,7 +2,7 @@
  * Pull request operations. Depends on client only.
  */
 
-import { GitHubError, clampLimit, classifyGitHubError, getCurrentRepositoryNameWithOwner, gh, ghApi, ghGlobal, parseRepoFlag, stdinTextRequest } from "./client.ts";
+import { GitHubError, clampLimit, classifyGitHubError, foundOrThrow, getCurrentRepositoryNameWithOwner, gh, ghApi, ghGlobal, parseRepoFlag, stdinTextRequest } from "./client.ts";
 import { invalidateCache } from "../cache.ts";
 import { cachedGitHub } from "./cache.ts";
 import { addAttachmentArgs, appendFallbackMarkdown, fallbackMutationFailure, PartialAttachmentOperationError, PartialGitHubMutationError, prepareAttachmentPlan, uploadFallbackAttachments, type AttachmentPlan, type AttachmentVisibility } from "./attachments.ts";
@@ -240,9 +240,11 @@ export async function viewPullRequest(
 ): Promise<PullRequestDetail | null> {
   try {
     const args = ["pr", "view", ...(prNumber ? [String(prNumber)] : []), "--json", PR_VIEW_FIELDS];
-    const { stdout } = await gh(args, { cwd, reject: false });
-    if (!stdout.trim()) return null;
-    const parsed = JSON.parse(stdout);
+    const result = await gh(args, { cwd, reject: false });
+    // Without a number, gh reports a branch with no PR as an error; that is an empty answer.
+    if (!prNumber && result.exitCode !== 0 && /no (?:open )?pull requests? found/i.test(result.stderr)) return null;
+    if (!foundOrThrow(result, "pull request view") || !result.stdout.trim()) return null;
+    const parsed = JSON.parse(result.stdout);
     if (!parsed || typeof parsed !== "object") return null;
     return parsed;
   } catch (err) {

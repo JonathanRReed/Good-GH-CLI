@@ -83,7 +83,7 @@ ggh agent brief --agent
 ggh agent skill
 ggh agent skill --install claude --dry-run --agent
 ggh agent skill --install codex --yes --agent
-ggh agent schema --agent
+ggh agent schema pr create --agent
 ggh status --agent
 ggh projects repo --agent
 ggh pr threads 42 --agent
@@ -94,7 +94,7 @@ Start a session with `ggh agent brief --agent`. One call returns checkout identi
 
 Skill installation copies both files, requires approval, and refuses differing files unless explicitly forced. `--install t3` explains provider directories; an explicit path names the final skill directory. Dry runs write nothing.
 
-Managed `--agent` commands never prompt and return compact JSON with `contract: "ggh.agent"` and `version: 1`. Read `status`, `error.code`, `error.retryability`, `requiredInputs`, and `effects` before continuing. Inspect completed, pending, and uncertain effects after a partial failure. Read-only status may omit empty effects. Other results remain command-specific; discover their schemas from the installed version.
+Managed `--agent` commands never prompt and return compact JSON with `contract: "ggh.agent"` and `version: 1`. Read `status`, `error.code`, `error.retryability`, `requiredInputs`, and `effects` before continuing. `needs_input` always names the flag or argument to supply. Error codes separate `not_found`, `forbidden`, `rate_limited`, and `network` from `operation_failed`, and `after_delay` marks failures that can be retried unchanged after waiting. A failed read never reports uncertain effects; inspect completed, pending, and uncertain effects after a failed mutation. Read-only status may omit empty effects. Other results remain command-specific; `ggh agent schema <command> --agent` prints one command's flags and result schema from the installed version.
 
 Agent status includes full HEAD identity and XY/path tuples, including rename sources and conflict codes. `--full` adds raw porcelain-v2 records. Omitted counts mean zero, omitted `root` means cwd, and omitted `push` means upstream. `fetchedAt` is local fetch metadata, not proof of current remote state. Status is local unless you request `--remote` or `--providers`.
 

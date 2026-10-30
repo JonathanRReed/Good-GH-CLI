@@ -26,6 +26,8 @@ export function projectPayload({ clone, status, remote }: ProjectRow) {
 export interface SelectProjectOptions {
   /** Only consider clones with a checkout that still exists, so a resolution never lands on a vanished path. */
   requireCheckout?: boolean;
+  /** The caller's positional name, so needs_input names a real input. */
+  argument?: string;
 }
 
 export async function selectProject(clones: IndexedClone[], query: string, options: SelectProjectOptions = {}): Promise<IndexedClone | null> {
@@ -39,7 +41,9 @@ export async function selectProject(clones: IndexedClone[], query: string, optio
     return selectMenu({ message: "Choose a project", options: usable.map(clone => ({ value: clone, label: `${clone.displayName}  ${shortPath(clone.checkouts[0]?.path ?? clone.commonDir)}` })) });
   }
   // Alternatives name every matched path, even a vanished one, so the report says what to restore or clone.
-  fail(message, { code: "missing_input", requiredInputs: [{ name: "query", description: "An exact local name or path", alternatives: candidates.flatMap(clone => clone.checkouts.map(checkout => checkout.path)) }] });
+  fail(message, candidates.length
+    ? { code: "missing_input", requiredInputs: [{ name: options.argument ?? "query", description: "An exact local name or path", alternatives: candidates.flatMap(clone => clone.checkouts.map(checkout => checkout.path)) }] }
+    : { code: "not_found" });
   // Even plain noninteractive go reports candidates as data rather than guessing.
   if (getFlags().json) jsonOut({ schemaVersion: 1, query, candidates: usable.map(clone => ({ name: clone.displayName, paths: clone.checkouts.map(checkout => checkout.path), primary: clone.primary })), ...(!usable.length ? { suggestion: ["ggh", "clone", query] } : {}) });
   else if (isNonInteractive()) {

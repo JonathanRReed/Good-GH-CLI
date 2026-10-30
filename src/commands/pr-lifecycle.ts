@@ -45,7 +45,7 @@ async function resolvePrNumber(arg?: string): Promise<number | null> {
   }
   const active = await getActivePullRequest();
   if (!active) {
-    fail("No PR found for the current branch. Pass a number, or run `ggh pr create`.");
+    fail("No PR found for the current branch. Pass a number, or run `ggh pr create`.", { code: "not_found" });
     return null;
   }
   return active.number;
@@ -89,7 +89,7 @@ export function registerPrLifecycleCommands(pr: Command): void {
         return;
       }
       if (!detail) {
-        fail("No PR found for the current branch. Pass a number, or run `ggh pr create`.");
+        fail(num === undefined ? "No PR found for the current branch. Pass a number, or run `ggh pr create`." : `PR #${num} not found.`, { code: "not_found" });
         return;
       }
 

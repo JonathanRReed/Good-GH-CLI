@@ -10,23 +10,34 @@ import { listIssueArtifacts, type IssueArtifacts } from "./github/issues.ts";
 import { getBranchPullRequest, getPullRequestCheckSummary, type BranchPullRequest, type CheckSummary } from "./github/prs.ts";
 import { getReviewThreads, type ReviewThreadsResult } from "./github/review-threads.ts";
 import { findNativeStack, parsePullRequestUrl, type NativeStack, type PullRequestTarget } from "./github/stacks.ts";
-import { killAllChildren } from "../utils/exec.ts";
+import { readStackRecovery } from "./git/stack.ts";
+import { getRemotes } from "./git/branch.ts";
+import { killAllChildren, run } from "../utils/exec.ts";
 
 export const BRIEF_DEADLINE_MS = 15_000;
 const MAX_LINKED_ISSUES = 10;
+/** Commit counts stop here so a huge history never slows the brief. */
+export const BRIEF_COUNT_LIMIT = 1000;
 
 export interface BriefCheckout {
   root: string;
   branch: string | null;
   head: string | null;
   upstream: string | null;
-  ahead: number;
-  behind: number;
+  /** Null without an upstream: there is nothing to be ahead of. */
+  ahead: number | null;
+  behind: number | null;
+  /** Commits reachable from HEAD but from no remote-tracking ref, capped at BRIEF_COUNT_LIMIT. */
+  unpublished: number | null;
+  /** Commits on HEAD not on the default branch, capped at BRIEF_COUNT_LIMIT; null when no default branch is known. */
+  aheadOfDefault: number | null;
   staged: number;
   unstaged: number;
   untracked: number;
   conflicts: number;
   operation?: string;
+  /** An unfinished ggh stack restack or submit, such as one stopped on a conflict. */
+  stackOperation?: { mode: "restack" | "submit"; selected: string; operationId: string };
 }
 
 type Unavailable = { state: "unavailable"; reason: string };
@@ -79,14 +90,49 @@ const defaultReaders: BriefReaders = {
   cancel: killAllChildren,
 };
 
+async function countCommits(args: string[], cwd: string): Promise<number | null> {
+  const result = await run("git", ["rev-list", "--count", `--max-count=${BRIEF_COUNT_LIMIT}`, ...args], { cwd, reject: false });
+  const count = Number.parseInt(result.stdout.trim(), 10);
+  return result.exitCode === 0 && Number.isSafeInteger(count) ? count : null;
+}
+
+/** The remote default branch ref, from refs/remotes/<remote>/HEAD only; no network. */
+async function defaultBranchRef(cwd: string): Promise<string | null> {
+  const remotes = await getRemotes(cwd).catch((): string[] => []);
+  for (const remote of [...new Set(["origin", ...remotes])].filter(name => remotes.includes(name))) {
+    const result = await run("git", ["symbolic-ref", "--quiet", `refs/remotes/${remote}/HEAD`], { cwd, reject: false });
+    if (result.exitCode === 0 && result.stdout.trim().startsWith(`refs/remotes/${remote}/`)) return result.stdout.trim();
+  }
+  return null;
+}
+
 /** Local checkout identity, or null outside a repository. */
 export async function readBriefCheckout(): Promise<BriefCheckout | null> {
   const state = await readCheckoutState({ untracked: "all" });
   if (!state) return null;
+  const cwd = state.root;
+  const born = state.head !== null;
+  const [unpublished, aheadOfDefault, recovery] = await Promise.all([
+    born ? countCommits(["HEAD", "--not", "--remotes"], cwd) : Promise.resolve(0),
+    born ? defaultBranchRef(cwd).then(ref => ref ? countCommits([`${ref}..HEAD`], cwd) : null) : Promise.resolve(null),
+    readStackRecovery(cwd).catch(() => null),
+  ]);
   return {
-    root: state.root, branch: state.branch, head: state.head, upstream: state.upstream, ahead: state.ahead, behind: state.behind,
+    root: state.root, branch: state.branch, head: state.head, upstream: state.upstream,
+    ahead: state.upstream ? state.ahead : null, behind: state.upstream ? state.behind : null, unpublished, aheadOfDefault,
     ...state.counts, ...(state.operation ? { operation: state.operation } : {}),
+    ...(recovery ? { stackOperation: { mode: recovery.mode, selected: recovery.selected, operationId: recovery.operationId } } : {}),
   };
+}
+
+/** Hints that follow from local state alone, so --local and detached HEAD still point somewhere. */
+function localHints(checkout: BriefCheckout, hasPullRequest: boolean): string[] {
+  if (checkout.stackOperation?.mode === "restack") return ["ggh stack restack --continue --agent", "ggh stack restack --abort --agent"];
+  if (checkout.stackOperation) return [`ggh operation view ${checkout.stackOperation.operationId} --agent`];
+  if (!checkout.unpublished) return [];
+  if (checkout.branch === null) return ["git switch -c <branch>"];
+  if (checkout.upstream === null && !hasPullRequest) return ["ggh pr create --dry-run --agent"];
+  return [];
 }
 
 // gh errors repeat stderr inside the message; one line keeps the brief small.
@@ -98,6 +144,12 @@ const withoutPr = (reason: string) => ({ ci: skipped(reason), reviewThreads: ski
 
 /** Builds the brief. `local` skips every remote read. */
 export async function buildAgentBrief(checkout: BriefCheckout, options: { local?: boolean; deadlineMs?: number; readers?: BriefReaders } = {}): Promise<AgentBrief> {
+  const brief = await buildRemoteSections(checkout, options);
+  const next = [...new Set([...localHints(checkout, brief.pullRequest.state === "available"), ...brief.next ?? []])];
+  return next.length ? { ...brief, next } : brief;
+}
+
+async function buildRemoteSections(checkout: BriefCheckout, options: { local?: boolean; deadlineMs?: number; readers?: BriefReaders }): Promise<AgentBrief> {
   if (options.local) {
     const reason = "Skipped by --local.";
     return { schemaVersion: 1, checkout, pullRequest: skipped(reason), ...withoutPr(reason) };

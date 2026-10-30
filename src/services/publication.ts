@@ -1,6 +1,7 @@
 import { publicationSnapshot, assertPublicationApproval, type PublicationContent } from "./publication-approval.ts";
 import { basename, resolve } from "node:path";
 import { getActiveOperation, setActiveOperation } from "./runtime.ts";
+import type { RequiredInput } from "./agent-contract.ts";
 import { claimOperationResume, updateOperation } from "./operations.ts";
 import { publicationIntent, type PublicationIntent } from "./publication-intent.ts";
 import { run } from "../utils/exec.ts";
@@ -105,10 +106,22 @@ export type PublicationPlan = RepositoryPlan | PullRequestPlan;
 export type PreparePublicationResult =
   | { status: "ready"; plan: PublicationPlan }
   | {
+      /** An input the caller can supply; see publicationRequiredInput. */
       status: "needs_input";
-      required: "name" | "base" | "branch" | "repository";
+      required: "name" | "base" | "remote";
+      message: string;
+    }
+  | {
+      /** Local or remote state blocks publication; the message names the fix. Nothing changed. */
+      status: "failed";
       message: string;
     };
+
+/** The flag or argument that supplies a publication input for each command. */
+export function publicationRequiredInput(kind: "pr" | "repo", required: "name" | "base" | "remote", description: string): RequiredInput {
+  const name = required === "base" ? "--base" : required === "remote" ? "--remote" : kind === "pr" ? "--repo-name" : "name";
+  return { name, description };
+}
 
 export interface PublicationResult {
   status: "succeeded" | "partially_completed" | "failed";
@@ -268,8 +281,7 @@ export async function preparePublication(
   } catch {
     if (request.source)
       return {
-        status: "needs_input",
-        required: "repository",
+        status: "failed",
         message: `Source "${request.source}" is not a Git repository.`,
       };
   }
@@ -283,15 +295,14 @@ export async function preparePublication(
   ) {
     return {
       status: "needs_input",
-      required: "repository",
+      required: "remote",
       message:
         "Choose a remote because this repository has multiple non-origin remotes.",
     };
   }
   if (selected && !selected.target) {
     return {
-      status: "needs_input",
-      required: "repository",
+      status: "failed",
       message: `Remote "${selected.name}" is not a supported GitHub repository URL. Use a credential-free GitHub URL. The remote will not be changed.`,
     };
   }
@@ -301,8 +312,7 @@ export async function preparePublication(
     flagRepo = parseRepoFlag();
   } catch (error) {
     return {
-      status: "needs_input",
-      required: "repository",
+      status: "failed",
       message: error instanceof Error ? error.message : String(error),
     };
   }
@@ -316,8 +326,7 @@ export async function preparePublication(
     selected.host.toLowerCase() !== requestedHost
   ) {
     return {
-      status: "needs_input",
-      required: "repository",
+      status: "failed",
       message: `Remote "${selected.name}" uses ${selected.host}, but GH_HOST targets ${requestedHost}.`,
     };
   }
@@ -330,8 +339,7 @@ export async function preparePublication(
   ).toLowerCase();
   if (!/^[A-Za-z0-9][A-Za-z0-9.-]*(?::\d+)?$/.test(host)) {
     return {
-      status: "needs_input",
-      required: "repository",
+      status: "failed",
       message: `Invalid GitHub host "${host}".`,
     };
   }
@@ -347,8 +355,7 @@ export async function preparePublication(
   const accountHost = account.host ?? host;
   if (accountHost.toLowerCase() !== host.toLowerCase()) {
     return {
-      status: "needs_input",
-      required: "repository",
+      status: "failed",
       message: `Authenticated GitHub host ${accountHost} does not match target host ${host}.`,
     };
   }
@@ -367,8 +374,7 @@ export async function preparePublication(
       nameIdentity.target.toLowerCase() !== selected.target?.toLowerCase())
   ) {
     return {
-      status: "needs_input",
-      required: "repository",
+      status: "failed",
       message: `Requested repository ${nameIdentity.target} conflicts with remote "${selected.name}" (${selected.target}).`,
     };
   }
@@ -379,8 +385,7 @@ export async function preparePublication(
       flagRepo.nameWithOwner.toLowerCase() !== selected.target?.toLowerCase())
   ) {
     return {
-      status: "needs_input",
-      required: "repository",
+      status: "failed",
       message: `GH_REPO targets ${flagRepo.nameWithOwner}, but remote "${selected.name}" points to ${selected.target}.`,
     };
   }
@@ -392,8 +397,7 @@ export async function preparePublication(
           nameIdentity.target.toLowerCase()))
   ) {
     return {
-      status: "needs_input",
-      required: "repository",
+      status: "failed",
       message: `GH_REPO targets ${flagRepo.nameWithOwner} and conflicts with the requested publication target.`,
     };
   }
@@ -426,13 +430,12 @@ export async function preparePublication(
     if (!(await validRemoteName(remoteName, root ?? cwd)))
       return {
         status: "needs_input",
-        required: "repository",
+        required: "remote",
         message: `Remote name "${remoteName}" is invalid.`,
       };
     if (push && !root)
       return {
-        status: "needs_input",
-        required: "repository",
+        status: "failed",
         message: "A local Git repository is required to push.",
       };
     const head = root
@@ -441,8 +444,7 @@ export async function preparePublication(
     const headTip = root && head ? await tip("HEAD", root) : null;
     if (push && (!head || !headTip))
       return {
-        status: "needs_input",
-        required: "repository",
+        status: "failed",
         message:
           "A checked out branch with at least one commit is required to push.",
       };
@@ -455,8 +457,7 @@ export async function preparePublication(
         remoteHeadTip = await remoteBranchTip(selected.name, head, root);
       } catch (error) {
         return {
-          status: "needs_input",
-          required: "repository",
+          status: "failed",
           message: error instanceof Error ? error.message : String(error),
         };
       }
@@ -468,8 +469,7 @@ export async function preparePublication(
         !(await isAncestor(remoteHeadTip, headTip, root))
       ) {
         return {
-          status: "needs_input",
-          required: "branch",
+          status: "failed",
           message: `Remote branch "${head}" has commits that are not in the local branch.`,
         };
       }
@@ -478,7 +478,7 @@ export async function preparePublication(
     }
     if (selected) {
       const current = await inspectExistingRepository({ cwd, host, target });
-      if (current.exists !== true) return { status: "needs_input", required: "repository", message: current.exists === "unknown" ? current.error : `Repository ${target} is unavailable. Check access before publication.` };
+      if (current.exists !== true) return { status: "failed", message: current.exists === "unknown" ? current.error : `Repository ${target} is unavailable. Check access before publication.` };
       visibility = current.visibility === "PUBLIC" ? "public" : current.visibility === "INTERNAL" ? "internal" : "private";
     }
     const plan: RepositoryPlan = {
@@ -504,8 +504,7 @@ export async function preparePublication(
 
   if (!root)
     return {
-      status: "needs_input",
-      required: "repository",
+      status: "failed",
       message: "A local Git repository is required to open a pull request.",
     };
   const inferredTarget = `${account.login}/${basename(root)}`;
@@ -524,8 +523,7 @@ export async function preparePublication(
   const headTip = head ? await tip("HEAD", root) : null;
   if (!(await isValidBranch(head, root)) || !headTip)
     return {
-      status: "needs_input",
-      required: "branch",
+      status: "failed",
       message:
         "Check out a named branch with at least one commit before opening a pull request.",
     };
@@ -554,7 +552,7 @@ export async function preparePublication(
     return {
       status: "needs_input",
       required: "base",
-      message: `Base branch "${baseName}" is not available locally. Fetch it before preparing the pull request.`,
+      message: `Base branch "${baseName}" is not available locally. Pass an existing --base, or fetch it before preparing the pull request.`,
     };
   const steps: PublicationStep[] = [];
   const createRepositoryForPr = !selected;
@@ -562,7 +560,7 @@ export async function preparePublication(
   if (!(await validRemoteName(remoteName, root)))
     return {
       status: "needs_input",
-      required: "repository",
+      required: "remote",
       message: `Remote name "${remoteName}" is invalid.`,
     };
   const remoteUrl = selected?.url ?? repositoryUrl(host, target, account.protocol);
@@ -576,8 +574,7 @@ export async function preparePublication(
       ]);
     } catch (error) {
       return {
-        status: "needs_input",
-        required: "repository",
+        status: "failed",
         message: error instanceof Error ? error.message : String(error),
       };
     }
@@ -585,7 +582,7 @@ export async function preparePublication(
   let baseTip = localBaseTip;
   if (remoteBaseTip && remoteBaseTip !== localBaseTip) {
     const available = await run("git", ["cat-file", "-e", `${remoteBaseTip}^{commit}`], { cwd: root, reject: false });
-    if (available.exitCode !== 0) return { status: "needs_input", required: "base", message: `Remote base "${baseName}" is newer than the local comparison. Run git fetch ${remoteName} ${baseName}, then prepare the plan again.` };
+    if (available.exitCode !== 0) return { status: "failed", message: `Remote base "${baseName}" is newer than the local comparison. Run git fetch ${remoteName} ${baseName}, then prepare the plan again.` };
     baseTip = remoteBaseTip;
   }
     if (
@@ -594,8 +591,7 @@ export async function preparePublication(
       !(await isAncestor(remoteHeadTip, headTip, root))
     ) {
       return {
-        status: "needs_input",
-        required: "branch",
+        status: "failed",
         message: `Remote branch "${head}" has commits that are not in the local branch.`,
       };
     }
@@ -605,8 +601,7 @@ export async function preparePublication(
   });
   if (mergeBase.exitCode !== 0 || !mergeBase.stdout.trim())
     return {
-      status: "needs_input",
-      required: "base",
+      status: "failed",
       message: `Branches "${baseName}" and "${head}" have no common commit.`,
     };
   const commitsAhead = await git(
@@ -616,8 +611,7 @@ export async function preparePublication(
   );
   if (Number.parseInt(commitsAhead, 10) < 1)
     return {
-      status: "needs_input",
-      required: "branch",
+      status: "failed",
       message: `Branch "${head}" has no commits that differ from "${baseName}".`,
     };
   if (createRepositoryForPr) steps.push("create_repository", "add_remote");
@@ -628,7 +622,7 @@ export async function preparePublication(
   let visibility = request.visibility ?? "private";
   if (selected) {
     const current = await inspectExistingRepository({ cwd, host, target });
-    if (current.exists !== true) return { status: "needs_input", required: "repository", message: current.exists === "unknown" ? current.error : `Repository ${target} is unavailable. Check access before publication.` };
+    if (current.exists !== true) return { status: "failed", message: current.exists === "unknown" ? current.error : `Repository ${target} is unavailable. Check access before publication.` };
     visibility = current.visibility === "PUBLIC" ? "public" : current.visibility === "INTERNAL" ? "internal" : "private";
   }
   const planMergeBase = mergeBase.stdout.trim();

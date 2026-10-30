@@ -23,7 +23,7 @@ export function operationRecoveryGuide(record: OperationRecord) {
 
 export async function preparePublicationResume(record: OperationRecord): Promise<PreparePublicationResult> {
   const intent = record.resume;
-  if (!intent) return { status: "needs_input", required: "repository", message: "This record has no publication intent. Inspect the operation before choosing a recovery command." };
+  if (!intent) return { status: "failed", message: "This record has no publication intent. Inspect the operation before choosing a recovery command." };
   const saved = intent.plan;
   const request = saved.kind === "pr"
     ? { kind: "pr" as const, cwd: saved.cwd, source: saved.source, name: `${saved.host}/${saved.target}`, visibility: saved.visibility, base: saved.base, remote: saved.remote }
@@ -31,7 +31,7 @@ export async function preparePublicationResume(record: OperationRecord): Promise
   const prepared = await preparePublication(request);
   if (prepared.status !== "ready") return prepared;
   const changed = publicationResumeChange(saved, prepared.plan);
-  return changed ? { status: "needs_input", required: "repository", message: changed } : prepared;
+  return changed ? { status: "failed", message: changed } : prepared;
 }
 
 export function publicationResumeChange(saved: PublicationPlan, current: PublicationPlan): string | undefined {

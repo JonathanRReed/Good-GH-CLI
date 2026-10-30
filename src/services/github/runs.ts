@@ -2,7 +2,7 @@
  * Actions run operations. Depends on client only.
  */
 
-import { clampLimit, classifyGitHubError, gh } from "./client.ts";
+import { clampLimit, classifyGitHubError, foundOrThrow, gh } from "./client.ts";
 import { invalidateCache } from "../cache.ts";
 import { cachedGitHub } from "./cache.ts";
 
@@ -72,9 +72,9 @@ export async function viewWorkflowRun(
       "--json",
       "databaseId,displayTitle,workflowName,status,conclusion,headBranch,event,createdAt,url,jobs",
     ];
-    const { stdout } = await gh(args, { cwd, reject: false });
-    if (!stdout.trim()) return null;
-    const parsed = JSON.parse(stdout);
+    const result = await gh(args, { cwd, reject: false });
+    if (!foundOrThrow(result, "run view") || !result.stdout.trim()) return null;
+    const parsed = JSON.parse(result.stdout);
     if (!parsed || typeof parsed !== "object") return null;
     const { jobs, ...run } = parsed;
     return { run, jobs: Array.isArray(jobs) ? jobs : [] };

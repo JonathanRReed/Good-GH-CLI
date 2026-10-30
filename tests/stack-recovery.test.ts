@@ -257,6 +257,38 @@ describe("stack recovery", () => {
     expect(git("config", "branch.grandchild.gh-merge-base")).toBe("child");
   });
 
+  it("names a stopped restack in agent brief and in a second restack instead of the detached HEAD", async () => {
+    setupStack(true);
+    const first = await cli("restack", "child", "--yes", "--json");
+    expect(first.exitCode).not.toBe(0);
+    const fixture = join(root, "fixture-");
+    const brief = JSON.parse((await runFixture(["agent", "brief", "--local", "--agent"], { root: fixture, cwd: root })).stdout);
+    expect(brief.result.checkout).toMatchObject({ branch: null, operation: "rebase", stackOperation: { mode: "restack", selected: "child", operationId: expect.any(String) } });
+    expect(brief.result.next).toEqual(["ggh stack restack --continue --agent", "ggh stack restack --abort --agent"]);
+    const again = await runFixture(["stack", "restack", "-y", "--agent"], { root: fixture, cwd: root });
+    expect(again.exitCode).toBe(1);
+    const envelope = JSON.parse(again.stdout);
+    expect(envelope.error.message).toContain("ggh stack restack --continue");
+    expect(envelope.error.message).not.toContain("detached HEAD");
+    expect(envelope).toMatchObject({ status: "failed", error: { code: "precondition_failed" }, effects: { uncertain: [] } });
+  });
+
+  it("records a stack parent once and reports a repeat as no_op", async () => {
+    setupStack();
+    git("switch", "side");
+    const fixture = join(root, "fixture-");
+    mkdirSync(fixture, { recursive: true });
+    const first = JSON.parse((await runFixture(["stack", "on", "parent", "--agent"], { root: fixture, cwd: root })).stdout);
+    expect(first).toMatchObject({ status: "succeeded", result: { branch: "side", parent: "parent" }, effects: { completed: ["stack_parent_recorded"] } });
+    const tip = git("config", "branch.side.gh-merge-base-sha");
+    git("switch", "parent");
+    commitFile("later.txt", "later\n", "later");
+    git("switch", "side");
+    const second = JSON.parse((await runFixture(["stack", "on", "parent", "--agent"], { root: fixture, cwd: root })).stdout);
+    expect(second).toMatchObject({ status: "no_op", result: { status: "no_op", branch: "side", parent: "parent" }, effects: { completed: [], uncertain: [] } });
+    expect(git("config", "branch.side.gh-merge-base-sha")).toBe(tip);
+  });
+
   it("aborts a conflict, restores saved tips, and returns to the original branch", async () => {
     setupStack(true);
     const tips = originalTips();

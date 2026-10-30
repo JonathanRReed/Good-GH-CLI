@@ -5,7 +5,7 @@ import { readCheckoutState } from "../services/git/checkout-state.ts";
 import { join } from "node:path";
 import { branchSettings, pushTarget } from "../services/git/push-target.ts";
 import { getFlags } from "../services/runtime.ts";
-import { checkSubmodules, getAheadBehind, getAheadOfDefault, getRepoRoot, getRemotes, getStatus, worktreeList } from "../services/git.ts";
+import { NOT_A_GIT_REPOSITORY, checkSubmodules, getAheadBehind, getAheadOfDefault, getRepoRoot, getRemotes, getStatus, worktreeList } from "../services/git.ts";
 import { getActivePullRequest, getGitHubAuthStatus, type GitHubAccount } from "../services/github.ts";
 import { getConfig } from "../services/config.ts";
 import { buildAttemptChain, getStatusProviders, getProviderById, PROVIDER_ORDER } from "../services/ai/index.ts";
@@ -194,7 +194,7 @@ async function renderMachineStatus(options?: { remote?: boolean; providers?: boo
     ...(options?.providers ? { ai: { enabled: getConfig().ai_enabled, providers: (await getStatusProviders()).map(provider => provider.id) } } : {}),
   };
   if (agent) {
-    if (!root) { jsonOut(null); return; }
+    if (!root) { fail(NOT_A_GIT_REPOSITORY, { code: "invalid_arguments" }); return; }
     const [settings, remotes] = await Promise.all([branchSettings(root), getRemotes(root)]);
     const remote = branch ? pushTarget(branch, remotes, settings) : null;
     const destination = remote ? remote.remote === "." ? remote.branch : `${remote.remote}/${remote.branch}` : null;

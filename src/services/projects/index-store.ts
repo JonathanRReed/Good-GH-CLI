@@ -80,16 +80,27 @@ export function readProjectIndex(configDir = getConfigDir()): ProjectIndexFile {
   } catch (error) { throw new Error(`Cannot read ${file}. Inspect it or move it aside before refreshing. ${error instanceof Error ? error.message : String(error)}`, { cause: error }); }
 }
 
+/** Key and scan order vary between runs, so compare canonically, ignoring scan timestamps. */
+function sameContent(left: ProjectIndexFile, right: ProjectIndexFile): boolean {
+  const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(item => JSON.stringify(canonical(item))).sort()
+    : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).filter(([key, item]) => key !== "updatedAt" && key !== "lastSeen" && item !== undefined).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => [key, canonical(item)]))
+      : value;
+  return JSON.stringify(canonical(left)) === JSON.stringify(canonical(right));
+}
+
 export async function updateProjectIndex(update: (current: ProjectIndexFile) => ProjectIndexFile, configDir = getConfigDir()): Promise<ProjectIndexFile> {
   privateProjectDirectory(configDir, true);
   const release = await acquireProcessLock(join(configDir, "projects.lock"));
   const temporary = join(configDir, `.projects.${randomUUID()}.tmp`);
   try {
-    const next = update(readProjectIndex(configDir));
+    const existed = existsSync(projectIndexPath(configDir));
+    const current = readProjectIndex(configDir);
+    const next = update(current);
     const handle = await open(temporary, "wx", 0o600);
     try { await handle.writeFile(`${JSON.stringify(next)}\n`, "utf8"); await handle.sync(); } finally { await handle.close(); }
     await rename(temporary, projectIndexPath(configDir));
-    recordCompletedEffect("projects_index_updated");
+    // A rescan that only refreshes scan timestamps is bookkeeping, not an effect worth reporting.
+    if (!existed || !sameContent(next, current)) recordCompletedEffect("projects_index_updated");
     return next;
   } finally {
     try { await unlink(temporary).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; }); }

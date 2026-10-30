@@ -34,9 +34,13 @@ const defaults: RuntimeFlags = {
 let flags: RuntimeFlags = { ...defaults };
 let aiExplicitlyDisabled = false;
 
-export type CommandIssue = { status: "failed" | "needs_input" | "cancelled"; message: string; code?: AgentErrorCode; requiredInputs?: RequiredInput[] };
+export type CommandIssue = { status: "failed" | "needs_input" | "cancelled"; message: string; code?: AgentErrorCode; requiredInputs?: RequiredInput[]; retryAfterSeconds?: number };
 let commandPath: string[] = [];
 let finishedOperation: OperationRecord | undefined;
+let commandMutates: boolean | undefined;
+/** Whether the running command can change local or remote state; undefined until classified. */
+export function setCommandMutates(value: boolean): void { commandMutates = value; }
+export function getCommandMutates(): boolean | undefined { return commandMutates; }
 export function setCommandPath(value: string[]): void { commandPath = value; }
 export function getCommandPath(): string[] { return commandPath; }
 export function setFinishedOperation(value: OperationRecord): void { finishedOperation = value; }
@@ -55,6 +59,7 @@ let activeOperation: ActiveOperation | undefined;
 export function resetCommandOutput(): void {
   commandPath = [];
   finishedOperation = undefined;
+  commandMutates = undefined;
   jsonEmitted = false;
   issue = undefined;
   preview = [];

@@ -2,7 +2,7 @@
  * Repository read/write operations. Depends on client only.
  */
 
-import { clampLimit, classifyGitHubError, ghApi, ghGlobal, parseRepoFlag } from "./client.ts";
+import { clampLimit, classifyGitHubError, foundOrThrow, ghApi, ghGlobal, parseRepoFlag } from "./client.ts";
 import { invalidateCache } from "../cache.ts";
 import { cachedGitHub } from "./cache.ts";
 
@@ -131,9 +131,9 @@ export async function viewRepository(
     "nameWithOwner,description,url,isPrivate,isFork,stargazerCount,forkCount,primaryLanguage,defaultBranchRef,licenseInfo,repositoryTopics";
   const args = [...repoViewArg(nameWithOwner), "--json", fields];
   try {
-    const { stdout } = await ghGlobal(args, { cwd, reject: false });
-    if (!stdout.trim()) return null;
-    return JSON.parse(stdout);
+    const result = await ghGlobal(args, { cwd, reject: false });
+    if (!foundOrThrow(result, "repository view") || !result.stdout.trim()) return null;
+    return JSON.parse(result.stdout);
   } catch (err) {
     throw classifyGitHubError(err, "repository view");
   }

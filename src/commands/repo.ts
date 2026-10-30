@@ -10,7 +10,7 @@ import {
   setDefaultRepository,
   viewRepository,
 } from "../services/github.ts";
-import { preparePublication, executePublication } from "../services/publication.ts";
+import { preparePublication, executePublication, publicationRequiredInput } from "../services/publication.ts";
 import { getConfig } from "../services/config.ts";
 import { isNonInteractive, recordCommandIssue } from "../services/runtime.ts";
 import { invalidateCache } from "../services/cache.ts";
@@ -28,11 +28,13 @@ export function registerRepoCommand(program: Command): void {
 
       const s = p.spinner();
       s.start(`Fetching ${nameWithOwner || "this repository"}...`);
-      const detail = await viewRepository(nameWithOwner);
+      let detail;
+      try { detail = await viewRepository(nameWithOwner); }
+      catch (err) { s.stop(pc.red("Failed.")); failFromGitHub(err); return; }
       s.stop(detail ? "Loaded." : pc.yellow("Not found."));
 
       if (!detail) {
-        fail(nameWithOwner ? `Repository '${nameWithOwner}' not found.` : "Not inside a GitHub repository.");
+        fail(nameWithOwner ? `Repository '${nameWithOwner}' not found.` : "Not inside a GitHub repository.", { code: nameWithOwner ? "not_found" : "invalid_arguments" });
         return;
       }
 
@@ -139,10 +141,10 @@ export function registerRepoCommand(program: Command): void {
           if (!typed) { p.cancel("Cancelled."); return; }
           prepared = await preparePublication({ ...request, name: typed });
         }
-        if (prepared.status === "needs_input") {
-          recordCommandIssue({ status: "needs_input", code: "missing_input", requiredInputs: [{ name: prepared.required, description: prepared.message }], message: prepared.message });
+        if (prepared.status !== "ready") {
+          if (prepared.status === "needs_input") recordCommandIssue({ status: "needs_input", code: "missing_input", requiredInputs: [publicationRequiredInput("repo", prepared.required, prepared.message)], message: prepared.message });
           jsonOut(prepared);
-          fail(prepared.message);
+          fail(prepared.message, prepared.status === "failed" ? { code: "precondition_failed" } : {});
           return;
         }
         const plan = prepared.plan;

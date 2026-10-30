@@ -28,6 +28,8 @@ export interface WorktreeInfo {
 
 export interface WorktreeAddResult {
   copiedEnvFiles: string[];
+  /** Detached review checkouts only: what happened to the checkout directory. */
+  checkout?: "created" | "updated" | "reused";
 }
 
 
@@ -110,16 +112,15 @@ export async function checkoutForReview(
       }
       const status = await run("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all"], { cwd: target });
       if (status.stdout) throw new Error(`Review checkout '${target}' is dirty. Commit, stash, or remove its changes before retrying.`);
-      if (tree.head !== branch) {
-        await run("git", ["-c", "core.hooksPath=", "checkout", "--detach", branch], { cwd: target });
-        recordCompletedEffect("review_checkout_updated");
-      }
-    } else {
-      await run("git", ["-c", "core.hooksPath=", "worktree", "add", "--detach", "--", target, branch], { cwd: root });
-      recordCompletedEffect("review_checkout_created");
-      await markGghCheckout(target);
+      if (tree.head === branch) return { copiedEnvFiles: [], checkout: "reused" };
+      await run("git", ["-c", "core.hooksPath=", "checkout", "--detach", branch], { cwd: target });
+      recordCompletedEffect("review_checkout_updated");
+      return { copiedEnvFiles: [], checkout: "updated" };
     }
-    return { copiedEnvFiles: [] };
+    await run("git", ["-c", "core.hooksPath=", "worktree", "add", "--detach", "--", target, branch], { cwd: root });
+    recordCompletedEffect("review_checkout_created");
+    await markGghCheckout(target);
+    return { copiedEnvFiles: [], checkout: "created" };
   }
   return createWorktree(branch, targetPath, options.baseBranch, cwd, {
     development: false, copyEnv: false, submodules: options.submodules ?? false,

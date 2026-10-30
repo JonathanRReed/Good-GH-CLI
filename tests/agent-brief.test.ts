@@ -101,7 +101,7 @@ describe("ggh agent brief", () => {
     expect(envelope.effects).toBeUndefined();
     expect(envelope.result).toEqual({
       schemaVersion: 1,
-      checkout: { root: repo, branch: "feature", head, upstream: null, ahead: 0, behind: 0, staged: 1, unstaged: 1, untracked: 1, conflicts: 0 },
+      checkout: { root: repo, branch: "feature", head, upstream: null, ahead: null, behind: null, unpublished: 1, aheadOfDefault: null, staged: 1, unstaged: 1, untracked: 1, conflicts: 0 },
       pullRequest: { state: "available", number: 42, url: "https://github.com/fixture/repo/pull/42", prState: "OPEN", draft: true, headSha: head, base: "main", reviewDecision: "CHANGES_REQUESTED", mergeable: "MERGEABLE", headMatchesLocal: true },
       ci: { state: "available", total: 5, counts: { fail: 1, pass: 2, pending: 1, cancel: 1 }, failing: ["lint", "deploy"] },
       reviewThreads: { state: "available", unresolved: 2 },
@@ -184,7 +184,7 @@ describe("ggh agent brief", () => {
     try {
       const result = await runFixture(["agent", "brief", "--agent"], { root, cwd: outside });
       expect(result.exitCode).toBe(1);
-      expect(JSON.parse(result.stdout)).toMatchObject({ status: "failed", error: { code: "invalid_arguments", message: expect.stringContaining("Run ggh agent brief from a checkout") } });
+      expect(JSON.parse(result.stdout)).toMatchObject({ status: "failed", error: { code: "invalid_arguments", message: expect.stringContaining("Not a git repository") } });
       expect(result.calls).toEqual([]);
     } finally { rmSync(outside, { recursive: true, force: true }); }
   });
@@ -198,7 +198,7 @@ describe("ggh agent brief", () => {
 });
 
 describe("agent brief deadline", () => {
-  const checkout: BriefCheckout = { root: "/r", branch: "feature", head: "a".repeat(40), upstream: null, ahead: 0, behind: 0, staged: 0, unstaged: 0, untracked: 0, conflicts: 0 };
+  const checkout: BriefCheckout = { root: "/r", branch: "feature", head: "a".repeat(40), upstream: null, ahead: null, behind: null, unpublished: 0, aheadOfDefault: 0, staged: 0, unstaged: 0, untracked: 0, conflicts: 0 };
   const pr = { number: 9, url: "https://github.com/o/r/pull/9", state: "OPEN", isDraft: false, headRefOid: "b".repeat(40), baseRefName: "main", reviewDecision: null, mergeable: "UNKNOWN", closingIssuesReferences: [] };
   const never = <T>() => new Promise<T>(() => {});
 

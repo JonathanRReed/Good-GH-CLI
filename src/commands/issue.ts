@@ -140,7 +140,7 @@ export function registerIssueCommand(program: Command): void {
       return;
     }
     if (!detail) {
-      fail(`Issue #${num} not found.`);
+      fail(`Issue #${num} not found.`, { code: "not_found" });
       return;
     }
 
@@ -649,7 +649,7 @@ export function registerIssueCommand(program: Command): void {
         return;
       }
       if (!detail) {
-        fail(`Issue #${num} not found.`);
+        fail(`Issue #${num} not found.`, { code: "not_found" });
         return;
       }
 

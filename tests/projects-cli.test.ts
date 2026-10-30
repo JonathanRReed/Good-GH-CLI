@@ -182,7 +182,8 @@ describe("agent mutation effects", () => {
     expect(result.exitCode).toBe(0);
     expect(result.stdout.trim().split("\n").map(line => JSON.parse(line).effects.completed)).toEqual([
       ["projects_roots_updated"], [], ["projects_index_updated"], ["projects_index_updated"],
-      ["projects_index_updated", "projects_exclusions_updated"], ["projects_roots_updated"],
+      // forget already removed the path, so exclude changes only the exclusion list.
+      ["projects_exclusions_updated"], ["projects_roots_updated"],
     ]);
     for (const args of commands.filter(args => args.at(-1) !== "list")) {
       const dry = await cli([...args, "--agent", "--dry-run"]);

@@ -26,12 +26,11 @@ const promptInputLines = new BufferedLineInput(process.stdin);
  * cancel loudly and point at the explicit, scriptable alternative.
  */
 function nonInteractiveNotice(what: string, confirmation = false): void {
-  recordCommandIssue({
-    status: "needs_input",
-    code: confirmation ? "confirmation_required" : "missing_input",
-    requiredInputs: [{ name: confirmation ? "--yes" : "explicit_options", description: what }],
-    message: `Input required: ${what}. Pass explicit command options.`,
-  });
+  // Only a confirmation names a real flag here. A menu has no single flag, so it
+  // fails with invalid_arguments instead of a needs_input that names nothing.
+  recordCommandIssue(confirmation
+    ? { status: "needs_input", code: "confirmation_required", requiredInputs: [{ name: "--yes", description: what }], message: `Input required: ${what}. Pass --yes to authorize it.` }
+    : { status: "failed", code: "invalid_arguments", message: `Input required: ${what}. Pass explicit command options; see ggh agent schema for this command's flags.` });
   // The command could not do its job, so scripts must see a failure.
   process.exitCode = 1;
   p.log.warn(pc.yellow(`Cannot prompt for "${what}": no interactive terminal.`));
