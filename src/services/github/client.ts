@@ -67,7 +67,7 @@ export function classifyGitHubError(err: unknown, context = ""): GitHubError {
   const extracted = extractText(err);
   const text = extracted.toLowerCase();
   if (
-    /not logged|not authenticated|not signed in|please run gh auth login|no oauth token|you are not logged|unauthorized|authentication failed/i.test(
+    /not logged|not authenticated|not signed in|please run:?\s*gh auth login|no oauth token|you are not logged|unauthorized|authentication failed/i.test(
       text,
     )
   ) {

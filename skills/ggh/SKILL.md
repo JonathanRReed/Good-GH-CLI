@@ -9,6 +9,7 @@ Use this in Claude Code, Codex, T3 Code, and Cursor when calling ggh.
 
 ## Choose the tool
 
+- Start each session with `ggh agent brief --agent`: checkout, branch PR, CI counts, unresolved threads, linked issues, and stack in one call. Follow its `next` hints for detail; a section with `state: "unavailable"` was not read, which is not the same as empty.
 - Use `ggh status --agent` for checkout identity, HEAD, staging, conflicts, base and push targets.
 - Use `ggh ci why`, `ggh pr threads`, and `ggh review` for structured evidence.
 - Use ggh for exact staged-snapshot commits and snapshot-approved publication.

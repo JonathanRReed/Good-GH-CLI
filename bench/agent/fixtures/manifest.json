@@ -385,6 +385,209 @@
         "stderrBytes": 0,
         "approximateTokens": 134229.5
       }
+    },
+    {
+      "label": "good-gh-brief-porcelain",
+      "file": "good-gh-brief-porcelain.stdout",
+      "sha256": "d50cd04713df7885f6dec5d2310cda32f976e5bb65c579a726a199a6e894cbd7",
+      "bytes": 149,
+      "capture": {
+        "label": "good-gh-brief-porcelain",
+        "command": [
+          "git",
+          "status",
+          "--porcelain=v2",
+          "--branch"
+        ],
+        "cwd": "/recorded/Good-GH-CLI",
+        "exit": 0,
+        "seconds": 0.0876,
+        "stdoutBytes": 149,
+        "stderrBytes": 0,
+        "approximateTokens": 37,
+        "capturedAt": "2026-10-29, Good-GH-CLI PR #17 at 0b49791"
+      }
+    },
+    {
+      "label": "good-gh-brief-porcelain-z",
+      "file": "good-gh-brief-porcelain-z.stdout",
+      "sha256": "ba1d5884b61ed5fc6da93fbfa9f9105cbecb1b4ff4899c5b95495738fa7e0f75",
+      "bytes": 149,
+      "capture": {
+        "label": "good-gh-brief-porcelain-z",
+        "command": [
+          "git",
+          "status",
+          "--porcelain=v2",
+          "--branch",
+          "-z",
+          "-uall"
+        ],
+        "cwd": "/recorded/Good-GH-CLI",
+        "exit": 0,
+        "seconds": 0.0688,
+        "stdoutBytes": 149,
+        "stderrBytes": 0,
+        "approximateTokens": 37,
+        "capturedAt": "2026-10-29, Good-GH-CLI PR #17 at 0b49791"
+      }
+    },
+    {
+      "label": "good-gh-brief-pr-json",
+      "file": "good-gh-brief-pr-json.stdout",
+      "sha256": "c7ac4a4613996e87a4cba23ffb309b847aabbea67ac7aa36892644bcf2708868",
+      "bytes": 256,
+      "capture": {
+        "label": "good-gh-brief-pr-json",
+        "command": [
+          "gh",
+          "pr",
+          "view",
+          "--json",
+          "number,url,state,isDraft,headRefOid,baseRefName,reviewDecision,mergeable,closingIssuesReferences"
+        ],
+        "cwd": "/recorded/Good-GH-CLI",
+        "exit": 0,
+        "seconds": 0.9045,
+        "stdoutBytes": 256,
+        "stderrBytes": 0,
+        "approximateTokens": 64,
+        "capturedAt": "2026-10-29, Good-GH-CLI PR #17 at 0b49791"
+      }
+    },
+    {
+      "label": "good-gh-brief-checks-json",
+      "file": "good-gh-brief-checks-json.stdout",
+      "sha256": "02badef0631980bfc6f5219169625a38e5572553ef3886c42848388d00b231d9",
+      "bytes": 1192,
+      "capture": {
+        "label": "good-gh-brief-checks-json",
+        "command": [
+          "gh",
+          "pr",
+          "checks",
+          "17",
+          "--json",
+          "name,bucket"
+        ],
+        "cwd": "/recorded/Good-GH-CLI",
+        "exit": 0,
+        "seconds": 1.0918,
+        "stdoutBytes": 1192,
+        "stderrBytes": 0,
+        "approximateTokens": 298,
+        "capturedAt": "2026-10-29, Good-GH-CLI PR #17 at 0b49791"
+      }
+    },
+    {
+      "label": "good-gh-brief-repo-view",
+      "file": "good-gh-brief-repo-view.stdout",
+      "sha256": "4f770784bacc7a81d797a7e18c01321dc4e2af403bc516b8e0ef73dd7bf1f2ac",
+      "bytes": 99,
+      "capture": {
+        "label": "good-gh-brief-repo-view",
+        "command": [
+          "gh",
+          "repo",
+          "view",
+          "--json",
+          "nameWithOwner,url"
+        ],
+        "cwd": "/recorded/Good-GH-CLI",
+        "exit": 0,
+        "seconds": 0.5497,
+        "stdoutBytes": 99,
+        "stderrBytes": 0,
+        "approximateTokens": 25,
+        "capturedAt": "2026-10-29, Good-GH-CLI PR #17 at 0b49791"
+      }
+    },
+    {
+      "label": "good-gh-brief-threads-full",
+      "file": "good-gh-brief-threads-full.stdout",
+      "sha256": "4f91c9934659a38b2de26aaf455c60f3d15e943a866f54c602f75b9cc2f14774",
+      "bytes": 3120,
+      "capture": {
+        "label": "good-gh-brief-threads-full",
+        "command": [
+          "gh",
+          "api",
+          "graphql",
+          "-F",
+          "threadsCursor=null",
+          "-F",
+          "commentsCursor=null",
+          "-f",
+          "threadId=unused",
+          "-F",
+          "readThreads=true",
+          "-F",
+          "readComments=false",
+          "-f",
+          "owner=JonathanRReed",
+          "-f",
+          "name=Good-GH-CLI",
+          "-F",
+          "number=17",
+          "-f",
+          "query=<review-threads.ts QUERY>",
+          "--hostname",
+          "github.com"
+        ],
+        "cwd": "/recorded/Good-GH-CLI",
+        "exit": 0,
+        "seconds": 0.6577,
+        "stdoutBytes": 3120,
+        "stderrBytes": 0,
+        "approximateTokens": 780,
+        "capturedAt": "2026-10-29, Good-GH-CLI PR #17 at 0b49791"
+      }
+    },
+    {
+      "label": "good-gh-brief-threads-native",
+      "file": "good-gh-brief-threads-native.stdout",
+      "sha256": "fdcab10aee29befd61b21ff44724d13900053e869c4ae208f09ce3070ff8dbf1",
+      "bytes": 111,
+      "capture": {
+        "label": "good-gh-brief-threads-native",
+        "command": [
+          "gh",
+          "api",
+          "graphql",
+          "-f",
+          "query=query{repository(owner:\"JonathanRReed\",name:\"Good-GH-CLI\"){pullRequest(number:17){reviewThreads(first:100){nodes{isResolved}}}}}"
+        ],
+        "cwd": "/recorded/Good-GH-CLI",
+        "exit": 0,
+        "seconds": 0.4706,
+        "stdoutBytes": 111,
+        "stderrBytes": 0,
+        "approximateTokens": 28,
+        "capturedAt": "2026-10-29, Good-GH-CLI PR #17 at 0b49791"
+      }
+    },
+    {
+      "label": "good-gh-brief-stacks",
+      "file": "good-gh-brief-stacks.stdout",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "bytes": 2,
+      "capture": {
+        "label": "good-gh-brief-stacks",
+        "command": [
+          "gh",
+          "api",
+          "-H",
+          "X-GitHub-Api-Version: 2026-03-10",
+          "repos/JonathanRReed/Good-GH-CLI/stacks?pull_request=17"
+        ],
+        "cwd": "/recorded/Good-GH-CLI",
+        "exit": 0,
+        "seconds": 0.4232,
+        "stdoutBytes": 2,
+        "stderrBytes": 0,
+        "approximateTokens": 1,
+        "capturedAt": "2026-10-29, Good-GH-CLI PR #17 at 0b49791"
+      }
     }
   ]
 }
