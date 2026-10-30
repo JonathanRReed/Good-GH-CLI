@@ -226,22 +226,30 @@ const truncationSchema = { type: "object", additionalProperties: false, required
 } };
 export const ciEvidenceResultSchema = {
   type: "object", additionalProperties: false,
-  required: ["schemaVersion", "headSha", "runs", "failures", "unavailable"],
+  required: ["schemaVersion", "repository", "headSha", "runs", "failures", "unavailable"],
   properties: {
-    schemaVersion: { const: 1 }, headSha: { type: "string" },
+    schemaVersion: { const: 1 }, repository: { type: "string" }, headSha: { type: "string" },
     pr: { type: "object", additionalProperties: false, required: ["number", "url"], properties: { number: { type: "integer" }, url: { type: "string" } } },
     runs: { type: "array", items: { type: "object", additionalProperties: false, required: ["id", "url", "workflow", "conclusion", "sha", "stale"], properties: {
-      id: { type: "integer" }, url: { type: "string" }, workflow: { type: "string" }, conclusion: { type: "string" }, sha: { type: "string" }, stale: { type: "boolean" },
+      id: { type: "integer" }, url: { type: "string" }, workflow: { type: "string" }, event: { type: "string" }, conclusion: { type: "string" }, sha: { type: "string" }, stale: { type: "boolean" },
     } } },
     failures: { type: "array", items: { type: "object", additionalProperties: false,
-      required: ["job", "step", "url", "annotations", "evidence", "logSource", "truncated", "annotationsTruncated"], properties: {
+      required: ["job", "step", "url", "annotations", "evidence", "logSource", "truncated"], properties: {
         job: { type: "string" }, step: { type: "string" }, url: { type: "string" },
+        jobs: { type: "array", items: { type: "object", additionalProperties: false, required: ["job", "step", "url", "runId", "logSource"], properties: {
+          job: { type: "string" }, step: { type: "string" }, url: { type: "string" }, runId: { type: "integer" }, logSource: { enum: ["failed-step", "full-job"] },
+        } } },
         logSource: { enum: ["failed-step", "full-job"] }, truncated: truncationSchema, annotationsTruncated: truncationSchema,
         annotations: { type: "array", items: { type: "object", additionalProperties: false, required: ["path", "startLine", "endLine", "level", "title", "message", "rawDetails"], properties: {
           path: { type: "string" }, startLine: { type: "integer" }, endLine: { type: "integer" }, level: { type: "string" }, title: { type: "string" }, message: { type: "string" }, rawDetails: { type: "string" },
         } } },
         evidence: { type: "array", items: { type: "object", additionalProperties: false, required: ["line", "text"], properties: { line: { type: "integer", minimum: 1 }, text: { type: "string" } } } },
       },
+    } },
+    outputTruncated: { type: "object", additionalProperties: false, required: ["bytesTotal", "maxBytes", "evidenceLines", "annotations", "jobs", "failures", "runs", "unavailable"], properties: {
+      bytesTotal: { type: "integer", minimum: 0 }, maxBytes: { type: "integer", minimum: 1024 },
+      evidenceLines: { type: "integer", minimum: 0 }, annotations: { type: "integer", minimum: 0 }, jobs: { type: "integer", minimum: 0 },
+      failures: { type: "integer", minimum: 0 }, runs: { type: "integer", minimum: 0 }, unavailable: { type: "integer", minimum: 0 },
     } },
     unavailable: { type: "array", items: { type: "object", additionalProperties: false, required: ["source", "reason"], properties: {
       source: { type: "string" }, reason: { type: "string" }, runId: { type: "integer" }, job: { type: "string" },

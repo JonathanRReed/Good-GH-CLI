@@ -23,6 +23,12 @@ export function needsFullJobLog(log: string): boolean {
     lines.some(line => /see\b.+\bstep\b|refer to\b.+\bstep\b/i.test(line));
 }
 
+/** Ignore source positions and repeated prefixes when comparing failures across jobs. */
+export function evidenceSignature(log: string): string {
+  const errors = [...new Set(logLines(log).filter(line => errorPattern.test(line.text)).map(line => line.text.trim()))].sort();
+  return errors.length ? JSON.stringify(errors) : "";
+}
+
 /** Match first, add context second, then spend the byte budget on matches before context. */
 export function extractEvidence(log: string, maxBytes: number, context: number): { evidence: EvidenceLine[]; truncated: Truncation } {
   const lines = logLines(log);

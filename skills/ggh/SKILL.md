@@ -70,10 +70,25 @@ Make the brief your first call. Expect `result.checkout` with `ahead`/`behind` (
 ### 2. Fetch bounded CI evidence
 
 ```sh
-ggh ci why 42 -R owner/repo --max-bytes 6144 --context 2 --agent
+ggh ci why 42 -R owner/repo --max-bytes 6144 --max-output-bytes 16384 --context 2 --agent
 ```
 
-Expect `result.headSha`, `runs[].stale`, `failures[].evidence`, `failures[].truncated`, and `unavailable`. Check revision and truncation before diagnosing; missing logs do not mean passing CI.
+Expect `result.repository`, `pr.number` for PR targets, `headSha`, `runs[].event`,
+`runs[].stale`, `failures[].evidence`, and `unavailable`. Runs include the latest
+run for each workflow and event, plus completed failures at the head SHA.
+Failed PR checks without failing Actions jobs produce an explicit disagreement.
+
+`--max-bytes` limits evidence and annotations per job, default 6144. It does not
+limit metadata or the whole response. `--max-output-bytes` caps total stdout,
+including the JSON envelope or terminal text, default 16384, minimum 1024.
+Identical normalized error lines with identical annotations share one failure;
+`failures[].jobs` lists the affected jobs, steps, URLs, run IDs, and log sources.
+Evidence line numbers and byte totals describe the first job in each group.
+Empty error evidence never groups. A cap can omit evidence, jobs, failure groups,
+run metadata, or unavailability details. `outputTruncated` reports the original
+rendered byte count, cap, and omitted counts. `annotationsTruncated` appears only
+when annotations were omitted. Check revision, coverage, and truncation before
+diagnosing; missing logs do not mean passing CI.
 
 ### 3. Read unresolved threads
 
