@@ -31,6 +31,7 @@ import { registerPluginCommand, loadPlugins } from "./commands/plugin.ts";
 import { registerRepoCommand } from "./commands/repo.ts";
 import { registerStackCommand } from "./commands/stack.ts";
 import { registerReviewCommand } from "./commands/review.ts";
+import { registerInboxCommand } from "./commands/inbox.ts";
 import { registerPrCommand } from "./commands/pr.ts";
 import { registerRenameCommand } from "./commands/rename.ts";
 import { registerResolveCommand } from "./commands/resolve.ts";
@@ -78,6 +79,7 @@ export const HELP_GROUPS: Record<string, string> = {
   repo: "GitHub",
   pr: "GitHub",
   review: "GitHub",
+  inbox: "GitHub",
   issue: "GitHub",
   run: "GitHub",
   checks: "GitHub",
@@ -141,6 +143,7 @@ export async function createProgram(): Promise<Command> {
   registerRepoCommand(program);
   registerPrCommand(program);
   registerReviewCommand(program);
+  registerInboxCommand(program);
   registerIssueCommand(program);
   registerRunCommand(program);
   registerChecksCommand(program);
