@@ -13,7 +13,7 @@ export interface PublicationContent {
   attachments?: string[];
 }
 
-function digest(value: string): string {
+export function digest(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
@@ -48,6 +48,23 @@ export async function publicationSnapshot(plan: PublicationPlan, content?: Publi
     description: digest(plan.kind === "repo" ? plan.description ?? "" : ""),
     attachments: fingerprints,
   }));
+}
+
+export interface IssuePlanSnapshotInput {
+  host: string;
+  repo: string;
+  issue: number;
+  name: string;
+  action: "create" | "edit" | "no_op";
+  artifactNumber: number | null;
+  currentSha256: string | null;
+  contentSha256: string;
+}
+
+/** Binds approval to the target, the current version, and the new content. */
+export function issuePlanSnapshot(input: IssuePlanSnapshotInput): string {
+  const { host, repo, issue, name, action, artifactNumber, currentSha256, contentSha256 } = input;
+  return digest(JSON.stringify({ kind: "issue-plan", host, repo, issue, name, action, artifactNumber, currentSha256, contentSha256 }));
 }
 
 export class PublicationApprovalError extends Error {

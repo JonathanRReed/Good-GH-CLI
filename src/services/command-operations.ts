@@ -33,6 +33,7 @@ function wouldRecord(command: Command, names: string[]): boolean {
   if (!DRY_RUN_CAPABLE.has(domain)) return false;
   const options = command.opts();
   if (domain === "config" && action === "doctor") return options.fix === true;
+  if (domain === "issue" && action === "plan" && options.show === true) return false;
   if (names.length > 1) return !READ_ACTIONS.has(action) || action === "download";
   if (LOCAL_MUTATIONS.has(domain)) return true;
   if (domain === "pr") return options.checkout === true || options.worktree === true;

@@ -4,6 +4,7 @@
 
 import { clampLimit, classifyGitHubError, gh, ghGlobal, parseRepoFlag, stdinTextRequest } from "./client.ts";
 import { invalidateCache } from "../cache.ts";
+import { CapabilityError } from "../dependency-compatibility.ts";
 import { cachedGitHub } from "./cache.ts";
 import { addAttachmentArgs, appendFallbackMarkdown, fallbackMutationFailure, PartialAttachmentOperationError, PartialGitHubMutationError, prepareAttachmentPlan, uploadFallbackAttachments, type AttachmentPlan, type AttachmentVisibility, type UploadedAttachment } from "./attachments.ts";
 
@@ -107,11 +108,84 @@ export async function listIssueArtifacts(issueNumber: number, cwd = process.cwd(
     if (!Array.isArray(items)) return { state: "unavailable", reason: "GitHub CLI returned an unexpected artifact list." };
     return { state: "available", items };
   } catch (err) {
-    const text = [(err as { stderr?: string })?.stderr, err instanceof Error ? err.message : String(err)].join("\n");
-    if (/unknown command "artifact"|unknown command artifact/i.test(text)) {
-      return { state: "unavailable", reason: "Issue artifacts need GitHub CLI 2.103 or later." };
-    }
+    if (isMissingArtifactCommand(err)) return { state: "unavailable", reason: "Issue artifacts need GitHub CLI 2.103 or later." };
     return { state: "unavailable", reason: classifyGitHubError(err, "issue artifacts").message };
+  }
+}
+
+function errorText(err: unknown): string {
+  return [(err as { stderr?: string })?.stderr, err instanceof Error ? err.message : String(err)].join("\n");
+}
+
+function isMissingArtifactCommand(err: unknown): boolean {
+  return /unknown command "artifact"|unknown command artifact/i.test(errorText(err));
+}
+
+/** The issue number names a pull request, which cannot hold artifacts. */
+export class IssuePlanTargetError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "IssuePlanTargetError";
+  }
+}
+
+function artifactError(err: unknown, issueNumber: number, context: string): Error {
+  if (isMissingArtifactCommand(err)) {
+    return new CapabilityError("Issue plans need GitHub CLI 2.103 or later, which adds `gh issue artifact`. Upgrade from https://cli.github.com and retry.");
+  }
+  if (/is a pull request/i.test(errorText(err))) {
+    return new IssuePlanTargetError(`#${issueNumber} is a pull request. Plans attach to issues only; save it on the issue the pull request addresses.`);
+  }
+  return classifyGitHubError(err, context);
+}
+
+export interface IssuePlanArtifact extends IssueArtifact {
+  body: string;
+}
+
+/** Plan-type artifacts on an issue whose name matches exactly. */
+export async function findIssuePlans(issueNumber: number, name: string, cwd = process.cwd()): Promise<IssueArtifact[]> {
+  let stdout: string;
+  try {
+    ({ stdout } = await gh(["issue", "artifact", "list", String(issueNumber), "--type", "plan", "--json", "number,name,type,url,updatedAt"], { cwd }));
+  } catch (err) {
+    throw artifactError(err, issueNumber, "issue artifact list");
+  }
+  const items: unknown = JSON.parse(stdout || "[]");
+  if (!Array.isArray(items)) throw new Error("GitHub CLI returned an unexpected artifact list.");
+  return items.filter((item): item is IssueArtifact =>
+    !!item && typeof item === "object" && item.name === name && Number.isSafeInteger(item.number) && (item.type === undefined || item.type === "plan"));
+}
+
+export async function readIssuePlan(issueNumber: number, artifactNumber: number, cwd = process.cwd()): Promise<IssuePlanArtifact> {
+  let stdout: string;
+  try {
+    ({ stdout } = await gh(["issue", "artifact", "view", String(issueNumber), String(artifactNumber), "--json", "number,name,type,url,updatedAt,body"], { cwd }));
+  } catch (err) {
+    throw artifactError(err, issueNumber, "issue artifact view");
+  }
+  const item: unknown = JSON.parse(stdout || "null");
+  if (!item || typeof item !== "object" || !("body" in item) || typeof item.body !== "string") {
+    throw new Error(`GitHub CLI returned no content for artifact ${artifactNumber} on issue #${issueNumber}.`);
+  }
+  return item as IssuePlanArtifact;
+}
+
+/** Creates a plan artifact, or saves a new version of `artifactNumber`. Returns the artifact URL when gh prints one. */
+export async function saveIssuePlan(
+  issueNumber: number,
+  plan: { name: string; body: string; artifactNumber?: number },
+  cwd = process.cwd(),
+): Promise<string | undefined> {
+  const base = plan.artifactNumber === undefined
+    ? ["issue", "artifact", "create", String(issueNumber), "--type", "plan", "--name", plan.name]
+    : ["issue", "artifact", "edit", String(issueNumber), String(plan.artifactNumber)];
+  const request = stdinTextRequest(base, "--body-file", plan.body);
+  try {
+    const { stdout } = await gh(request.args, { cwd, input: request.input });
+    return stdout.split(/\r?\n/).map(line => line.trim()).find(line => line.startsWith("https://"));
+  } catch (err) {
+    throw artifactError(err, issueNumber, plan.artifactNumber === undefined ? "issue artifact create" : "issue artifact edit");
   }
 }
 

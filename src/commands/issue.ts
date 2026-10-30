@@ -30,6 +30,7 @@ import { invalidateCache } from "../services/cache.ts";
 import { dryRun, isDryRun } from "../utils/flags.ts";
 import { sanitizeDiffForAI, sanitizeForAI } from "../utils/diff.ts";
 import { parsePositiveSafeInteger } from "../utils/numeric-target.ts";
+import { registerIssuePlanCommand } from "./issue-plan.ts";
 import {
   confirmOrAbort, jsonOut,
   emitJson,
@@ -623,6 +624,8 @@ export function registerIssueCommand(program: Command): void {
         failFromGitHub(err);
       }
     });
+
+  registerIssuePlanCommand(issue);
 
   issue.command("develop <issueNumber>")
     .description("Create and switch to a branch for an issue, named from its title")

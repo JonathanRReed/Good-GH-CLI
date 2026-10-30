@@ -112,6 +112,7 @@ Every managed command accepts `--agent`. It wraps this payload in `result` and d
 | `ggh issue close` | `<issueNumber>` | --yes, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
 | `ggh issue reopen` | `<issueNumber>` | --yes, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
 | `ggh issue comment` | `<issueNumber>` | --body value, --body-file value, --attach value, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
+| `ggh issue plan` | `<issueNumber> [file]` | --name value, --show, --approve-plan value, --yes, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
 | `ggh issue develop` | `<issueNumber>` | --base value, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
 | `ggh issue lock` | `<issueNumber>` | --reason value, --yes, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
 | `ggh issue unlock` | `<issueNumber>` | --yes, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
