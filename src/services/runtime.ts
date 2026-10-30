@@ -42,8 +42,13 @@ let commandMutates: boolean | undefined;
 /** Whether the running command can change local or remote state; undefined until classified. */
 export function setCommandMutates(value: boolean): void { commandMutates = value; }
 export function getCommandMutates(): boolean | undefined { return commandMutates; }
+/** The options the running command actually declares, for "cannot prompt" hints. */
+export interface CommandOptionHint { short?: string; long?: string; takesValue: boolean }
+let commandOptions: CommandOptionHint[] = [];
 export function setCommandPath(value: string[]): void { commandPath = value; }
 export function getCommandPath(): string[] { return commandPath; }
+export function setCommandOptions(value: CommandOptionHint[]): void { commandOptions = value; }
+export function getCommandOptions(): CommandOptionHint[] { return commandOptions; }
 export function setFinishedOperation(value: OperationRecord): void { finishedOperation = value; }
 export function getFinishedOperation(): OperationRecord | undefined { return finishedOperation; }
 let jsonEmitted = false;
@@ -59,6 +64,7 @@ let activeOperation: ActiveOperation | undefined;
 
 export function resetCommandOutput(): void {
   commandPath = [];
+  commandOptions = [];
   finishedOperation = undefined;
   commandMutates = undefined;
   jsonEmitted = false;

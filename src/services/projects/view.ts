@@ -23,45 +23,94 @@ function attention(row: ProjectRow): number {
 export function sortProjects(rows: ProjectRow[]): ProjectRow[] {
   return rows.sort((a, b) => attention(b) - attention(a) || (b.status.lastCommit.state === "ok" && b.status.lastCommit.value ? Date.parse(b.status.lastCommit.value.committedAt) : 0) - (a.status.lastCommit.state === "ok" && a.status.lastCommit.value ? Date.parse(a.status.lastCommit.value.committedAt) : 0) || a.clone.displayName.localeCompare(b.clone.displayName));
 }
-function age(commit: CommitSummary | null): string {
-  if (!commit) return "-";
-  const seconds = Math.max(0, Math.floor((Date.now() - Date.parse(commit.committedAt)) / 1000));
+function relativeAge(iso: string): string {
+  const seconds = Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 1000));
   return seconds < 60 ? `${seconds}s` : seconds < 3600 ? `${Math.floor(seconds / 60)}m` : seconds < 86400 ? `${Math.floor(seconds / 3600)}h` : `${Math.floor(seconds / 86400)}d`;
 }
-export interface ProjectViewOptions { width?: number; wide?: boolean; remote?: boolean; uncloned?: boolean; refresh?: boolean }
+function age(commit: CommitSummary | null): string {
+  return commit ? relativeAge(commit.committedAt) : "-";
+}
+export interface ProjectViewOptions { width?: number; wide?: boolean; remote?: boolean; uncloned?: boolean; refresh?: boolean; cachedAt?: string }
 type ProjectHistory = { recent: FieldState<CommitSummary[]>; unpublished: FieldState<CommitSummary[]> };
+/** A long project name still has to leave room for the other columns. */
+const NAME_CAP = 28;
 function available(options: ProjectViewOptions): number {
+  if (options.wide) return Infinity;
   const columns = Number(process.env.COLUMNS);
-  const fallback = Number.isInteger(columns) && columns > 0 ? columns : 100;
   const terminal = process.stderr.isTTY ? process.stderr.columns : process.stdout.isTTY ? process.stdout.columns : undefined;
-  return options.wide ? Infinity : Math.max(1, Math.floor(options.width ?? terminal ?? fallback) - Bun.stringWidth("│  "));
+  const measured = options.width ?? terminal;
+  // A terminal (or an explicit width) that reports zero must not collapse every
+  // row to "…". Fall back to 80 columns; with no measurement at all, keep the
+  // COLUMNS value or the piped default.
+  const width = measured === undefined
+    ? (Number.isInteger(columns) && columns > 0 ? columns : 100)
+    : measured > 0 ? measured : 80;
+  return Math.max(1, Math.floor(width) - Bun.stringWidth("│  "));
+}
+function graphemes(value: string): string[] {
+  return [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(value)].map(part => part.segment);
 }
 function fit(value: string, width: number): string {
   value = cell(value);
   if (Bun.stringWidth(value) <= width) return value;
   if (width <= 0) return "";
   let result = "";
-  for (const part of new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(value)) {
-    if (Bun.stringWidth(result + part.segment) > width - 1) break;
-    result += part.segment;
+  for (const part of graphemes(value)) {
+    if (Bun.stringWidth(result + part) > width - 1) break;
+    result += part;
   }
   return result + "…";
+}
+/**
+ * Truncates in the middle so the end of a path stays visible: a checkout row
+ * reads "~/work/…/feature-branch" rather than losing the leaf directory.
+ */
+function fitMiddle(value: string, width: number): string {
+  value = cell(value);
+  if (Bun.stringWidth(value) <= width) return value;
+  if (width <= 1) return width <= 0 ? "" : "…";
+  const parts = graphemes(value);
+  const head = Math.ceil((width - 1) / 2);
+  const tail = width - 1 - head;
+  let left = "";
+  for (const part of parts) { if (Bun.stringWidth(left + part) > head) break; left += part; }
+  let right = "";
+  for (let index = parts.length - 1; index >= 0; index--) {
+    const part = parts[index];
+    if (part === undefined || Bun.stringWidth(part + right) > tail) break;
+    right = part + right;
+  }
+  return `${left}…${right}`;
 }
 export function fitProjectLine(value: string, options: ProjectViewOptions = {}): string {
   return fit(value, available(options));
 }
-function table(rows: string[][], options: ProjectViewOptions, priority = -1): string[] {
+/**
+ * Renders an aligned table within the available width. `minimums` keeps a
+ * column (the project name) from shrinking past its useful width, and `middle`
+ * marks columns whose values are truncated in the middle.
+ */
+function table(
+  rows: string[][],
+  options: ProjectViewOptions,
+  priority = -1,
+  minimums: Record<number, number> = {},
+  middle: Set<number> = new Set(),
+): string[] {
   const widths = rows[0]?.map((_, index) => Math.max(...rows.map(row => Bun.stringWidth(cell(row[index] ?? ""))))) ?? [];
   const limit = available(options);
-  while (widths.reduce((sum, width) => sum + width, 0) + Math.max(0, widths.length - 1) * 2 > limit) {
-    const candidates = widths.map((width, index) => ({ width, index })).filter(({width,index}) => width > 1 && (index !== priority || width > 28));
-    const choice = candidates.sort((a,b) => b.width - a.width)[0] ?? widths.map((width,index) => ({width,index})).filter(item=>item.width>1).sort((a,b)=>b.width-a.width)[0];
+  const total = () => widths.reduce((sum, width) => sum + width, 0) + Math.max(0, widths.length - 1) * 2;
+  while (total() > limit) {
+    const above = widths.map((width, index) => ({ width, index })).filter(({ width, index }) => width > 1 && width > (minimums[index] ?? 0));
+    const choice = above.filter(({ index }) => index !== priority && minimums[index] === undefined).sort((a, b) => b.width - a.width)[0]
+      ?? above.find(({ index }) => index === priority && widths[index]! > 28)
+      ?? above.find(({ index }) => minimums[index] !== undefined);
     if (!choice) break;
     widths[choice.index] = choice.width - 1;
   }
   return rows.map(row => fit(row.map((value, index) => {
     const width = widths[index] ?? 0;
-    const text = fit(value, width);
+    const text = middle.has(index) ? fitMiddle(value, width) : fit(value, width);
     return text + " ".repeat(Math.max(0, width - Bun.stringWidth(text)));
   }).join("  ").trimEnd(), limit));
 }
@@ -80,18 +129,18 @@ function unpublished(status: CloneStatus): string {
 function stateSummary(row: ProjectRow): string {
   const states: string[] = [];
   const dirty = row.status.checkouts.filter(checkout => checkout.dirty.state === "ok" && Object.values(checkout.dirty.value).some(count => count > 0)).length;
-  if (dirty) states.push(`${dirty} dirty`);
+  if (dirty) states.push(`${dirty} dirty ${dirty === 1 ? "checkout" : "checkouts"}`);
   if (row.status.checkouts.some(checkout => checkout.dirty.state === "ok" && checkout.dirty.value.conflicted > 0)) states.push("conflicts");
   const operations = new Set(row.status.checkouts.flatMap(checkout => checkout.operation.state === "ok" && checkout.operation.value ? [checkout.operation.value] : []));
   states.push(...operations);
   if (row.status.checkouts.length < row.clone.checkouts.length || row.status.checkouts.some(checkout => [checkout.dirty, checkout.upstream, checkout.operation].some(field => field.state !== "ok")) || [row.status.unpublished, row.status.stashes, row.status.lastCommit].some(field => field.state !== "ok")) states.push("unknown");
   if (row.clone.missing) states.push("missing");
-  if (row.stale) states.unshift("stale");
   return states.join(", ") || "clean";
 }
 export function formatProjects(rows: ProjectRow[], options: ProjectViewOptions = {}): string[] {
   if (!rows.length) return [fit("No projects. Add a scan root with ggh projects roots add <path>.", available(options))];
-  const lines = table([["Name", "Branch", "State", "↑/↓", "Unpublished", "Stashes", "Worktrees", "Age", ...(options.remote ? ["Remote", "Seen"] : [])], ...rows.map(row => {
+  const header = ["Name", "Branch", "State", "↑/↓", "Unpublished", "Stashes", "Worktrees", "Age", ...(options.remote ? ["Remote", "Seen"] : [])];
+  const body = rows.map(row => {
     const primary = row.clone.checkouts.find(checkout => checkout.gitDir === row.clone.commonDir) ?? row.clone.checkouts[0];
     const status = row.status.checkouts.find(checkout => checkout.path === primary?.path);
     const hosts = new Map<string, number>();
@@ -100,7 +149,17 @@ export function formatProjects(rows: ProjectRow[], options: ProjectViewOptions =
       hosts.set(host, (hosts.get(host) ?? 0) + 1);
     }
     return [row.clone.displayName, primary ? branch(primary) : "-", stateSummary(row), status ? drift(status.upstream) : "?", unpublished(row.status), show(row.status.stashes, String), [...hosts].map(([host, count]) => `${count} ${host === "unknown" ? "other" : host}`).join(", ") || "-", show(row.status.lastCommit, age), ...(options.remote ? [remoteSummary(row.remote), remoteAge(row.remote)] : [])];
-  })], options, options.remote ? 8 : -1);
+  });
+  // Drop all-zero columns (an unused Stashes column, for example). Name and
+  // Branch always stay.
+  const keep = header.map((_, index) => index).filter(index => index < 2 || body.some(cells => (cells[index] ?? "") !== "0"));
+  const columns = keep.map(index => header[index] ?? "");
+  // The name is the row's key: it keeps its full width up to a sane cap, so
+  // one long clone cannot starve every other column. `--wide` shows it in full.
+  const nameCap = options.wide ? Infinity : NAME_CAP;
+  const retained = body.map(cells => keep.map(index => index === 0 ? fit(cells[index] ?? "", nameCap) : cells[index] ?? ""));
+  const longestName = Math.max(...retained.map(cells => Bun.stringWidth(cell(cells[0] ?? ""))));
+  const lines = table([columns, ...retained], options, columns.indexOf("Remote"), { 0: Math.min(longestName, nameCap) });
   if (options.remote) {
     const failed = new Map<string, Set<string>>();
     for (const row of rows) for (const repo of row.remote ?? []) {
@@ -112,6 +171,8 @@ export function formatProjects(rows: ProjectRow[], options: ProjectViewOptions =
       lines.push(fit(`remote unavailable for ${failed.size} repos: ${reasons.join("; ")}`, available(options)));
     }
   }
+  // One "cached" header replaces a stale label repeated on every warm row.
+  if (options.cachedAt) lines.unshift(fit(`cached ${relativeAge(options.cachedAt)} ago`, available(options)));
   return lines;
 }
 export function renderProjects(rows: ProjectRow[], options: ProjectViewOptions = {}): void {
@@ -119,7 +180,7 @@ export function renderProjects(rows: ProjectRow[], options: ProjectViewOptions =
 }
 export function formatProjectCard(row: ProjectRow, history?: ProjectHistory, brief = false, options: ProjectViewOptions = {}): string[] {
   const { clone, status } = row;
-  const lines = [`${clone.displayName}${clone.primary ? `  ${clone.primary.host}/${clone.primary.owner}/${clone.primary.name}` : ""}${row.stale ? "  stale" : ""}`];
+  const lines = [`${clone.displayName}${clone.primary ? `  ${clone.primary.host}/${clone.primary.owner}/${clone.primary.name}` : ""}`];
   if (!brief) for (const remote of clone.remotes) lines.push(`${remote.name}  ${remote.url}`);
   const checkouts = clone.checkouts.map(checkout => {
     const state = status.checkouts.find(state => state.path === checkout.path);
@@ -134,7 +195,7 @@ export function formatProjectCard(row: ProjectRow, history?: ProjectHistory, bri
     }
     return [shortPath(checkout.path), branch(checkout), state ? dirtySummary(state.dirty) : "?", state ? drift(state.upstream) : "?", checkoutHost(checkout.path, getConfig()) ?? checkout.createdBy, flags.join(", ")];
   });
-  lines.push(...table([["Checkout", "Branch", "S/U/N/C", "↑/↓", "Host", "State"], ...checkouts], options));
+  lines.push(...table([["Checkout", "Branch", "S/U/N/C", "↑/↓", "Host", "State"], ...checkouts], options, -1, {}, new Set([0])));
   lines.push(`Unpublished: ${unpublished(status)}  Stashes: ${show(status.stashes, String)}${status.newestStash.state === "ok" && status.newestStash.value ? `  ${status.newestStash.value}` : ""}`);
   if (!brief) {
     if (status.unpublished.state === "ok") for (const ref of status.unpublished.value.filter(ref => ref.commits > 0)) lines.push(`${ref.ref.replace("refs/heads/", "")}  ${ref.commits} commits`);

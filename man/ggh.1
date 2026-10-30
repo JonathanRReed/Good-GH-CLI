@@ -5,15 +5,8 @@ ggh \- Git and GitHub in one CLI
 .B ggh
 [\fIoptions\fR] \fIcommand\fR [\fIargs\fR...]
 .SH DESCRIPTION
-Git and GitHub in one CLI: pull requests, issues, CI, stacked branches, and AI. Anything \fBggh\fR does not recognise goes straight to \fBgit\fR, so \fBggh add .\fR, \fBggh push\fR, and \fBggh rebase \-i\fR behave exactly as \fBgit\fR does.
+The GitHub CLI it should have been: find the right checkout, understand its state, act on GitHub safely, for you and your agents. Anything \fBggh\fR does not recognise goes straight to \fBgit\fR, so \fBggh add .\fR, \fBggh push\fR, and \fBggh rebase \-i\fR behave exactly as \fBgit\fR does.
 .SH COMMANDS
-.SS "Native tools"
-.TP
-\fBgit\fR
-Run git with its native arguments, output, and exit status
-.TP
-\fBgh\fR
-Run gh with its native arguments, output, and exit status
 .SS "Projects"
 .TP
 \fBprojects\fR
@@ -39,227 +32,27 @@ Exclude a path without deleting its files
 Forget a path without deleting its files
 .RE
 .TP
-\fBtidy\fR
-Preview and approve guarded clone cleanup
-.TP
-\fBlost\fR
-Find unpublished commits, stashes, and possible abandoned agent work
-.TP
 \fBgo\fR
 Find a project and print its path or open it
-.SS "Setup"
-.TP
-\fBinit\fR
-Print a shell function to jump to projects
-.TP
-\fBconfig\fR
-Configure AI permission, providers, models, and defaults
-.RS
-.TP
-\fBlist, ls\fR
-List all configuration settings
-.RE
-.RS
-.TP
-\fBcache-clear\fR
-Delete cached GitHub responses
-.RE
-.RS
-.TP
-\fBget\fR
-Get a specific configuration value
-.RE
-.RS
-.TP
-\fBset\fR
-Set a configuration value (e.g. ai_enabled true, ai_provider grok)
-.RE
-.RS
-.TP
-\fBunset\fR
-Remove a value from your user config so the default (or project/env) applies
-.RE
-.RS
-.TP
-\fBdoctor\fR
-Check configuration and inspect installed AI CLI versions and capabilities
-.RE
-.TP
-\fBcompletion\fR
-Generate completions for zsh, bash, fish, or powershell
-.SS "Status"
-.TP
-\fBstatus, st\fR
-Repository, GitHub, and AI provider status in one place
-.SS "Daily loop"
-.TP
-\fBcommit, c\fR
-Stage, write a message with AI, commit, push, and open a PR
-.TP
-\fBlog, graph\fR
-Colourised commit graph
-.TP
-\fBswitch, sw, checkout\fR
-Switch between branches and worktrees
-.TP
-\fBstack, stk\fR
-Stacked branches: view, restack, and submit the chain
-.RS
-.TP
-\fBlist, ls\fR
-Show the branch stack as a tree
-.RE
-.RS
-.TP
-\fBon\fR
-Record the parent of the current branch, adopting it into a stack
-.RE
-.RS
-.TP
-\fBrestack\fR
-Rebase a branch and everything above it onto their recorded parents
-.RE
-.RS
-.TP
-\fBsubmit\fR
-Push the selected stack and open a Pull Request for each branch against its parent
-.RE
-.RS
-.TP
-\fBnext\fR
-Create a branch stacked on the current one
-.RE
-.RS
-.TP
-\fBcheckout, co\fR
-Pick a branch from the stack and switch to it
-.RE
-.TP
-\fBworktree, wt\fR
-Isolated worktrees for parallel work, with AI branch naming
-.RS
-.TP
-\fBlist, ls\fR
-List all active worktrees
-.RE
-.RS
-.TP
-\fBadd\fR
-Create a new worktree (accepts branch name or natural language task prompt)
-.RE
-.RS
-.TP
-\fBremove, rm\fR
-Remove an active worktree and clean up references
-.RE
-.TP
-\fBstash, sh\fR
-Save, list, restore, and drop stashes
-.RS
-.TP
-\fBpop\fR
-Pop a stash
-.RE
-.RS
-.TP
-\fBdrop\fR
-Drop a stash
-.RE
-.RS
-.TP
-\fBpush, save\fR
-Stash current changes
-.RE
-.RS
-.TP
-\fBlist\fR
-List stashes
-.RE
-.RS
-.TP
-\fBrestore\fR
-Restore and pop a named stash, including a former draft
-.RE
-.TP
-\fBdiscard, restore\fR
-Discard uncommitted changes to selected files
-.TP
-\fBundo\fR
-Undo the last commit, keeping the changes staged
-.TP
-\fBresolve\fR
-Resolve merge conflicts, file by file
-.TP
-\fBsquash\fR
-Squash the last N commits into one
-.TP
-\fBrename\fR
-Rename the current branch, locally and on the remote
-.TP
-\fBsync, prune\fR
-Sync indexed projects, or fetch and prune the current repository
-.SS "GitHub"
 .TP
 \fBclone, get\fR
 Search for and clone a repository
 .TP
-\fBrepo\fR
-View, fork, create, and set the default repository
-.RS
+\fBlost\fR
+Find unpublished commits, stashes, and possible abandoned agent work
 .TP
-\fBfork\fR
-Fork a repository to your account
-.RE
-.RS
+\fBsync, prune\fR
+Sync indexed projects, or fetch and prune the current repository
 .TP
-\fBset-default\fR
-Set the repository that pr, issue, run, and release commands target
-.RE
-.RS
+\fBtidy\fR
+Preview and approve guarded clone cleanup
+.SS "Review & publish"
 .TP
-\fBcreate\fR
-Create a repository on GitHub, optionally from this directory
-.RE
-.RS
+\fBstatus, st\fR
+Repository, GitHub, and AI provider status in one place
 .TP
-\fBlist\fR
-List repositories for the authenticated user or organisation
-.RE
-.RS
-.TP
-\fBdelete\fR
-Delete a repository
-.RE
-.RS
-.TP
-\fBarchive\fR
-Archive a repository
-.RE
-.RS
-.TP
-\fBunarchive\fR
-Unarchive a repository
-.RE
-.RS
-.TP
-\fBrename\fR
-Rename a repository
-.RE
-.RS
-.TP
-\fBedit\fR
-Edit repository settings
-.RE
-.RS
-.TP
-\fBsync\fR
-Sync a forked repository with its upstream parent
-.RE
-.RS
-.TP
-\fBclone\fR
-Clone a repository from GitHub
-.RE
+\fBcommit, c\fR
+Stage, commit, push, and open a pull request
 .TP
 \fBpr, prs\fR
 Open, review, merge, and check out pull requests
@@ -398,32 +191,68 @@ Transfer an issue to another repository
 Edit an issue title, body, or labels
 .RE
 .TP
-\fBrun, runs\fR
-Inspect Actions runs, and explain failures with AI
+\fBrepo\fR
+View, fork, create, and set the default repository
 .RS
 .TP
-\fBrerun\fR
-Re-run a workflow run
+\fBview\fR
+Show a repository's details, topics, and README
 .RE
 .RS
 .TP
-\fBcancel\fR
-Cancel a workflow run
+\fBfork\fR
+Fork a repository to your account
 .RE
-.TP
-\fBchecks\fR
-CI status for this branch's pull request
-.TP
-\fBci\fR
-Inspect revision-linked CI evidence
 .RS
 .TP
-\fBwhy\fR
-Extract failure evidence for a PR or Actions run
+\fBset-default\fR
+Set the repository that pr, issue, run, and release commands target
 .RE
+.RS
 .TP
-\fBapi\fR
-Authenticated GitHub API request (passthrough to `gh api`)
+\fBcreate\fR
+Create a repository on GitHub, optionally from this directory
+.RE
+.RS
+.TP
+\fBlist\fR
+List repositories for the authenticated user or organisation
+.RE
+.RS
+.TP
+\fBdelete\fR
+Delete a repository
+.RE
+.RS
+.TP
+\fBarchive\fR
+Archive a repository
+.RE
+.RS
+.TP
+\fBunarchive\fR
+Unarchive a repository
+.RE
+.RS
+.TP
+\fBrename\fR
+Rename a repository
+.RE
+.RS
+.TP
+\fBedit\fR
+Edit repository settings
+.RE
+.RS
+.TP
+\fBsync\fR
+Sync a forked repository with its upstream parent
+.RE
+.RS
+.TP
+\fBclone\fR
+Clone a repository from GitHub
+.RE
 .TP
 \fBnotifications, notifs\fR
 List notifications or mark them read without prompting
@@ -437,7 +266,172 @@ List notifications
 \fBmark\fR
 Mark one notification read, or all when no ID is supplied
 .RE
-.SS "Local workflow"
+.SS "Branches & stacks"
+.TP
+\fBlog, graph\fR
+Colourised commit graph
+.TP
+\fBswitch, sw, checkout\fR
+Switch between branches and worktrees
+.TP
+\fBstack, stk\fR
+Stacked branches: view, restack, and submit the chain
+.RS
+.TP
+\fBlist, ls\fR
+Show the branch stack as a tree
+.RE
+.RS
+.TP
+\fBon\fR
+Record the parent of the current branch, adopting it into a stack
+.RE
+.RS
+.TP
+\fBrestack\fR
+Rebase a branch and everything above it onto their recorded parents
+.RE
+.RS
+.TP
+\fBsubmit\fR
+Push the selected stack and open a Pull Request for each branch against its parent
+.RE
+.RS
+.TP
+\fBnext\fR
+Create a branch stacked on the current one
+.RE
+.RS
+.TP
+\fBcheckout, co\fR
+Pick a branch from the stack and switch to it
+.RE
+.TP
+\fBworktree, wt\fR
+Isolated worktrees for parallel work, with AI branch naming
+.RS
+.TP
+\fBlist, ls\fR
+List all active worktrees
+.RE
+.RS
+.TP
+\fBadd\fR
+Create a new worktree (accepts branch name or natural language task prompt)
+.RE
+.RS
+.TP
+\fBremove, rm\fR
+Remove an active worktree and clean up references
+.RE
+.TP
+\fBstash, sh\fR
+Save, list, restore, and drop stashes
+.RS
+.TP
+\fBpop\fR
+Pop a stash
+.RE
+.RS
+.TP
+\fBdrop\fR
+Drop a stash
+.RE
+.RS
+.TP
+\fBpush, save\fR
+Stash current changes
+.RE
+.RS
+.TP
+\fBlist\fR
+List stashes
+.RE
+.RS
+.TP
+\fBrestore\fR
+Restore and pop a named stash, including a former draft
+.RE
+.TP
+\fBsquash\fR
+Squash the last N commits into one
+.TP
+\fBrename\fR
+Rename the current branch, locally and on the remote
+.TP
+\fBdiscard, restore\fR
+Discard uncommitted changes to selected files
+.TP
+\fBundo\fR
+Undo the last commit, keeping the changes staged
+.TP
+\fBresolve\fR
+Resolve merge conflicts, file by file
+.SS "CI"
+.TP
+\fBchecks\fR
+CI status for this branch's pull request
+.TP
+\fBci\fR
+Inspect revision-linked CI evidence
+.RS
+.TP
+\fBwhy\fR
+Extract failure evidence for a PR or Actions run
+.RE
+.TP
+\fBrun, runs\fR
+Inspect Actions runs, and explain failures with AI
+.RS
+.TP
+\fBrerun\fR
+Re-run a workflow run
+.RE
+.RS
+.TP
+\fBcancel\fR
+Cancel a workflow run
+.RE
+.SS "Agents"
+.TP
+\fBconfig\fR
+Configure AI permission, providers, models, and defaults
+.RS
+.TP
+\fBlist, ls\fR
+List all configuration settings
+.RE
+.RS
+.TP
+\fBcache-clear\fR
+Delete cached GitHub responses
+.RE
+.RS
+.TP
+\fBget\fR
+Get a specific configuration value
+.RE
+.RS
+.TP
+\fBset\fR
+Set a configuration value (e.g. ai_enabled true, ai_provider grok)
+.RE
+.RS
+.TP
+\fBunset\fR
+Remove a value from your user config so the default (or project/env) applies
+.RE
+.RS
+.TP
+\fBdoctor\fR
+Check configuration and inspect installed AI CLI versions and capabilities
+.RE
+.TP
+\fBinit\fR
+Print a shell function to jump to projects
+.TP
+\fBcompletion\fR
+Generate completions for zsh, bash, fish, or powershell
 .TP
 \fBignore, gitignore\fR
 Manage .gitignore patterns
@@ -540,7 +534,6 @@ Associate a local file with the operation revision
 \fBprune\fR
 Remove old local operation records
 .RE
-.SS "Extensions"
 .TP
 \fBmcp\fR
 Run as a Model Context Protocol server (for AI tool integration)
@@ -562,7 +555,6 @@ Install a plugin from a local file
 \fBremove, uninstall, delete\fR
 Remove an installed plugin
 .RE
-.SS "Other commands"
 .TP
 \fBagent\fR
 Discover the versioned automation contract and skill
@@ -581,6 +573,16 @@ Summarize checkout, branch PR, CI, review threads, linked issues and stack in on
 \fBschema\fR
 Print the envelope schema and managed command paths, or one command's inputs and result schema
 .RE
+.SS "Native escapes"
+.TP
+\fBgit\fR
+Run git with its native arguments, output, and exit status
+.TP
+\fBgh\fR
+Run gh with its native arguments, output, and exit status
+.TP
+\fBapi\fR
+Authenticated GitHub API request (passthrough to `gh api`)
 .SH GLOBAL OPTIONS
 Every command follows the same rules.
 .TP

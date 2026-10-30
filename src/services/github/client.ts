@@ -207,8 +207,11 @@ export function parseRepoFlag(repo = getFlags().repo ?? process.env.GH_REPO): Re
 /** Remote-only operations do not require a local checkout when a target is explicit. */
 export async function requireGitHubRepo(): Promise<boolean> {
   if (parseRepoFlag()) return true;
-  const { requireGitRepo } = await import("../git.ts");
-  return requireGitRepo();
+  const { isGitRepo } = await import("../git.ts");
+  if (await isGitRepo()) return true;
+  const { fail } = await import("../../utils/ui.ts");
+  fail("Not in a GitHub repository; pass -R owner/repo.");
+  return false;
 }
 
 function mergeEnv(options?: RunOptions): NodeJS.ProcessEnv | undefined {

@@ -53,60 +53,129 @@ import { registerOperationCommand } from "./commands/operation.ts";
 import { registerCommandOperations } from "./services/command-operations.ts";
 
 /**
+ * The one-line pitch `ggh --help` leads with. Same promise as the README: the
+ * GitHub CLI it should have been, not "Git and GitHub and AI in one CLI".
+ */
+const PITCH = "The GitHub CLI it should have been: find the right checkout, understand its state, act on GitHub safely, for you and your agents.";
+
+/**
  * Top-level command groups for `ggh --help` and the generated man page.
- * A wall of 40 commands says "accumulated"; groups say "designed".
- * Commands without an entry (including community plugins) keep the default group.
+ * A wall of 40 commands says "accumulated"; groups say "designed". Every
+ * built-in command belongs to exactly one group, and the group order below is
+ * the order the help prints them: the project table you start from, then the
+ * publish loop, local branch work, CI, the agent/plumbing surface, and the
+ * native escapes last so they never lead the list. Community plugins keep the
+ * default group.
  */
 export const HELP_GROUPS: Record<string, string> = {
-  tidy: "Projects",
-  lost: "Projects",
+  // Projects: one table across local clones and agent worktrees.
   projects: "Projects",
   go: "Projects",
-  init: "Setup",
-  status: "Status",
-  commit: "Daily loop",
-  log: "Daily loop",
-  switch: "Daily loop",
-  stack: "Daily loop",
-  worktree: "Daily loop",
-  stash: "Daily loop",
-  discard: "Daily loop",
-  undo: "Daily loop",
-  resolve: "Daily loop",
-  squash: "Daily loop",
-  rename: "Daily loop",
-  sync: "Daily loop",
-  clone: "GitHub",
-  repo: "GitHub",
-  pr: "GitHub",
-  review: "GitHub",
-  inbox: "GitHub",
-  issue: "GitHub",
-  run: "GitHub",
-  checks: "GitHub",
-  ci: "GitHub",
-  api: "GitHub",
-  notifications: "GitHub",
-  ignore: "Local workflow",
-  alias: "Local workflow",
-  hook: "Local workflow",
-  mcp: "Extensions",
-  plugin: "Extensions",
-  config: "Setup",
-  completion: "Setup",
-  git: "Native tools",
-  gh: "Native tools",
-  operation: "Local workflow",
-  };
+  clone: "Projects",
+  lost: "Projects",
+  sync: "Projects",
+  tidy: "Projects",
+  inbox: "Projects",
+
+  // Review & publish: the GitHub-facing loop.
+  status: "Review & publish",
+  commit: "Review & publish",
+  pr: "Review & publish",
+  review: "Review & publish",
+  issue: "Review & publish",
+  repo: "Review & publish",
+  notifications: "Review & publish",
+
+  // Branches & stacks: local branch, worktree, and history work.
+  log: "Branches & stacks",
+  switch: "Branches & stacks",
+  stack: "Branches & stacks",
+  worktree: "Branches & stacks",
+  stash: "Branches & stacks",
+  squash: "Branches & stacks",
+  rename: "Branches & stacks",
+  discard: "Branches & stacks",
+  undo: "Branches & stacks",
+  resolve: "Branches & stacks",
+
+  // CI: revision-linked checks and runs.
+  checks: "CI",
+  ci: "CI",
+  run: "CI",
+
+  // Agents: the automation, configuration, and extension surface.
+  agent: "Agents",
+  mcp: "Agents",
+  plugin: "Agents",
+  config: "Agents",
+  init: "Agents",
+  completion: "Agents",
+  ignore: "Agents",
+  alias: "Agents",
+  hook: "Agents",
+  operation: "Agents",
+
+  // Native escapes: git, gh, and the raw API own their arguments and streams.
+  git: "Native escapes",
+  gh: "Native escapes",
+  api: "Native escapes",
+};
 
 export async function createProgram(): Promise<Command> {
   const program = new Command();
 
   program
     .name("ggh")
-    .description("Git and GitHub in one CLI: pull requests, issues, CI, stacked branches, and AI")
+    .description(PITCH)
     .version(packageJson.version);
 
+  // Registration order is the order `ggh --help` prints the groups in: the
+  // first command registered in a group fixes where that group appears. So it
+  // runs from "where am I" through the publish loop, branch work, CI, and the
+  // agent surface, and ends with the native escapes.
+  registerProjectsCommand(program);
+  registerGoCommand(program);
+  registerCloneCommand(program);
+  registerLostCommand(program);
+  registerSyncCommand(program);
+  registerTidyCommand(program);
+  registerInboxCommand(program);
+
+  registerStatusCommand(program);
+  registerCommitCommand(program);
+  registerPrCommand(program);
+  registerReviewCommand(program);
+  registerIssueCommand(program);
+  registerRepoCommand(program);
+  registerNotificationsCommand(program);
+
+  registerLogCommand(program);
+  registerSwitchCommand(program);
+  registerStackCommand(program);
+  registerWorktreeCommand(program);
+  registerStashCommand(program);
+  registerSquashCommand(program);
+  registerRenameCommand(program);
+  registerDiscardCommand(program);
+  registerUndoCommand(program);
+  registerResolveCommand(program);
+
+  registerChecksCommand(program);
+  registerCiCommand(program);
+  registerRunCommand(program);
+
+  registerConfigCommand(program);
+  registerInitCommand(program);
+  registerCompletionCommand(program);
+  registerIgnoreCommand(program);
+  registerAliasCommand(program);
+  registerHookCommand(program);
+  registerOperationCommand(program);
+  registerMcpCommand(program);
+  registerPluginCommand(program);
+
+  // Native escapes own their arguments, streams, and exit codes, so they are
+  // never decorated with the managed flags and are registered last.
   for (const command of ["git", "gh"] as const) {
     program.command(`${command} [args...]`)
       .description(`Run ${command} with its native arguments, output, and exit status`)
@@ -116,60 +185,31 @@ export async function createProgram(): Promise<Command> {
           : (await run("gh", args, { stdio: "inherit", reject: false })).exitCode;
       });
   }
-
-  // Registration order is the order `ggh --help` prints them, so it runs from
-  // "where am I" through the daily loop, then GitHub, then configuration.
-  registerProjectsCommand(program);
-  registerTidyCommand(program);
-  registerLostCommand(program);
-  registerGoCommand(program);
-  registerInitCommand(program);
-  registerStatusCommand(program);
-  registerCommitCommand(program);
-  registerLogCommand(program);
-
-  registerSwitchCommand(program);
-  registerStackCommand(program);
-  registerWorktreeCommand(program);
-
-  registerStashCommand(program);
-  registerDiscardCommand(program);
-  registerUndoCommand(program);
-  registerResolveCommand(program);
-  registerSquashCommand(program);
-  registerRenameCommand(program);
-  registerSyncCommand(program);
-
-  registerCloneCommand(program);
-  registerRepoCommand(program);
-  registerPrCommand(program);
-  registerReviewCommand(program);
-  registerInboxCommand(program);
-  registerIssueCommand(program);
-  registerRunCommand(program);
-  registerChecksCommand(program);
-  registerCiCommand(program);
   registerApiCommand(program);
-  registerNotificationsCommand(program);
-  registerIgnoreCommand(program);
-  registerAliasCommand(program);
-  registerHookCommand(program);
-  registerMcpCommand(program);
-  registerPluginCommand(program);
 
-  registerConfigCommand(program);
-  registerOperationCommand(program);
-  registerCompletionCommand(program);
+  program.option("--agent", "Emit the versioned agent envelope");
+  applyGlobalFlags(program);
+  registerCommandOperations(program);
 
+  // `agent` registers after applyGlobalFlags so it keeps its own surface, and
+  // the implicit `help` command is created lazily. Group both here so no stray
+  // "Commands:" heading is left behind.
+  registerAgentCommand(program);
   for (const command of program.commands) {
     const group = HELP_GROUPS[command.name()];
     if (group) command.helpGroup(group);
   }
+  program.commandsGroup("Agents");
+  program.helpCommand("help [command]", "display help for command");
+  program.commandsGroup("");
 
-  registerAgentCommand(program);
-  program.option("--agent", "Emit the versioned agent envelope");
-  applyGlobalFlags(program);
-  registerCommandOperations(program);
+  program.addHelpText("after", [
+    "",
+    "Examples:",
+    "  ggh                    One table across local clones and agent worktrees",
+    "  ggh lost               Find work that never left this machine",
+    "  ggh pr 42 --checkout   Review a pull request from the right checkout",
+  ].join("\n"));
 
   // Load community plugins (best-effort, never crashes ggh)
   try {
@@ -249,6 +289,10 @@ export async function runCli(argv: string[]): Promise<void> {
     command.exitOverride();
     parsingCommands.push(...command.commands);
   }
+  // Commander writes usage errors to stderr itself and then throws. Mute that
+  // write so the catch below can report each failure exactly once, with the
+  // git-passthrough hint included.
+  if (!agentRequested) for (const command of parsingCommands) command.configureOutput({ writeErr: () => {} });
 
   const agentInformation: string[] = [];
   if (agentRequested) {
@@ -309,6 +353,20 @@ export async function runCli(argv: string[]): Promise<void> {
       return;
     }
     if (err instanceof CapabilityError) { fail(err.message, { code: "provider_unavailable" }); finalizeJsonOutput(); return; }
+    if (err instanceof CommanderError) {
+      // The usage error is reported once here, not rethrown into the launcher's
+      // generic failure printer. `commander.help` already printed help for a
+      // missing subcommand, and its internal "(outputHelp)" sentinel is not a
+      // message for humans.
+      process.exitCode = err.exitCode || 1;
+      const message = err.code === "commander.help"
+        ? `Unknown command "${args[1] ?? ""}". Run ggh --help to list commands.`
+        : err.message;
+      recordCommandIssue({ status: "failed", code: "invalid_arguments", message });
+      if (!jsonRequested) process.stderr.write(`${message}\n`);
+      finalizeJsonOutput();
+      return;
+    }
     throw err;
   }
 }

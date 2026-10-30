@@ -69,9 +69,10 @@ export async function showProjects(query?: string, options: ProjectViewOptions =
       }));
       if (rows.length) {
         // Keep the preview in the viewport so redraw cannot erase earlier output.
+        const previewOptions: ProjectViewOptions = { ...options, cachedAt: cached.observedAt };
         const visible = rows.slice(0, Math.max(1, (process.stderr.rows ?? 24) - 2));
-        cachedLines = previewHeight(formatProjects(visible, options));
-        renderProjects(visible, options);
+        cachedLines = previewHeight(formatProjects(visible, previewOptions));
+        renderProjects(visible, previewOptions);
       }
     }
   }

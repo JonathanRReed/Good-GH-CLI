@@ -9,7 +9,7 @@ import {
 } from "../services/ai/index.ts";
 import type { AgentErrorCode } from "../services/agent-contract.ts";
 import { type CommandIssue, getFlags, isNonInteractive, recordCommandIssue, rememberCommandResult } from "../services/runtime.ts";
-import { cancel, emitJson, intro, log, note, outro, spinner } from "./output.ts";
+import { cancel, data, emitJson, intro, log, note, outro, spinner } from "./output.ts";
 import { confirmPrompt, selectMenu } from "./prompts.ts";
 import { PartialGitHubMutationError, PartialAttachmentOperationError } from "../services/github/attachments.ts";
 import { pushProtectionBypassNote, PushProtectionError, type PushProtectionDetails } from "../services/git/push-protection.ts";
@@ -156,6 +156,15 @@ export async function confirmOrAbort(
     recordCommandIssue({ status: "needs_input", code: "confirmation_required", requiredInputs: [{ name: "--yes", description: message }], message: `Confirmation required: ${message}. Pass --yes to authorize this action.` });
   }
   return confirmed;
+}
+
+/**
+ * Read-only browse output. In a terminal the caller opens a picker; with no
+ * terminal (or --no-input) the same rows are the data, so they go to stdout and
+ * the command exits 0 instead of cancelling a prompt nobody can answer.
+ */
+export function printListing(lines: string[]): void {
+  for (const line of lines) data(line);
 }
 
 /**

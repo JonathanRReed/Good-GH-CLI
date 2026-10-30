@@ -57,8 +57,10 @@ async function generate(): Promise<string> {
   L.push(`.B ggh`);
   L.push(`[\\fIoptions\\fR] \\fIcommand\\fR [\\fIargs\\fR...]`);
   L.push(`.SH DESCRIPTION`);
+  // The program description is a full sentence; drop its closing period so the
+  // appended passthrough sentence does not produce "agents..".
   L.push(
-    `${esc(program.description())}. Anything \\fBggh\\fR does not recognise goes straight to \\fBgit\\fR, so \\fBggh add .\\fR, \\fBggh push\\fR, and \\fBggh rebase \\-i\\fR behave exactly as \\fBgit\\fR does.`,
+    `${esc(program.description().replace(/\.+$/, ""))}. Anything \\fBggh\\fR does not recognise goes straight to \\fBgit\\fR, so \\fBggh add .\\fR, \\fBggh push\\fR, and \\fBggh rebase \\-i\\fR behave exactly as \\fBgit\\fR does.`,
   );
   L.push(`.SH COMMANDS`);
   for (const group of order) {

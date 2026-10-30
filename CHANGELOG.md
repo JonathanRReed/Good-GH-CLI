@@ -105,6 +105,11 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `push_protection_blocked` with retryability `never`, the findings in
   `error.pushProtection`, and the push as pending. Operation records mark the
   push `failed`, not uncertain.
+- Accept `repo view [owner/name]` as an alias of the repository detail view,
+  matching `gh repo view` muscle memory.
+- Group top-level `--help` by workflow (Projects, Review & publish, Branches
+  & stacks, CI, Agents, Native escapes), lead with the one-line pitch, and add
+  three example invocations.
 
 ### Fixed
 
@@ -167,6 +172,23 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `not_found`; an ambiguous one names the real argument (`query` or `project`).
 - `stack restack` during a stopped restack names it and points at `--continue`
   or `--abort` instead of "Cannot restack from a detached HEAD".
+- Print read-only browse output instead of cancelling when there is no terminal:
+  `pr`, `pr <n>`, `pr list`, `issue`, `issue <n>`, `run`, and `switch` list or
+  summarize on stdout and exit 0. Cannot-prompt hints now name only flags the
+  running command actually declares.
+- Report commander usage errors (missing arguments, unknown options) exactly
+  once, and replace the internal `(outputHelp)` sentinel from `ggh help
+  <unknown>` with a clean unknown-command message.
+- Fail fast with "Not in a GitHub repository; pass -R owner/repo." when GitHub
+  commands run outside a repository, instead of dumping the raw `gh` error or
+  reporting a missing issue.
+- Fall back to 80 columns when the terminal width reports zero instead of
+  collapsing every table row to an ellipsis; keep 100 columns when piped.
+- Keep the projects table readable: never shrink Name below the longest name
+  (capped at 28), shrink other columns first, drop all-zero columns such as an
+  unused Stashes column, replace per-row "stale" labels with one "cached
+  <age>" header line, say "N dirty checkouts", and truncate checkout paths in
+  the middle so the leaf directory stays visible.
 
 ## 0.6.0-beta.1 - 2026-10-22
 
