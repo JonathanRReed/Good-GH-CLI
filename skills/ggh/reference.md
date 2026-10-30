@@ -14,27 +14,16 @@ All fields below come from the installed command tree and result schemas. Requir
 | `status` | `["succeeded","planned","no_op","needs_input","cancelled","failed","partially_completed"]` | yes |  |  |
 | `result` | varies | no |  | Command-specific payload. Detailed result schemas are not yet guaranteed. |
 | `error` | object | no |  |  |
-| `error.code` | `["invalid_arguments","missing_input","confirmation_required","authentication_required","provider_unavailable","cancelled","partial_completion","operation_failed","outcome_uncertain","push_protection_blocked"]` | yes |  | push_protection_blocked: GitHub push protection found a secret in the pushed commits and the push did not happen. Stop and report pushProtection to the user. |
+| `error.code` | `["invalid_arguments","missing_input","confirmation_required","authentication_required","provider_unavailable","cancelled","partial_completion","operation_failed","outcome_uncertain"]` | yes |  |  |
 | `error.message` | string | yes |  |  |
-| `error.retryability` | `["after_input","after_inspection","never"]` | yes |  | never: retrying the same inputs cannot succeed. |
-| `error.pushProtection` | object | no |  | Present only with push_protection_blocked. Fields GitHub did not report are omitted. |
-| `error.pushProtection.findings` | array | yes |  |  |
-| `error.pushProtection.findings[]` | object | no |  |  |
-| `error.pushProtection.findings[].secretType` | string | no |  |  |
-| `error.pushProtection.findings[].commit` | string | no |  |  |
-| `error.pushProtection.findings[].path` | string | no |  |  |
-| `error.pushProtection.findings[].line` | integer | no |  |  |
-| `error.pushProtection.bypassUrls` | array | yes |  | GitHub bypass pages for a person to judge. Agents must never open or follow them. |
-| `error.pushProtection.bypassUrls[]` | string | no |  |  |
-| `error.pushProtection.remoteLines` | array | yes |  | Raw remote lines without the remote: prefix, kept when parsing is incomplete. |
-| `error.pushProtection.remoteLines[]` | string | no |  |  |
+| `error.retryability` | `["after_input","after_inspection","never"]` | yes |  |  |
 | `requiredInputs` | array | no |  |  |
 | `requiredInputs[]` | object | no |  |  |
 | `requiredInputs[].name` | string | yes |  |  |
 | `requiredInputs[].description` | string | yes |  |  |
 | `requiredInputs[].alternatives` | array | no |  |  |
 | `requiredInputs[].alternatives[]` | string | no |  |  |
-| `effects` | object | no |  | Completed effects include explicit local mutations and launches, even when a later step fails. Review uses review_checkout_created/updated, review_objects_fetched, review_refs_updated and review_ledger_marked. Clone uses repository_cloned. Projects use projects_index_updated and projects_roots_updated/projects_exclusions_updated. Go launches use editor_opened/t3_opened. Single-repo sync uses refs_fetched_pruned and branch_deleted:<name>. A push blocked by push protection stays pending, never uncertain. Omitted only for read-only status when all arrays are empty; defaults to completed: [], pending: [], uncertain: []. |
+| `effects` | object | no |  | Completed effects include explicit local mutations and launches, even when a later step fails. Review uses review_checkout_created/updated, review_objects_fetched, review_refs_updated and review_ledger_marked. Clone uses repository_cloned. Projects use projects_index_updated and projects_roots_updated/projects_exclusions_updated. Go launches use editor_opened/t3_opened. Single-repo sync uses refs_fetched_pruned and branch_deleted:<name>. Tidy and lost --fetch use fetch:<commonDir>:<remote>, also in dry runs. Stack submit uses push:<branch>, create_pr:<branch> and link_native_stack. Omitted only for read-only status when all arrays are empty; defaults to completed: [], pending: [], uncertain: []. |
 | `effects.completed` | array | yes |  |  |
 | `effects.completed[]` | string | no |  |  |
 | `effects.pending` | array | yes |  |  |
@@ -60,7 +49,7 @@ Every managed command accepts `--agent`. It wraps this payload in `result` and d
 | `ggh projects register` | `<path>` | --agent, --quiet, --no-input, --json | [projects](#projects) |
 | `ggh projects exclude` | `<path>` | --agent, --quiet, --no-input, --json | [projects](#projects) |
 | `ggh projects forget` | `<path>` | --agent, --quiet, --no-input, --json | [projects](#projects) |
-| `ggh tidy` | `[projects...]` | --audit value, --proceed-without-audit, --all, --fetch, --wide, --verbose, --remote-branches, --allow-ignored value, --allow-unknown value, --stale-days value, --yes, --approve-plan value, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run | [tidy](#tidy) |
+| `ggh tidy` | `[projects...]` | --audit value, --proceed-without-audit, --all, --fetch, --wide, --verbose, --remote-branches, --allow-ignored value, --allow-unknown value, --allow-unknown-under value, --stale-days value, --yes, --approve-plan value, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run | [tidy](#tidy) |
 | `ggh lost` | `[projects...]` | --all, --fetch, --wide, --verbose, --agent, --quiet, --no-input, --json | [lost](#lost) |
 | `ggh go` | `<query>` | --wide, --print, --editor, --t3, --agent, --quiet, --no-input, --json | [go](#go) |
 | `ggh status` |  | --full, --remote, --providers, --watch, --interval value, --agent, --quiet, --no-input, --json, --dry-run | [status](#status) |
@@ -71,7 +60,7 @@ Every managed command accepts `--agent`. It wraps this payload in `result` and d
 | `ggh stack list` |  | --all, --remote, --agent, --quiet, --no-input, --json, --dry-run, --repo value | [stack](#stack) |
 | `ggh stack on` | `<parent>` | --agent, --quiet, --no-input, --json, --dry-run, --repo value | [stack](#stack) |
 | `ggh stack restack` | `[branch]` | --yes, --continue, --abort, --agent, --quiet, --no-input, --json, --dry-run, --repo value | [stack](#stack) |
-| `ggh stack submit` | `[branch]` | --draft, --no-native-stack, --yes, --agent, --quiet, --no-input, --json, --dry-run, --repo value | [stack](#stack) |
+| `ggh stack submit` | `[branch]` | --draft, --no-native-stack, --allow-stale, --approve-plan value, --yes, --agent, --quiet, --no-input, --json, --dry-run, --repo value | [stack](#stack) |
 | `ggh stack next` | `[name]` | --agent, --quiet, --no-input, --json, --dry-run, --repo value | [stack](#stack) |
 | `ggh stack checkout` |  | --agent, --quiet, --no-input, --json, --dry-run, --repo value | [stack](#stack) |
 | `ggh worktree` |  | --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run | Unspecified |
@@ -135,7 +124,7 @@ Every managed command accepts `--agent`. It wraps this payload in `result` and d
 | `ggh run cancel` | `<runId>` | --yes, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
 | `ggh checks` |  | --watch, --timeout value, --dry-run, --agent, --quiet, --no-input, --json, --repo value | Unspecified |
 | `ggh ci` |  | --agent, --quiet, --no-input, --json, --repo value | Unspecified |
-| `ggh ci why` | `[target]` | --run, --max-bytes value, --max-output-bytes value, --context value, --agent, --quiet, --no-input, --json, --repo value | [ciWhy](#ciwhy) |
+| `ggh ci why` | `[target]` | --run, --max-bytes value, --context value, --agent, --quiet, --no-input, --json, --repo value | [ciWhy](#ciwhy) |
 | `ggh api` | `<endpoint...>` | --agent, --quiet, --no-input, --json, --dry-run, --repo value | Unspecified |
 | `ggh notifications` |  | --limit value, --all, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
 | `ggh notifications list` |  | --limit value, --all, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
@@ -272,30 +261,12 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.lost.items[] [oneOf 3].stashes[].date` | string | yes |  |  |
 | `result.lost.items[] [oneOf 3].stashes[].message` | string | yes |  |  |
 | `result.lost.items[] [oneOf 4]` | varies | no |  |  |
-| `result.lost.items[] [oneOf 4].kind` | `"restack-preimage"` | no |  |  |
-| `result.lost.items[] [oneOf 4].branch` | string | yes |  |  |
-| `result.lost.items[] [oneOf 4].head` | string | yes |  |  |
-| `result.lost.items[] [oneOf 4].operationId` | string | yes |  |  |
+| `result.lost.items[] [oneOf 4].kind` | `"dirty-host-checkout"` | no |  |  |
+| `result.lost.items[] [oneOf 4].reason` | string | yes |  |  |
+| `result.lost.items[] [oneOf 4].host` | string | yes |  |  |
 | `result.lost.items[] [oneOf 5]` | varies | no |  |  |
-| `result.lost.items[] [oneOf 5].kind` | `"dirty-checkout"` | no |  |  |
+| `result.lost.items[] [oneOf 5].kind` | `"broken-gitdir"` | no |  |  |
 | `result.lost.items[] [oneOf 5].reason` | string | yes |  |  |
-| `result.lost.items[] [oneOf 5].dirty` | object | yes |  |  |
-| `result.lost.items[] [oneOf 5].dirty.staged` | integer | yes |  |  |
-| `result.lost.items[] [oneOf 5].dirty.unstaged` | integer | yes |  |  |
-| `result.lost.items[] [oneOf 5].dirty.untracked` | integer | yes |  |  |
-| `result.lost.items[] [oneOf 5].dirty.conflicted` | integer | yes |  |  |
-| `result.lost.items[] [oneOf 6]` | varies | no |  |  |
-| `result.lost.items[] [oneOf 6].kind` | `"dirty-host-checkout"` | no |  |  |
-| `result.lost.items[] [oneOf 6].reason` | string | yes |  |  |
-| `result.lost.items[] [oneOf 6].host` | string | yes |  |  |
-| `result.lost.items[] [oneOf 6].dirty` | object | no |  |  |
-| `result.lost.items[] [oneOf 6].dirty.staged` | integer | yes |  |  |
-| `result.lost.items[] [oneOf 6].dirty.unstaged` | integer | yes |  |  |
-| `result.lost.items[] [oneOf 6].dirty.untracked` | integer | yes |  |  |
-| `result.lost.items[] [oneOf 6].dirty.conflicted` | integer | yes |  |  |
-| `result.lost.items[] [oneOf 7]` | varies | no |  |  |
-| `result.lost.items[] [oneOf 7].kind` | `"broken-gitdir"` | no |  |  |
-| `result.lost.items[] [oneOf 7].reason` | string | yes |  |  |
 | `result.plan` | object | yes |  |  |
 | `result.plan.audit` | object | no |  |  |
 | `result.plan.audit.state` | `"completed"` | yes |  |  |
@@ -322,6 +293,8 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.plan.options.allowIgnored[]` | string | no |  |  |
 | `result.plan.options.allowUnknown` | array | no |  |  |
 | `result.plan.options.allowUnknown[]` | string | no |  |  |
+| `result.plan.options.allowUnknownUnder` | array | no |  |  |
+| `result.plan.options.allowUnknownUnder[]` | string | no |  |  |
 | `result.plan.options.staleDays` | integer | no |  |  |
 | `result.plan.clones` | array | yes |  |  |
 | `result.plan.clones[]` | object | no |  |  |
@@ -477,30 +450,12 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.items[] [oneOf 3].stashes[].date` | string | yes |  |  |
 | `result.items[] [oneOf 3].stashes[].message` | string | yes |  |  |
 | `result.items[] [oneOf 4]` | varies | no |  |  |
-| `result.items[] [oneOf 4].kind` | `"restack-preimage"` | no |  |  |
-| `result.items[] [oneOf 4].branch` | string | yes |  |  |
-| `result.items[] [oneOf 4].head` | string | yes |  |  |
-| `result.items[] [oneOf 4].operationId` | string | yes |  |  |
+| `result.items[] [oneOf 4].kind` | `"dirty-host-checkout"` | no |  |  |
+| `result.items[] [oneOf 4].reason` | string | yes |  |  |
+| `result.items[] [oneOf 4].host` | string | yes |  |  |
 | `result.items[] [oneOf 5]` | varies | no |  |  |
-| `result.items[] [oneOf 5].kind` | `"dirty-checkout"` | no |  |  |
+| `result.items[] [oneOf 5].kind` | `"broken-gitdir"` | no |  |  |
 | `result.items[] [oneOf 5].reason` | string | yes |  |  |
-| `result.items[] [oneOf 5].dirty` | object | yes |  |  |
-| `result.items[] [oneOf 5].dirty.staged` | integer | yes |  |  |
-| `result.items[] [oneOf 5].dirty.unstaged` | integer | yes |  |  |
-| `result.items[] [oneOf 5].dirty.untracked` | integer | yes |  |  |
-| `result.items[] [oneOf 5].dirty.conflicted` | integer | yes |  |  |
-| `result.items[] [oneOf 6]` | varies | no |  |  |
-| `result.items[] [oneOf 6].kind` | `"dirty-host-checkout"` | no |  |  |
-| `result.items[] [oneOf 6].reason` | string | yes |  |  |
-| `result.items[] [oneOf 6].host` | string | yes |  |  |
-| `result.items[] [oneOf 6].dirty` | object | no |  |  |
-| `result.items[] [oneOf 6].dirty.staged` | integer | yes |  |  |
-| `result.items[] [oneOf 6].dirty.unstaged` | integer | yes |  |  |
-| `result.items[] [oneOf 6].dirty.untracked` | integer | yes |  |  |
-| `result.items[] [oneOf 6].dirty.conflicted` | integer | yes |  |  |
-| `result.items[] [oneOf 7]` | varies | no |  |  |
-| `result.items[] [oneOf 7].kind` | `"broken-gitdir"` | no |  |  |
-| `result.items[] [oneOf 7].reason` | string | yes |  |  |
 
 ## review
 
@@ -583,8 +538,6 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result [anyOf 1].clones[].outcome` | `["updated","up-to-date","skipped","failed","uncertain"]` | yes |  |  |
 | `result [anyOf 1].clones[].reason` | string | no |  |  |
 | `result [anyOf 1].clones[].message` | string | no |  |  |
-| `result [anyOf 1].clones[].refSnapshot` | object | no |  |  |
-| `result [anyOf 1].clones[].refSnapshot.fetchedAt` | string / null | yes |  |  |
 | `result [anyOf 1].clones[].fetches` | array | yes |  |  |
 | `result [anyOf 1].clones[].fetches[]` | object | no |  |  |
 | `result [anyOf 1].clones[].fetches[].remote` | string | yes |  |  |
@@ -649,7 +602,6 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | --- | --- | --- | --- | --- |
 | `result` | object | no |  |  |
 | `result.schemaVersion` | `1` | yes |  |  |
-| `result.repository` | string | yes |  |  |
 | `result.headSha` | string | yes |  |  |
 | `result.pr` | object | no |  |  |
 | `result.pr.number` | integer | yes |  |  |
@@ -659,7 +611,6 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.runs[].id` | integer | yes |  |  |
 | `result.runs[].url` | string | yes |  |  |
 | `result.runs[].workflow` | string | yes |  |  |
-| `result.runs[].event` | string | no |  |  |
 | `result.runs[].conclusion` | string | yes |  |  |
 | `result.runs[].sha` | string | yes |  |  |
 | `result.runs[].stale` | boolean | yes |  |  |
@@ -668,18 +619,11 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.failures[].job` | string | yes |  |  |
 | `result.failures[].step` | string | yes |  |  |
 | `result.failures[].url` | string | yes |  |  |
-| `result.failures[].jobs` | array | no |  |  |
-| `result.failures[].jobs[]` | object | no |  |  |
-| `result.failures[].jobs[].job` | string | yes |  |  |
-| `result.failures[].jobs[].step` | string | yes |  |  |
-| `result.failures[].jobs[].url` | string | yes |  |  |
-| `result.failures[].jobs[].runId` | integer | yes |  |  |
-| `result.failures[].jobs[].logSource` | `["failed-step","full-job"]` | yes |  |  |
 | `result.failures[].logSource` | `["failed-step","full-job"]` | yes |  |  |
 | `result.failures[].truncated` | object | yes |  |  |
 | `result.failures[].truncated.bytesTotal` | integer | yes |  |  |
 | `result.failures[].truncated.bytesShown` | integer | yes |  |  |
-| `result.failures[].annotationsTruncated` | object | no |  |  |
+| `result.failures[].annotationsTruncated` | object | yes |  |  |
 | `result.failures[].annotationsTruncated.bytesTotal` | integer | yes |  |  |
 | `result.failures[].annotationsTruncated.bytesShown` | integer | yes |  |  |
 | `result.failures[].annotations` | array | yes |  |  |
@@ -695,15 +639,6 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.failures[].evidence[]` | object | no |  |  |
 | `result.failures[].evidence[].line` | integer | yes |  |  |
 | `result.failures[].evidence[].text` | string | yes |  |  |
-| `result.outputTruncated` | object | no |  |  |
-| `result.outputTruncated.bytesTotal` | integer | yes |  |  |
-| `result.outputTruncated.maxBytes` | integer | yes |  |  |
-| `result.outputTruncated.evidenceLines` | integer | yes |  |  |
-| `result.outputTruncated.annotations` | integer | yes |  |  |
-| `result.outputTruncated.jobs` | integer | yes |  |  |
-| `result.outputTruncated.failures` | integer | yes |  |  |
-| `result.outputTruncated.runs` | integer | yes |  |  |
-| `result.outputTruncated.unavailable` | integer | yes |  |  |
 | `result.unavailable` | array | yes |  |  |
 | `result.unavailable[]` | object | no |  |  |
 | `result.unavailable[].source` | string | yes |  |  |
@@ -1331,7 +1266,6 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.coverage` | object | no |  |  |
 | `result.coverage.roots` | array | yes |  |  |
 | `result.coverage.roots[]` | string | no |  |  |
-| `result.coverage.brokenElsewhere` | integer | no |  |  |
 | `result.coverage.truncated` | boolean | yes |  |  |
 | `result.coverage.skipped` | array | yes |  |  |
 | `result.coverage.skipped[]` | object | no |  |  |
@@ -1444,8 +1378,6 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.completed[]` | string | no |  |  |
 | `result.remaining` | array | no |  |  |
 | `result.remaining[]` | string | no |  |  |
-| `result.failed` | array | no |  | Remaining steps that definitively did not happen, such as a push blocked by push protection. |
-| `result.failed[]` | string | no |  |  |
 | `result.url` | string | no |  |  |
 | `result.operationId` | string | no |  |  |
 | `result.resources` | array | no |  |  |
@@ -1463,8 +1395,6 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result [anyOf 1].completed[]` | string | no |  |  |
 | `result [anyOf 1].remaining` | array | no |  |  |
 | `result [anyOf 1].remaining[]` | string | no |  |  |
-| `result [anyOf 1].failed` | array | no |  | Remaining steps that definitively did not happen, such as a push blocked by push protection. |
-| `result [anyOf 1].failed[]` | string | no |  |  |
 | `result [anyOf 1].url` | string | no |  |  |
 | `result [anyOf 1].operationId` | string | no |  |  |
 | `result [anyOf 1].resources` | array | no |  |  |

@@ -69,6 +69,8 @@ export interface RepositoryPlan {
   target: string;
   remote: string;
   remoteUrl: string;
+  /** The exact URL `git push` will contact for this remote, after rewrites. */
+  pushUrl: string;
   visibility: RepositoryVisibility;
   description?: string;
   push: boolean;
@@ -88,6 +90,8 @@ export interface PullRequestPlan {
   target: string;
   remote: string;
   remoteUrl: string;
+  /** The exact URL `git push` will contact for this remote, after rewrites. */
+  pushUrl: string;
   visibility: RepositoryVisibility;
   remoteAtPrepare?: string;
   createRepository: boolean;
@@ -273,6 +277,60 @@ function chooseRemote(
   );
 }
 
+/** Credentials in a push URL would be shown in the plan and saved in the recovery record. */
+export function hasUrlCredentials(url: string): boolean {
+  if (!url.includes("://")) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.password !== "" || (parsed.username !== "" && parsed.protocol !== "ssh:");
+  } catch { return true; }
+}
+
+/** Git's rewrite rule: the longest matching prefix wins. */
+function rewriteUrl(url: string, rules: Array<[string, string]>): string | null {
+  let best: [string, string] | undefined;
+  for (const [base, prefix] of rules) {
+    if (url.startsWith(prefix) && (!best || prefix.length > best[1].length)) best = [base, prefix];
+  }
+  return best ? best[0] + url.slice(best[1].length) : null;
+}
+
+/**
+ * The push URL Git will use for a remote that does not exist yet: pushInsteadOf
+ * first, then insteadOf, as `git remote get-url --push` would report it.
+ */
+async function futurePushUrl(url: string, cwd: string): Promise<string> {
+  const result = await run("git", ["config", "-z", "--get-regexp", "^url\\..*\\.(insteadof|pushinsteadof)$"], { cwd, reject: false });
+  if (result.exitCode > 1) throw new Error("Could not read Git URL rewrite settings.");
+  const fetch: Array<[string, string]> = [];
+  const push: Array<[string, string]> = [];
+  for (const record of result.stdout.split("\0").filter(Boolean)) {
+    const newline = record.indexOf("\n");
+    const key = newline === -1 ? record : record.slice(0, newline);
+    const value = newline === -1 ? "" : record.slice(newline + 1);
+    const lower = key.toLowerCase();
+    if (lower.endsWith(".pushinsteadof")) push.push([key.slice(4, -".pushinsteadof".length), value]);
+    else if (lower.endsWith(".insteadof")) fetch.push([key.slice(4, -".insteadof".length), value]);
+  }
+  return rewriteUrl(url, push) ?? rewriteUrl(url, fetch) ?? url;
+}
+
+/** Exactly one push destination, as `push()` requires. */
+export async function remotePushUrl(remote: string, cwd: string): Promise<string> {
+  const result = await run("git", ["remote", "get-url", "--push", "--all", "--", remote], { cwd, reject: false });
+  const urls = result.stdout.split(/\r?\n/).map(url => url.trim()).filter(Boolean);
+  if (result.exitCode !== 0 || urls.length !== 1 || !urls[0]) throw new Error(`Remote "${remote}" must have exactly one push URL. Configure a single push URL before publishing.`);
+  return urls[0];
+}
+
+async function planPushUrl(remote: string, url: string, exists: boolean, cwd: string): Promise<{ pushUrl: string } | { message: string }> {
+  let pushUrl: string;
+  try { pushUrl = exists ? await remotePushUrl(remote, cwd) : await futurePushUrl(url, cwd); }
+  catch (error) { return { message: error instanceof Error ? error.message : String(error) }; }
+  if (hasUrlCredentials(pushUrl)) return { message: `The push URL for remote "${remote}" embeds credentials. Use a credential helper instead; the URL will not be shown or saved.` };
+  return { pushUrl };
+}
+
 export async function preparePublication(
   request: PublicationRequest,
 ): Promise<PreparePublicationResult> {
@@ -453,6 +511,8 @@ export async function preparePublication(
           "A checked out branch with at least one commit is required to push.",
       };
     const remoteUrl = selected?.url ?? repositoryUrl(host, target, account.protocol);
+    const destination = await planPushUrl(remoteName, remoteUrl, Boolean(selected), root ?? cwd);
+    if ("message" in destination) return { status: "failed", message: destination.message };
     const steps: PublicationStep[] = selected ? [] : ["create_repository"];
     if (root && !selected) steps.push("add_remote");
     let remoteHeadTip: string | null = null;
@@ -494,6 +554,7 @@ export async function preparePublication(
       target,
       remote: remoteName,
       remoteUrl,
+      pushUrl: destination.pushUrl,
       visibility,
       ...(request.description ? { description: request.description } : {}),
       push,
@@ -568,6 +629,8 @@ export async function preparePublication(
       message: `Remote name "${remoteName}" is invalid.`,
     };
   const remoteUrl = selected?.url ?? repositoryUrl(host, target, account.protocol);
+  const destination = await planPushUrl(remoteName, remoteUrl, Boolean(selected), root);
+  if ("message" in destination) return { status: "failed", message: destination.message };
   let remoteBaseTip: string | null = null;
   let remoteHeadTip: string | null = null;
   if (selected) {
@@ -642,6 +705,7 @@ export async function preparePublication(
       target,
       remote: remoteName,
       remoteUrl,
+      pushUrl: destination.pushUrl,
       visibility,
       createRepository: createRepositoryForPr,
       ...(selected ? { remoteAtPrepare: selected.url } : {}),
@@ -690,6 +754,8 @@ async function recheck(plan: PublicationPlan): Promise<string | null> {
     return `Remote "${plan.remote}" changed after publication was prepared.`;
   if (!plan.remoteAtPrepare && existing && existing.url !== plan.remoteUrl)
     return `Remote "${plan.remote}" was added after publication was prepared and points elsewhere. No remote will be overwritten.`;
+  const pushChanged = await pushDestinationChange(plan, root);
+  if (pushChanged) return pushChanged;
   if (existing) {
     const repository = await inspectExistingRepository(plan);
     if (repository.exists !== true) return repository.exists === "unknown" ? repository.error : `Repository ${plan.target} no longer exists.`;
@@ -857,6 +923,21 @@ async function matchingPullRequest(
   }
 }
 
+/** Run before every push: the approved plan names the exact destination. */
+async function pushDestinationChange(plan: PublicationPlan, cwd: string): Promise<string | null> {
+  if (!(await currentRemotes(cwd)).some(item => item.name === plan.remote)) return null;
+  let current: string;
+  try { current = await remotePushUrl(plan.remote, cwd); }
+  catch (error) { return error instanceof Error ? error.message : String(error); }
+  return current === plan.pushUrl ? null : `The push URL for remote "${plan.remote}" changed after publication was prepared. Prepare and approve a new publication plan.`;
+}
+
+async function assertPushDestination(plan: PublicationPlan, cwd: string): Promise<void> {
+  if (!(await currentRemotes(cwd)).some(item => item.name === plan.remote)) throw new Error(`Remote "${plan.remote}" is missing. Prepare and approve a new publication plan.`);
+  const changed = await pushDestinationChange(plan, cwd);
+  if (changed) throw new Error(changed);
+}
+
 async function pushHeadFastForward(
   plan: PublicationPlan,
   branch: string,
@@ -870,6 +951,7 @@ async function pushHeadFastForward(
       `Remote branch "${branch}" has commits that are not in the local branch.`,
     );
   }
+  await assertPushDestination(plan, cwd);
   await execGitPush(
     ["push", "--", plan.remote, `${headTip}:refs/heads/${branch}`],
     { cwd },
@@ -1064,6 +1146,7 @@ async function executePublicationSteps(
               `Remote base branch "${plan.base}" appeared with a different commit and will not be overwritten.`,
             ),
           );
+        if (!baseRef) await assertPushDestination(plan, plan.root);
         if (!baseRef)
           await pushStep("push_base", () => execGitPush(
             [

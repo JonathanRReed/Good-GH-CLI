@@ -37,9 +37,9 @@ export async function preparePublicationResume(record: OperationRecord): Promise
 
 export function publicationResumeChange(saved: PublicationPlan, current: PublicationPlan): string | undefined {
   if (saved.kind !== current.kind || saved.cwd !== current.cwd || saved.root !== current.root || saved.source !== current.source ||
-      saved.host !== current.host || saved.target !== current.target || saved.remote !== current.remote || saved.remoteUrl !== current.remoteUrl ||
+      saved.host !== current.host || saved.target !== current.target || saved.remote !== current.remote || saved.remoteUrl !== current.remoteUrl || saved.pushUrl !== current.pushUrl ||
       saved.head !== current.head || saved.headTip !== current.headTip || saved.visibility !== current.visibility) {
-    return "The publication target, worktree, remote or head changed. Prepare and approve a new publication instead of replaying this record.";
+    return "The publication target, worktree, remote, push URL or head changed. Prepare and approve a new publication instead of replaying this record.";
   }
   if (saved.kind === "pr" && current.kind === "pr" && (saved.base !== current.base || saved.baseTip !== current.baseTip || saved.mergeBaseTip !== current.mergeBaseTip || (saved.localBaseTip ?? saved.baseTip) !== (current.localBaseTip ?? current.baseTip) || (saved.remoteBaseTip !== current.remoteBaseTip && !(saved.remoteBaseTip === undefined && saved.steps.includes("push_base") && current.remoteBaseTip === saved.baseTip)))) {
     return "The publication base changed. Prepare and approve a new publication instead of replaying this record.";

@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { runFixture } from "./cli-fixture.ts";
 import { acquireStackOperationLock, createStackRecovery, readStackRecovery, writeStackRecovery, type StackRecoveryCheckpoint } from "../src/services/git/stack.ts";
 
@@ -73,6 +74,12 @@ function setupStack(conflict = false): { parentTip: string; childTip: string; gr
   git("-c", "commit.gpgsign=false", "commit", "--amend", "--no-edit");
   git("switch", "main");
   return { parentTip: git("rev-parse", "parent"), childTip, grandTip, sideTip };
+}
+
+/** Origin is a GitHub URL, as submit requires; Git transparently redirects it to a local bare repository. */
+function githubOrigin(bare: string): void {
+  git("remote", "add", "origin", "https://github.com/test/repo.git");
+  git("config", "url." + pathToFileURL(bare).href + ".insteadOf", "https://github.com/test/repo.git");
 }
 
 function originalTips(): Record<string, string> {
@@ -305,10 +312,11 @@ describe("stack recovery", () => {
     setupStack();
     const remote = join(root, "remote.git");
     execFileSync("git", ["init", "--bare", "--initial-branch=main", remote], { cwd: root, stdio: "ignore" });
-    git("remote", "add", "origin", remote);
+    githubOrigin(remote);
     git("push", "-u", "origin", "main");
     mkdirSync(join(root, "fixture-one-"), { recursive: true });
-    const partial = await runFixture(["stack", "submit", "child", "--yes", "--json"], {
+    // The amended parent leaves child one commit behind; this test submits it deliberately.
+    const partial = await runFixture(["stack", "submit", "child", "--allow-stale", "--yes", "--json"], {
       root: join(root, "fixture-one-"), cwd: root,
       responses: [
         { prefix: ["pr", "view"], stdout: "" },
@@ -328,7 +336,7 @@ describe("stack recovery", () => {
     expect(git("show-ref", "--verify", "refs/heads/side")).toBeTruthy();
 
     mkdirSync(join(root, "fixture-two-"), { recursive: true });
-    const retry = await runFixture(["stack", "submit", "child", "--yes", "--json"], {
+    const retry = await runFixture(["stack", "submit", "child", "--allow-stale", "--yes", "--json"], {
       root: join(root, "fixture-two-"), cwd: root,
       responses: [
         { prefix: ["pr", "view"], stdout: "" },
@@ -366,7 +374,7 @@ describe("stack recovery", () => {
     setParent("feature", "main", git("rev-parse", "main"));
     const remote = join(root, "remote.git");
     execFileSync("git", ["init", "--bare", "--initial-branch=main", remote], { cwd: root, stdio: "ignore" });
-    git("remote", "add", "origin", remote);
+    githubOrigin(remote);
     git("push", "-u", "origin", "main");
     git("push", "-u", "origin", "feature");
 

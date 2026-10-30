@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   detectDefaultBranch,
   execGitWithRetry,
@@ -47,7 +47,8 @@ import {
   type NativeStackRegistration,
   type PullRequestTarget,
 } from "../services/github.ts";
-import { getActiveOperation, getFlags, setActiveOperation } from "../services/runtime.ts";
+import { getActiveOperation, getFlags, recordCommandIssue, setActiveOperation } from "../services/runtime.ts";
+import { hasUrlCredentials, remotePushUrl } from "../services/publication.ts";
 import { readOperation, startOperation, updateOperation, type OperationRecord, type OperationStatus } from "../services/operations.ts";
 import { run } from "../utils/exec.ts";
 import { dryRun } from "../utils/flags.ts";
@@ -242,7 +243,7 @@ function operationSteps(checkpoint: StackRecoveryCheckpoint): OperationRecord["s
   }));
 }
 
-async function beginStackOperation(command: "stack restack" | "stack submit", target: string, entries: number, cwd: string): Promise<string | null> {
+async function beginStackOperation(command: "stack restack" | "stack submit", target: string, steps: string[], cwd: string): Promise<string | null> {
   if (process.env.GGH_NO_RECORDS === "1") return null;
   const active = getActiveOperation();
   if (active?.cwd === cwd) {
@@ -252,7 +253,7 @@ async function beginStackOperation(command: "stack restack" | "stack submit", ta
   const record = await startOperation({
     command,
     target,
-    steps: Array.from({ length: Math.min(entries, 100) }, (_, index) => `branch ${index + 1}`),
+    steps: steps.slice(0, 100),
     cwd,
   });
   setActiveOperation({ id: record.id, cwd });
@@ -263,13 +264,14 @@ async function saveStackProgress(
   checkpoint: StackRecoveryCheckpoint,
   state: OperationStatus,
   cwd: string,
+  steps: OperationRecord["steps"] = operationSteps(checkpoint),
 ): Promise<void> {
   if (process.env.GGH_NO_RECORDS === "1") return;
   const active = getActiveOperation();
   const operationId = active?.cwd === cwd ? active.id : checkpoint.operationId;
   await updateOperation(operationId, {
     status: state,
-    steps: operationSteps(checkpoint),
+    steps,
     resources: checkpoint.resources,
     revision: checkpoint.entries.at(-1)?.expectedTip,
   }, cwd);
@@ -305,10 +307,7 @@ async function assertExplicitSubmitTarget(plan: Array<{ branch: string }>, cwd: 
       throw new Error("Could not verify where stack branch " + item.branch + " will be pushed. Remove --repo or configure the push remote URL.");
     }
     for (const url of result.stdout.split(/\r?\n/).filter(Boolean)) {
-      const parsed = parseGitHubRepositoryNameWithOwnerFromRemoteUrl(url);
-      const remoteTarget = !parsed ? null : typeof parsed === "string"
-        ? { host: "github.com", nameWithOwner: parsed }
-        : { host: parsed.host, nameWithOwner: parsed.nameWithOwner };
+      const remoteTarget = githubRepository(url);
       if (!remoteTarget || remoteTarget.host.toLowerCase() !== target.host.toLowerCase() ||
           remoteTarget.nameWithOwner.toLowerCase() !== target.nameWithOwner.toLowerCase()) {
         throw new Error("Explicit --repo target " + target.host + "/" + target.nameWithOwner + " does not match push remote " + remote + " for " + item.branch + ". Refusing to push branches to one repository and open Pull Requests in another.");
@@ -321,13 +320,14 @@ async function initializeRecovery(
   mode: StackRecoveryCheckpoint["mode"],
   selected: string,
   originalBranch: string,
-  plan: Array<{ branch: string; parent: string }>,
+  plan: Array<{ branch: string; parent: string; remote?: string }>,
   cwd: string,
+  steps: string[] = plan.map((_, index) => `branch ${index + 1}`),
 ): Promise<StackRecoveryCheckpoint> {
   if (plan.length > 100) throw new Error("A stack operation can record at most 100 branches.");
   const existing = await readStackRecovery(cwd);
   if (existing) throw new Error("A " + existing.mode + " stack operation is unfinished. Resume it or run ggh stack restack --abort before starting another stack operation.");
-  const operationId = await beginStackOperation(`stack ${mode}`, selected, plan.length, cwd) ?? randomUUID();
+  const operationId = await beginStackOperation(`stack ${mode}`, selected, steps, cwd) ?? randomUUID();
   const entries: StackRecoveryEntry[] = [];
   try {
     for (const [index, item] of plan.entries()) {
@@ -339,7 +339,7 @@ async function initializeRecovery(
         originalTip: tip,
         expectedTip: tip,
         state: "pending",
-        ...(mode === "submit" ? { pushState: "pending" as const, remote: await resolvePushRemote(item.branch, cwd) } : {}),
+        ...(mode === "submit" ? { pushState: "pending" as const, remote: item.remote ?? await resolvePushRemote(item.branch, cwd) } : {}),
       });
     }
   } catch (error) {
@@ -448,6 +448,120 @@ function renderTree(
 
   roots.forEach((root, i) => walk(root, "", i === roots.length - 1, 0));
   return lines;
+}
+
+/** At most 49 branches keep push, PR and link effects within one operation record. */
+const MAX_SUBMIT_BRANCHES = 49;
+
+interface SubmitEntryPlan { branch: string; parent: string; tip: string; parentTip: string | null; behind: number; remote: string; pushUrl: string }
+/** Everything an approved submission binds: where it pushes, what it pushes, and what it opens. */
+interface SubmitPlan { schemaVersion: 1; root: string; host: string; repository: string; selected: string; draft: boolean; nativeStack: boolean; allowStale: boolean; entries: SubmitEntryPlan[] }
+interface SubmitProgress { completed: string[]; remaining: string[]; uncertain: string[] }
+
+async function localTip(branch: string, cwd: string): Promise<string | null> {
+  const result = await run("git", ["rev-parse", "--verify", "--quiet", "--end-of-options", `refs/heads/${branch}^{commit}`], { cwd, reject: false });
+  return result.exitCode === 0 ? result.stdout.trim() : null;
+}
+
+function githubRepository(url: string): { host: string; nameWithOwner: string } | null {
+  const parsed = parseGitHubRepositoryNameWithOwnerFromRemoteUrl(url);
+  if (!parsed) return null;
+  return typeof parsed === "string" ? { host: "github.com", nameWithOwner: parsed } : { host: parsed.host.toLowerCase(), nameWithOwner: parsed.nameWithOwner };
+}
+
+/** The GitHub repository the Pull Requests open in: --repo, or the push remote's configured GitHub URL. */
+async function submitRepository(remote: string, cwd: string): Promise<{ host: string; nameWithOwner: string }> {
+  const explicit = getFlags().repo ? parseRepoFlag(getFlags().repo) : null;
+  if (explicit) return { host: explicit.host.toLowerCase(), nameWithOwner: explicit.nameWithOwner };
+  const configured = await run("git", ["config", "--get", `remote.${remote}.url`], { cwd, reject: false });
+  const repository = configured.exitCode === 0 ? githubRepository(configured.stdout.trim()) : null;
+  if (!repository) throw new Error("Push remote " + remote + " is not a GitHub repository URL. stack submit opens Pull Requests on GitHub; point " + remote + " at GitHub or pass --repo.");
+  const environment = process.env.GH_REPO ? parseRepoFlag(process.env.GH_REPO) : null;
+  if (environment && (environment.host.toLowerCase() !== repository.host || environment.nameWithOwner.toLowerCase() !== repository.nameWithOwner.toLowerCase())) {
+    throw new Error("GH_REPO targets " + environment.nameWithOwner + ", but push remote " + remote + " points to " + repository.nameWithOwner + ". Refusing to push to one repository and open Pull Requests in another.");
+  }
+  return repository;
+}
+
+async function buildSubmitPlan(
+  selected: string,
+  chain: Array<{ branch: string; parent: string }>,
+  graph: Map<string, StackNode>,
+  options: { draft: boolean; nativeStack: boolean; allowStale: boolean },
+  cwd: string,
+): Promise<SubmitPlan> {
+  if (chain.length > MAX_SUBMIT_BRANCHES) throw new Error("stack submit handles at most " + MAX_SUBMIT_BRANCHES + " branches per run. Submit a lower part of the stack first.");
+  const root = (await run("git", ["rev-parse", "--show-toplevel"], { cwd })).stdout.trim();
+  let target: { host: string; nameWithOwner: string } | undefined;
+  const entries: SubmitEntryPlan[] = [];
+  // Resolve each remote and each tip once; stacks usually share one remote and chain their tips.
+  const destinations = new Map<string, { repository: { host: string; nameWithOwner: string }; pushUrl: string }>();
+  const tips = new Map<string, string | null>();
+  const tipOf = async (name: string) => tips.has(name) ? tips.get(name) ?? null : tips.set(name, await localTip(name, cwd)).get(name) ?? null;
+  for (const item of chain) {
+    const remote = await resolvePushRemote(item.branch, cwd);
+    let destination = destinations.get(remote);
+    if (!destination) {
+      const pushUrl = await remotePushUrl(remote, cwd);
+      if (hasUrlCredentials(pushUrl)) throw new Error("The push URL for remote " + remote + " embeds credentials. Use a credential helper instead; the URL will not be shown.");
+      destination = { repository: await submitRepository(remote, cwd), pushUrl };
+      destinations.set(remote, destination);
+    }
+    const { repository, pushUrl } = destination;
+    if (target && (target.host !== repository.host || target.nameWithOwner.toLowerCase() !== repository.nameWithOwner.toLowerCase())) {
+      throw new Error("Stack branches push to different GitHub repositories (" + target.nameWithOwner + " and " + repository.nameWithOwner + "). Configure one push remote for the stack.");
+    }
+    target ??= repository;
+    const tip = await tipOf(item.branch);
+    if (!tip) throw new Error("Branch " + item.branch + " has no commit to submit.");
+    entries.push({ branch: item.branch, parent: item.parent, tip, parentTip: await tipOf(item.parent), behind: graph.get(item.branch)?.parent ? graph.get(item.branch)?.behind ?? 0 : 0, remote, pushUrl });
+  }
+  if (!target) throw new Error("Nothing to submit.");
+  return { schemaVersion: 1, root, host: target.host, repository: target.nameWithOwner, selected, draft: options.draft, nativeStack: options.nativeStack, allowStale: options.allowStale, entries };
+}
+
+function submitSnapshot(plan: SubmitPlan): string {
+  return createHash("sha256").update(JSON.stringify({ kind: "stack-submit", ...plan })).digest("hex");
+}
+
+function submitEffects(plan: Pick<SubmitPlan, "entries" | "nativeStack">): string[] {
+  return [...plan.entries.flatMap((entry) => ["push:" + entry.branch, "create_pr:" + entry.branch]), ...(plan.nativeStack ? ["link_native_stack"] : [])];
+}
+
+/** Per-step effects: a started push or PR without a confirmed result is uncertain, not pending. */
+function submitProgress(checkpoint: StackRecoveryCheckpoint, linkNative: boolean, native?: NativeStackRegistration): SubmitProgress {
+  const progress: SubmitProgress = { completed: [], remaining: [], uncertain: [] };
+  for (const entry of checkpoint.entries) {
+    const pushed = entry.pushState === "completed";
+    (pushed ? progress.completed : entry.pushState === "unknown" ? progress.uncertain : progress.remaining).push("push:" + entry.branch);
+    (entry.pullRequestUrl ? progress.completed : pushed && (entry.state === "unknown" || entry.state === "failed") ? progress.uncertain : progress.remaining).push("create_pr:" + entry.branch);
+  }
+  if (linkNative) {
+    if (native && "number" in native && (native.state === "created" || native.state === "extended" || native.state === "unchanged")) progress.completed.push("link_native_stack");
+    else if (native?.state === "unavailable") progress.uncertain.push("link_native_stack");
+    else progress.remaining.push("link_native_stack");
+  }
+  return progress;
+}
+
+function submitSteps(progress: SubmitProgress): OperationRecord["steps"] {
+  return [
+    ...progress.completed.map((name) => ({ name, state: "completed" as const })),
+    ...progress.uncertain.map((name) => ({ name, state: "unknown" as const })),
+    ...progress.remaining.map((name) => ({ name, state: "pending" as const })),
+  ];
+}
+
+function describeSubmitPlan(plan: SubmitPlan, snapshotId: string): string {
+  const remotes = [...new Map(plan.entries.map((entry) => [entry.remote, entry.pushUrl])).entries()].map(([remote, url]) => remote + " push → " + url);
+  const rows = plan.entries.map((entry) => entry.branch + " " + entry.tip.slice(0, 12) + " → " + entry.parent + " " + (entry.parentTip?.slice(0, 12) ?? "(not local)") + (entry.behind ? "  " + entry.behind + " behind parent" : ""));
+  return [plan.host + "/" + plan.repository, ...remotes, ...rows, (plan.draft ? "Draft" : "Ready for review") + " · " + (plan.nativeStack ? "link as a GitHub stack" : "no GitHub stack link"), "snapshot " + snapshotId].join("\n");
+}
+
+function requireSubmitInput(message: string, name: string, description: string, code: "missing_input" | "confirmation_required", alternatives?: string[]): void {
+  const requiredInputs = [{ name, description, ...(alternatives ? { alternatives } : {}) }];
+  fail(message, { code, requiredInputs });
+  recordCommandIssue({ status: "needs_input", code, message, requiredInputs });
 }
 
 /** GitHub stacks are a single chain: each branch's parent is the branch below it. */
@@ -728,8 +842,10 @@ export function registerStackCommand(program: Command): void {
     .description("Push the selected stack and open a Pull Request for each branch against its parent")
     .option("-d, --draft", "Open every Pull Request as a draft")
     .option("--no-native-stack", "Do not link the Pull Requests as a GitHub stack")
-    .option("-y, --yes", "Skip the confirmation prompt")
-    .action(async (branch?: string, options?: { draft?: boolean; yes?: boolean; nativeStack?: boolean }) => {
+    .option("--allow-stale", "Submit branches that are behind their parent instead of restacking first")
+    .option("--approve-plan <sha256>", "Approve the exact dry-run snapshot, required for agents")
+    .option("-y, --yes", "Skip the confirmation prompt; agents need --approve-plan instead")
+    .action(async (branch?: string, options?: { draft?: boolean; yes?: boolean; nativeStack?: boolean; allowStale?: boolean; approvePlan?: string }) => {
       header("Submit Stack");
       if (!(await requireGitRepo())) return;
       const cwd = process.cwd();
@@ -764,46 +880,77 @@ export function registerStackCommand(program: Command): void {
         const plan = chain.map((name) => ({ branch: name, parent: graph.get(name)?.parent ?? defaultBranch }));
         try { await assertExplicitSubmitTarget(plan, cwd); }
         catch (error) { fail(String(error)); return; }
-        p.log.step("Stack from the bottom up:");
-        for (const item of plan) p.log.message("  " + pc.cyan(item.branch) + " " + pc.dim("→") + " " + pc.cyan(item.parent));
         const linkNative = options?.nativeStack !== false && plan.length > 1 && isLinearStack(plan);
         const linkText = linkNative ? " and link them as a GitHub stack" : "";
-        if (dryRun("push and open " + plan.length + " Pull Request(s)" + linkText)) {
-          jsonOut({ status: "planned", operation: "submit", selected: start, branches: plan, nativeStack: linkNative });
+        let submission: SubmitPlan;
+        try { submission = await buildSubmitPlan(start, plan, graph, { draft: Boolean(options?.draft), nativeStack: linkNative, allowStale: Boolean(options?.allowStale) }, cwd); }
+        catch (error) { fail(error instanceof Error ? error.message : String(error)); return; }
+        const snapshotId = submitSnapshot(submission);
+        const effects = submitEffects(submission);
+        const summary = { operation: "submit", selected: start, snapshotId, plan: submission, branches: plan, nativeStack: linkNative };
+        p.log.step("Stack from the bottom up:");
+        for (const item of plan) p.log.message("  " + pc.cyan(item.branch) + " " + pc.dim("→") + " " + pc.cyan(item.parent));
+        p.note(describeSubmitPlan(submission, snapshotId), "Submission plan");
+
+        const stale = submission.entries.filter((entry) => entry.behind > 0);
+        if (stale.length && !options?.allowStale) {
+          const message = stale.map((entry) => entry.branch + " is " + entry.behind + " behind " + entry.parent).join("; ") + ". Run ggh stack restack " + start + " first, or pass --allow-stale to submit them as they are.";
+          requireSubmitInput(message, "--allow-stale", "Submit branches that are behind their parent without restacking.", "missing_input", ["ggh stack restack " + start]);
+          jsonOut({ status: "needs_input", ...summary, stale: stale.map((entry) => ({ branch: entry.branch, parent: entry.parent, behind: entry.behind })), completed: [], remaining: effects });
           return;
         }
-        if (!(await confirmOrAbort("Push and open Pull Requests for " + plan.length + " branch(es)" + linkText + "?", { assumeYes: options?.yes }))) return;
+        if (options?.approvePlan !== undefined && (!/^[a-f0-9]{64}$/.test(options.approvePlan) || options.approvePlan !== snapshotId)) {
+          requireSubmitInput("Stack submission snapshot does not match --approve-plan. Review a fresh --dry-run and approve its snapshotId.", "--approve-plan", "Review a fresh dry-run and supply its snapshotId.", "confirmation_required");
+          jsonOut({ status: "needs_input", ...summary, completed: [], remaining: effects });
+          return;
+        }
+        if (dryRun("push and open " + plan.length + " Pull Request(s)" + linkText)) {
+          jsonOut({ status: "planned", ...summary, completed: [], remaining: effects });
+          return;
+        }
+        // An agent's --yes is not an approval of what will be published.
+        if (getFlags().agent && !options?.approvePlan) {
+          requireSubmitInput("Review ggh stack submit --dry-run --agent, then supply --approve-plan <snapshotId>. --yes does not approve an agent submission.", "--approve-plan", "Review the dry-run plan and supply its snapshotId.", "confirmation_required");
+          jsonOut({ status: "needs_input", ...summary, completed: [], remaining: effects });
+          return;
+        }
+        if (!(await confirmOrAbort("Push and open Pull Requests for " + plan.length + " branch(es)" + linkText + "?", { assumeYes: options?.yes || Boolean(options?.approvePlan) }))) return;
 
         let checkpoint: StackRecoveryCheckpoint;
         try {
           const existing = await readStackRecovery(cwd);
           if (existing) {
             const matches = existing.mode === "submit" && existing.selected === start &&
-              existing.entries.length === plan.length && existing.entries.every((entry, index) => entry.branch === plan[index]?.branch && entry.parent === plan[index]?.parent);
+              existing.entries.length === submission.entries.length && existing.entries.every((entry, index) => entry.branch === submission.entries[index]?.branch && entry.parent === submission.entries[index]?.parent && entry.remote === submission.entries[index]?.remote);
             if (!matches) throw new Error("Another stack operation is unfinished. Resume or abort it before starting this submission.");
             checkpoint = existing;
           } else {
-            checkpoint = await initializeRecovery("submit", start, original, plan, cwd);
+            checkpoint = await initializeRecovery("submit", start, original, submission.entries, cwd, effects);
           }
         } catch (error) { fail("Could not start or resume stack submission: " + String(error)); return; }
 
         const opened: Array<{ branch: string; base: string; url: string }> = checkpoint.entries.flatMap((entry) =>
           entry.pullRequestUrl ? [{ branch: entry.branch, base: entry.parent, url: entry.pullRequestUrl }] : [],
         );
-        const explicitTarget = getFlags().repo ? parseRepoFlag(getFlags().repo) : null;
+        const save = (state: OperationStatus) => saveStackProgress(checkpoint, state, cwd, submitSteps(submitProgress(checkpoint, linkNative)));
+        // Keep the checkpoint and report every effect by name, so a retry resumes instead of repeating.
+        const stop = async (message: string): Promise<void> => {
+          await writeStackRecovery(checkpoint, cwd);
+          await save({ state: "partially_completed" }).catch(() => undefined);
+          fail(message);
+          await switchBranch(original, false, cwd).catch(() => undefined);
+          jsonOut({ status: "partially_completed", operationId: checkpoint.operationId, snapshotId, ...submitProgress(checkpoint, linkNative), opened, resources: checkpoint.resources, error: { message } });
+        };
+        const repo = submission.host + "/" + submission.repository;
         for (let index = 0; index < checkpoint.entries.length; index += 1) {
           const entry = checkpoint.entries[index];
-          if (!entry) continue;
+          const planned = submission.entries[index];
+          if (!entry || !planned) continue;
           checkpoint.activeIndex = index;
           const actual = await getBranchTip(entry.branch, cwd).catch(() => "");
-          if (actual !== entry.originalTip) {
+          if (actual !== entry.originalTip || actual !== planned.tip) {
             entry.state = "unknown";
-            await writeStackRecovery(checkpoint, cwd);
-            await saveStackProgress(checkpoint, { state: "partially_completed" }, cwd).catch(() => undefined);
-            const message = "Branch " + entry.branch + " changed after the submission plan. Expected " + entry.originalTip + ", found " + (actual || "unavailable") + ". Recovery state was kept.";
-            fail(message);
-            await switchBranch(original, false, cwd).catch(() => undefined);
-            jsonOut({ status: "partially_completed", operationId: checkpoint.operationId, completed: checkpoint.entries.filter((item) => item.state === "completed").map((item) => item.branch), remaining: checkpoint.entries.filter((item) => item.state !== "completed").map((item) => item.branch), opened, resources: checkpoint.resources, error: { message } });
+            await stop("Branch " + entry.branch + " changed after the submission plan. Expected " + entry.originalTip + ", found " + (actual || "unavailable") + ". Recovery state was kept.");
             return;
           }
           if (entry.state === "completed" && entry.pullRequestUrl) continue;
@@ -813,20 +960,22 @@ export function registerStackCommand(program: Command): void {
               if (await remoteBranchTip(entry.remote, entry.branch, cwd) === entry.expectedTip) {
                 entry.pushState = "completed";
                 await writeStackRecovery(checkpoint, cwd);
-                await saveStackProgress(checkpoint, { state: "running" }, cwd);
+                await save({ state: "running" });
               }
             } catch (error) {
               entry.state = "unknown";
-              await writeStackRecovery(checkpoint, cwd);
-              await saveStackProgress(checkpoint, { state: "partially_completed" }, cwd).catch(() => undefined);
-              const message = "Could not inspect the remote result for " + entry.branch + ": " + String(error);
-              fail(message);
-              await switchBranch(original, false, cwd).catch(() => undefined);
-              jsonOut({ status: "partially_completed", operationId: checkpoint.operationId, completed: checkpoint.entries.filter((item) => item.state === "completed").map((item) => item.branch), remaining: checkpoint.entries.filter((item) => item.state !== "completed").map((item) => item.branch), opened, resources: checkpoint.resources, error: { message } });
+              await stop("Could not inspect the remote result for " + entry.branch + ": " + String(error));
               return;
             }
           }
           if (entry.pushState !== "completed") {
+            let destination = "";
+            try { destination = await remotePushUrl(planned.remote, cwd); }
+            catch (error) { destination = error instanceof Error ? error.message : String(error); }
+            if (destination !== planned.pushUrl) {
+              await stop("The push URL for remote " + planned.remote + " changed after the submission plan. Nothing was pushed for " + entry.branch + ". Review a fresh --dry-run.");
+              return;
+            }
             const pushSpinner = p.spinner();
             pushSpinner.start("Pushing " + pc.cyan(entry.branch) + "...");
             try {
@@ -837,11 +986,11 @@ export function registerStackCommand(program: Command): void {
               entry.pushState = "unknown";
               entry.state = "unknown";
               await writeStackRecovery(checkpoint, cwd);
-              await saveStackProgress(checkpoint, { state: "running" }, cwd);
+              await save({ state: "running" });
               await push({ remote: entry.remote, branch: entry.branch, setUpstream: true, forceWithLease, cwd });
               entry.pushState = "completed";
               await writeStackRecovery(checkpoint, cwd);
-              await saveStackProgress(checkpoint, { state: "running" }, cwd);
+              await save({ state: "running" });
               pushSpinner.stop(pc.green(entry.branch + " pushed."));
             } catch (error) {
               // GitHub rejected a push-protection violation outright: the push
@@ -849,20 +998,18 @@ export function registerStackCommand(program: Command): void {
               const blocked = error instanceof PushProtectionError;
               entry.pushState = blocked ? "failed" : "unknown";
               entry.state = blocked ? "failed" : "unknown";
-              await writeStackRecovery(checkpoint, cwd);
-              const anyCompleted = checkpoint.entries.some((item) => item.state === "completed");
-              await saveStackProgress(checkpoint, { state: blocked && !anyCompleted ? "failed" : "partially_completed" }, cwd).catch(() => undefined);
               pushSpinner.stop(pc.red((blocked ? "GitHub push protection blocked " : "Failed to push ") + entry.branch + "."));
-              const message = error instanceof Error ? error.message : String(error);
+              if (!blocked) { await stop(error instanceof Error ? error.message : String(error)); return; }
+              const anyCompleted = checkpoint.entries.some((item) => item.state === "completed");
+              await writeStackRecovery(checkpoint, cwd);
+              await save({ state: anyCompleted ? "partially_completed" : "failed" }).catch(() => undefined);
               failFromPush(error);
               // Removing the secret rewrites this branch, which invalidates the
               // saved plan; no remote outcome is uncertain, so drop the checkpoint.
-              if (blocked) {
-                await discardRecovery(checkpoint, cwd).catch(() => undefined);
-                p.log.info("After removing the secret, run ggh stack restack so descendants pick up the rewritten commits, then ggh stack submit again.");
-              }
+              await discardRecovery(checkpoint, cwd).catch(() => undefined);
+              p.log.info("After removing the secret, run ggh stack restack so descendants pick up the rewritten commits, then ggh stack submit again.");
               await switchBranch(original, false, cwd).catch(() => undefined);
-              jsonOut({ status: anyCompleted || !blocked ? "partially_completed" : "failed", operationId: checkpoint.operationId, completed: checkpoint.entries.filter((item) => item.state === "completed").map((item) => item.branch), remaining: checkpoint.entries.filter((item) => item.state !== "completed").map((item) => item.branch), ...(blocked ? { failed: [entry.branch], pushProtection: error.details } : {}), opened, resources: checkpoint.resources, error: { message } });
+              jsonOut({ status: anyCompleted ? "partially_completed" : "failed", operationId: checkpoint.operationId, snapshotId, ...submitProgress(checkpoint, linkNative), failed: ["push:" + entry.branch], pushProtection: error.details, opened, resources: checkpoint.resources, error: { message: error.message } });
               return;
             }
           }
@@ -876,7 +1023,7 @@ export function registerStackCommand(program: Command): void {
               if (!checkpoint.resources.includes(existing.url)) checkpoint.resources.push(existing.url);
               if (!opened.some((item) => item.branch === entry.branch)) opened.push({ branch: entry.branch, base: entry.parent, url: existing.url });
               await writeStackRecovery(checkpoint, cwd);
-              await saveStackProgress(checkpoint, { state: "running" }, cwd);
+              await save({ state: "running" });
               p.log.info(pc.cyan(entry.branch) + " already has Pull Request #" + existing.number + "; the push updated it.");
               continue;
             }
@@ -885,49 +1032,41 @@ export function registerStackCommand(program: Command): void {
             try {
               entry.state = "unknown";
               await writeStackRecovery(checkpoint, cwd);
-              await saveStackProgress(checkpoint, { state: "running" }, cwd);
+              await save({ state: "running" });
               const stackText = checkpoint.entries.map((item) => item.branch === entry.branch ? "- **" + item.branch + "** ← this Pull Request" : "- " + item.branch).join("\n");
+              // The approved repository, never whichever repository gh would infer.
               const url = await createPullRequest({
                 title: entry.branch,
                 body: "Part of a stack. Base: `" + entry.parent + "`.\n\nStack:\n" + stackText,
                 base: entry.parent,
                 head: entry.branch,
-                draft: options?.draft,
+                draft: submission.draft,
                 cwd,
-                ...(explicitTarget ? { repo: explicitTarget.repoArg, host: explicitTarget.host } : {}),
+                repo,
+                host: submission.host,
               });
               entry.pullRequestUrl = url;
               entry.state = "completed";
               if (!checkpoint.resources.includes(url)) checkpoint.resources.push(url);
               opened.push({ branch: entry.branch, base: entry.parent, url });
               await writeStackRecovery(checkpoint, cwd);
-              await saveStackProgress(checkpoint, { state: "running" }, cwd);
+              await save({ state: "running" });
               prSpinner.stop(pc.green("Pull Request opened for " + entry.branch + "."));
             } catch (error) {
               entry.state = "unknown";
-              const message = error instanceof Error ? error.message : String(error);
-              await writeStackRecovery(checkpoint, cwd);
-              await saveStackProgress(checkpoint, { state: "partially_completed" }, cwd).catch(() => undefined);
               prSpinner.stop(pc.red("Could not confirm a Pull Request for " + entry.branch + "."));
-              fail(message);
-              await switchBranch(original, false, cwd).catch(() => undefined);
-              jsonOut({ status: "partially_completed", operationId: checkpoint.operationId, completed: checkpoint.entries.filter((item) => item.state === "completed").map((item) => item.branch), remaining: checkpoint.entries.filter((item) => item.state !== "completed").map((item) => item.branch), opened, resources: checkpoint.resources, error: { message } });
+              await stop(error instanceof Error ? error.message : String(error));
               return;
             }
           } catch (error) {
             entry.state = "unknown";
-            const message = error instanceof Error ? error.message : String(error);
-            await writeStackRecovery(checkpoint, cwd);
-            await saveStackProgress(checkpoint, { state: "partially_completed" }, cwd).catch(() => undefined);
-            fail(message);
-            await switchBranch(original, false, cwd).catch(() => undefined);
-            jsonOut({ status: "partially_completed", operationId: checkpoint.operationId, completed: checkpoint.entries.filter((item) => item.state === "completed").map((item) => item.branch), remaining: checkpoint.entries.filter((item) => item.state !== "completed").map((item) => item.branch), opened, resources: checkpoint.resources, error: { message } });
+            await stop(error instanceof Error ? error.message : String(error));
             return;
           }
         }
 
         await switchBranch(original, false, cwd).catch(() => undefined);
-        await saveStackProgress(checkpoint, { state: "succeeded" }, cwd);
+        await save({ state: "succeeded" });
         await discardRecovery(checkpoint, cwd);
         const nativeStack: NativeStackRegistration = linkNative ? await linkNativeStack(opened) : {
           state: "skipped",
@@ -935,7 +1074,7 @@ export function registerStackCommand(program: Command): void {
             : plan.length < 2 ? "A GitHub stack needs at least two pull requests."
               : "GitHub stacks are linear; this selection is not a single chain.",
         };
-        if (jsonOut({ status: "succeeded", opened, nativeStack })) return;
+        if (jsonOut({ status: "succeeded", snapshotId, opened, nativeStack, ...submitProgress(checkpoint, linkNative, nativeStack) })) return;
         for (const entry of opened) p.log.message("  " + pc.cyan(entry.branch) + " → " + pc.cyan(entry.base) + "  " + pc.dim(entry.url));
         if (nativeStack.state === "created" || nativeStack.state === "extended") p.log.info("Linked as GitHub stack #" + nativeStack.number + ".");
         else if (nativeStack.state === "unchanged") p.log.info("GitHub stack #" + nativeStack.number + " already matches.");

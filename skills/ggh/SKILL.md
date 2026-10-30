@@ -45,10 +45,11 @@ contract, which is large.
 
 1. Check cwd, branch, full HEAD, staged paths, conflicts, base and destination.
 2. Inspect the staged patch with `git --no-pager diff --cached`. Never infer scope from a clean-looking summary. Never use `git add -A` or `ggh commit --all` to sweep up untracked work.
-3. For commands supporting `--approve-plan`, run identical inputs with `--dry-run --agent`, inspect the plan and its `snapshotId`, then apply with `--approve-plan` and that ID. Changed inputs or state require a fresh plan.
+3. For commands supporting `--approve-plan` (`pr create`, `stack submit`, `tidy`), run identical inputs with `--dry-run --agent`, inspect the plan and its `snapshotId`, then apply with `--approve-plan` and that ID. Changed inputs or state require a fresh plan. Check the plan's `pushUrl`: it is where Git actually pushes and can differ from the fetch URL.
 4. This version's `commit` has no `--approve-plan`. Commit only the reviewed index with an explicit message. It preserves unstaged hunks. For an approved push and PR, use `pr create` after committing; do not invent a standalone managed `ggh push` approval flow.
 5. Merging a PR in a GitHub stack also merges every unmerged PR below it. Run `ggh pr merge <n> --dry-run --agent` first and report `result.stack.pullRequests` to the user before merging.
-6. Never pass `--yes` for destructive actions without explicit user approval. An error requesting `--yes` does not grant approval. Never execute `tidy` without a human-approved snapshot, even with `--yes`.
+6. Never pass `--yes` for destructive actions without explicit user approval. An error requesting `--yes` does not grant approval. Never execute `tidy` without a human-approved snapshot, even with `--yes`. In agent mode `stack submit` ignores `--yes` as approval and needs `--approve-plan`.
+   If submit asks for `--allow-stale`, prefer `ggh stack restack`; pass `--allow-stale` only when the user wants stale branches published.
 7. After creating each PR, call the host's PR registration tool with the returned URL and head SHA where accepted. In T3 Code, call `link_pull_request` with the full URL for every layer. ggh does not register PRs. If the result lacks the SHA, read it with `gh pr view --json url,headRefOid` before reporting identity.
 8. When asked to monitor in T3, call `watch_pull_request` after registration. Use its events instead of tight CI polling. Do not claim registration or monitoring without a host receipt.
 9. On `push_protection_blocked`, stop. GitHub found a secret in the pushed commits. Do not retry, do not open or follow `error.pushProtection.bypassUrls`, and do not rewrite history unasked. Report each finding (secret type, commit, path, line) to the user; removing the secret and rotating it are their call.
@@ -158,3 +159,16 @@ ggh issue plan 42 plan.md --approve-plan "$snapshot" --agent
 ```
 
 The plan is a `plan` artifact named "Plan" unless you pass `--name`. Saving edits the plan with that exact name as a new version instead of adding a duplicate; identical content returns `no_op`, and more than one match is refused. `result.action` is `create`, `edit`, or `no_op`. Use `-` to read standard input. Agent mode needs `--approve-plan`; `--yes` is not accepted.
+
+### 10. Preview and approve a stack submission
+
+```sh
+plan=$(mktemp)
+ggh stack submit feat/top --dry-run --agent > "$plan"
+jq '.status, .result.plan, .effects.pending' "$plan"
+# After the user approves this exact plan:
+snapshot=$(jq -er 'select(.status == "planned") | .result.snapshotId' "$plan")
+ggh stack submit feat/top --approve-plan "$snapshot" --agent
+```
+
+Expect `result.plan.repository`, each entry's `tip`, `parent`, `parentTip`, `behind`, and `pushUrl`, plus `draft` and `nativeStack`. Effects are named `push:<branch>`, `create_pr:<branch>`, and `link_native_stack`. After a partial failure, rerun the same command to resume. Register every opened PR with the host.

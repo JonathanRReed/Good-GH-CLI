@@ -97,7 +97,7 @@ function proofSummary(action: TidyAction): string[] {
     case "delete-local-branch": return ["Exact tip integrated and reachable from remote-tracking refs", "Not checked out", "No clone stash"];
     case "delete-remote-branch": return ["Exact tip integrated and published", "Own origin verified from cached identity", "Expected-OID lease required", "No clone stash"];
     case "remove-checkout": return ["Clean published checkout", "No host claim or clone stash", action.allowIgnored ? "Ignored files explicitly approved" : "No ignored files", action.allowUnknown ? "Unknown provenance explicitly approved" : "ggh provenance", action.integration ? "Exact tip integrated" : "Published detached HEAD"];
-    case "prune-worktree-metadata": return [`${action.entries.length} missing entries`, "Git expiry retained", "Registry checked for locks, host claims and unpublished HEADs"];
+    case "prune-worktree-metadata": return [`${action.entries.length} missing entries`, "Git expiry retained", "Entry checked for locks, host claims, staged index, worktree refs and commits only it keeps"];
   }
 }
 const IMPACT: Record<TidyAction["kind"], number> = { "remove-checkout": 0, "delete-remote-branch": 1, "delete-local-branch": 2, "prune-worktree-metadata": 3 };

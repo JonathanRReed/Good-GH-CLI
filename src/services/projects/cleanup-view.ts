@@ -75,7 +75,7 @@ export function formatTidyPlan(plan: TidyPlan, options: CleanupViewOptions = {})
         lines.push(`  delete${action.kind === "delete-remote-branch" ? " remote" : ""}  ${action.branch}  ${action.tip.slice(0, 7)} ⊂ ${action.integration.ref.replace(/^refs\/(remotes|heads)\//, "")} ${action.integration.oid.slice(0, 7)} (fetched ${fetchAge(clone.fetchedAt)})`);
         if (action.kind === "delete-remote-branch") lines.push(`    ${action.destination}; lease ${action.tip.slice(0, 7)}; owner ${action.login}`);
       } else if (action.kind === "remove-checkout") lines.push(`  remove checkout ${shortPath(action.checkout.path)}; ignored override ${action.allowIgnored}; unknown-owner override ${action.allowUnknown}`);
-      else lines.push(`  prune metadata: ${action.entries.length} missing checkouts; expiry ${action.expire}`);
+      else lines.push(`  prune metadata: ${action.entries.map(entry => shortPath(entry.path)).join(", ")}; expiry ${action.expire}`);
     }
     if (options.verbose) {
       for (const [reason, count] of counts(clone.kept.map(kept => kept.reason))) lines.push(`  KEEP ${count}: ${reason}`);

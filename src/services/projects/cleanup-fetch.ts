@@ -1,9 +1,10 @@
 import { startOperation, updateOperation } from "../operations.ts";
 import { acquireProcessLock } from "../process-lock.ts";
+import { recordCompletedEffect, recordUncertainEffect } from "../runtime.ts";
 import { projectGit, projectLockPath, safeTrackingFetch } from "./git.ts";
 import type { Clone } from "./types.ts";
 
-/** Shared local lock, timeout and uncertainty journal for explicit cleanup fetches. */
+/** Shared local lock, timeout, uncertainty journal and effect report for explicit cleanup fetches. */
 export async function fetchCleanupClones(clones: readonly Clone[], command: "tidy" | "lost", signal: AbortSignal): Promise<void> {
   for (const clone of clones) {
     if (signal.aborted) break;
@@ -17,7 +18,10 @@ export async function fetchCleanupClones(clones: readonly Clone[], command: "tid
         const remotes = (await projectGit(clone.commonDir, ["remote"], deadline)).stdout.split(/\r?\n/).filter(Boolean);
         for (const remote of remotes) {
           if (signal.aborted) throw new Error("Cleanup fetch cancelled");
-          await safeTrackingFetch(clone.commonDir, remote, deadline);
+          // Fetching and pruning tracking refs is a real effect, even inside a dry run.
+          try { await safeTrackingFetch(clone.commonDir, remote, deadline); }
+          catch (error) { recordUncertainEffect(`fetch:${clone.commonDir}:${remote}`); throw error; }
+          recordCompletedEffect(`fetch:${clone.commonDir}:${remote}`);
         }
         await updateOperation(operation.id, { steps: [{ name: "fetch", state: "completed" }], status: { state: "succeeded" } }, clone.commonDir);
       } catch (error) {
