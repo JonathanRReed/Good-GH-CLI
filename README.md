@@ -7,7 +7,7 @@ I hated the GitHub CLI. This makes it bearable. `ggh` is the GitHub CLI it shoul
 
 ## Install
 
-The source candidate is `0.6.0-beta.1`. It has not been published by this preparation step. For released binaries, checksums, PATH setup, and dependencies, follow the [installation guide](docs/INSTALL.md) and the selected version's [release notes](https://github.com/JonathanRReed/Good-GH-CLI/releases).
+The latest release is `0.7.0-beta.1`. For released binaries, checksums, PATH setup, and dependencies, follow the [installation guide](docs/INSTALL.md) and the selected version's [release notes](https://github.com/JonathanRReed/Good-GH-CLI/releases).
 
 Standalone binaries need Git 2.31+, plus `gh` for GitHub operations. They need neither Bun nor Node. Bare macOS binaries are ad-hoc signed; a signed, notarized DMG is a separate artifact. Check that release's receipts.
 
