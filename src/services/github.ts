@@ -14,7 +14,7 @@ export type { ActivePullRequestInfo, CheckRunResult, MergeOutcome, MergeOptions,
 export { listPullRequests, checkoutPullRequest, viewPullRequestInBrowser, getPullRequestDiff, getActivePullRequest, getPullRequestChecks, viewPullRequest, mergePullRequest, setPullRequestState, commentOnPullRequest, editPullRequest, filterReviewComments, submitPullRequestReview, createPullRequest } from "./github/prs.ts";
 export type { NativeStack, NativeStackMember, NativeStackPlan, NativeStackRegistration, PullRequestTarget } from "./github/stacks.ts";
 export { findNativeStack, mergeStackedPullRequest, parsePullRequestUrl, planNativeStack, registerNativeStack, stackMergeSet } from "./github/stacks.ts";
-export type { IssueArtifact, IssueArtifacts, IssueDetail, IssueFilters, IssueItem } from "./github/issues.ts";
-export { listIssues, listIssueArtifacts, viewIssue, createIssue, setIssueState, commentOnIssue, commentOnIssueWithAttachments, editIssue } from "./github/issues.ts";
+export type { IssueArtifact, IssueArtifacts, IssueDetail, IssueFilters, IssueItem, IssuePlanArtifact } from "./github/issues.ts";
+export { listIssues, listIssueArtifacts, findIssuePlans, readIssuePlan, saveIssuePlan, IssuePlanTargetError, viewIssue, createIssue, setIssueState, commentOnIssue, commentOnIssueWithAttachments, editIssue } from "./github/issues.ts";
 export type { WorkflowJob, WorkflowRun } from "./github/runs.ts";
 export { listWorkflowRuns, viewWorkflowRun, getFailedRunLog, rerunWorkflowRun, cancelWorkflowRun } from "./github/runs.ts";

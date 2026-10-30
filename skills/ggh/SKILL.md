@@ -13,7 +13,7 @@ Use this in Claude Code, Codex, T3 Code, and Cursor when calling ggh.
 - Use `ggh ci why`, `ggh pr threads`, and `ggh review` for structured evidence.
 - Use ggh for exact staged-snapshot commits and snapshot-approved publication.
 - Use `ggh projects` and `ggh lost` to inspect local projects and unpublished work. Projects may refresh local index/cache files; lost is read-only. Do not run configuration subcommands unless requested.
-- Use `ggh issue <number> --agent` to read an issue with its attached plans and other artifacts; read one with `gh issue artifact view`.
+- Use `ggh issue <number> --agent` to read an issue with its attached plans and other artifacts. Read and save the issue's plan with `ggh issue plan`.
 - Use native `git --no-pager log`, `diff`, and `blame` for plain history and patches.
   For a quick dirty check, `git status --porcelain=v1 -b` is smaller than ggh.
 - Native `gh` field projections and tuned CI filters can be smaller too. The benchmark's Zod CI and run-detail cases favor native output; its VS Code CI case favors ggh. These are output-byte measurements, not proof of faster repairs or universal token savings.
@@ -119,3 +119,16 @@ ggh pr create --base main --title 'Fix empty input' --body 'Handle empty input.'
 ```
 
 Expect preview `status: "planned"`, `result.snapshotId`, `result.plan`, and `effects.pending`; execution returns workflow `result.status`, `url` when created, and completed/pending/uncertain effects. Register the returned PR with the host immediately.
+
+### 9. Save and read an issue plan
+
+```sh
+ggh issue plan 42 --show > plan.md        # the plan to follow; fails when none exists
+preview=$(mktemp)
+ggh issue plan 42 plan.md --dry-run --agent > "$preview"
+# After the user approves this exact plan:
+snapshot=$(jq -er 'select(.status == "planned") | .result.snapshotId' "$preview")
+ggh issue plan 42 plan.md --approve-plan "$snapshot" --agent
+```
+
+The plan is a `plan` artifact named "Plan" unless you pass `--name`. Saving edits the plan with that exact name as a new version instead of adding a duplicate; identical content returns `no_op`, and more than one match is refused. `result.action` is `create`, `edit`, or `no_op`. Use `-` to read standard input. Agent mode needs `--approve-plan`; `--yes` is not accepted.

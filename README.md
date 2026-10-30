@@ -157,6 +157,8 @@ Stack parents live in Git config. Restack changes local branches; submit explici
 ggh issue
 ggh issue create
 ggh issue 42                          # Includes plans and other issue artifacts
+ggh issue plan 42 plan.md             # Save a plan on the issue; same name saves a new version
+ggh issue plan 42 --show              # Print the current plan
 ggh issue develop 42
 ggh checks
 ggh checks --watch

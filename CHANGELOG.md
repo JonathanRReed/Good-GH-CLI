@@ -12,6 +12,10 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   opt out with `--no-native-stack`.
 - Show issue artifacts (plans, documents, links) in `issue <number>` and its
   JSON. Older GitHub CLI versions report them as unavailable.
+- Add `issue plan <issue> [file]` to save a plan as an issue artifact. It
+  updates the plan with the same name as a new version instead of duplicating
+  it, reports `no_op` for unchanged content, refuses ambiguous names, and needs
+  `--approve-plan` in agent mode. `--show` prints the current plan to stdout.
 
 ### Fixed
 
