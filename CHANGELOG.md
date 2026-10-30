@@ -5,29 +5,6 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
-### Changed
-
-- **Breaking:** `stack submit --agent` requires `--approve-plan <snapshotId>` from
-  an identical `--dry-run --agent`; `--yes` no longer authorizes an agent
-  submission. The snapshot binds the GitHub repository, each push URL, every
-  branch's exact tip and parent tip, the draft flag, and the GitHub-stack choice.
-  Humans can still pass `--yes`.
-- **Breaking:** `stack submit` refuses a push remote whose URL is not a GitHub
-  repository, more than one push URL, and branches behind their recorded parent.
-  Run `ggh stack restack` first, or pass `--allow-stale`.
-- **Breaking:** `stack submit` JSON reports `completed`, `remaining`, and
-  `uncertain` as named effects (`push:<branch>`, `create_pr:<branch>`,
-  `link_native_stack`) instead of branch names, and adds `snapshotId` and
-  `plan`. It always opens Pull Requests in the planned repository.
-- **Breaking:** `pr create` and `repo create` plans add `pushUrl`, the exact URL
-  `git push` uses, and refuse more than one push URL or one with embedded
-  credentials. Recovery records saved before this change cannot be resumed.
-- Tidy plans a merged branch's deletion right after its checkout's removal in
-  the same plan, with the same proofs, instead of in a second pass.
-- Tidy prunes missing-worktree metadata per entry with `git worktree remove`, so
-  one unsafe entry no longer blocks the others. A branch-backed entry can be
-  pruned while its branch holds unpushed commits; the branch stays.
-
 ### Added
 
 - Add `inbox`: review requests (direct and team), your PRs that need a fix
@@ -60,6 +37,26 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Breaking:** `stack submit --agent` requires `--approve-plan <snapshotId>` from
+  an identical `--dry-run --agent`; `--yes` no longer authorizes an agent
+  submission. The snapshot binds the GitHub repository, each push URL, every
+  branch's exact tip and parent tip, the draft flag, and the GitHub-stack choice.
+  Humans can still pass `--yes`.
+- **Breaking:** `stack submit` refuses a push remote whose URL is not a GitHub
+  repository, more than one push URL, and branches behind their recorded parent.
+  Run `ggh stack restack` first, or pass `--allow-stale`.
+- **Breaking:** `stack submit` JSON reports `completed`, `remaining`, and
+  `uncertain` as named effects (`push:<branch>`, `create_pr:<branch>`,
+  `link_native_stack`) instead of branch names, and adds `snapshotId` and
+  `plan`. It always opens Pull Requests in the planned repository.
+- **Breaking:** `pr create` and `repo create` plans add `pushUrl`, the exact URL
+  `git push` uses, and refuse more than one push URL or one with embedded
+  credentials. Recovery records saved before this change cannot be resumed.
+- Tidy plans a merged branch's deletion right after its checkout's removal in
+  the same plan, with the same proofs, instead of in a second pass.
+- Tidy prunes missing-worktree metadata per entry with `git worktree remove`, so
+  one unsafe entry no longer blocks the others. A branch-backed entry can be
+  pruned while its branch holds unpushed commits; the branch stays.
 - **Breaking (agent contract):** add error codes `not_found`, `forbidden`,
   `rate_limited` (with `retryAfterSeconds` when GitHub reports it), `network`,
   and `precondition_failed`, and the retryability `after_delay`. `not_found` is
