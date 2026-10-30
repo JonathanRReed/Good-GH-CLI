@@ -81,6 +81,14 @@ installer into a temporary prefix, and writes a SHA-256 file. Set
 and Gatekeeper-check the same artifact. The Makefile uses ad-hoc signing only
 for local developer builds.
 
+## Bundle budget for v0.7
+
+v0.7 adds `inbox`, `agent brief`, `issue plan`, push-protection classification,
+native GitHub stacks, and the error-code table. With them, `bun run build` with
+Bun 1.4.4 on macOS arm64 measures `dist/ggh.js` at 776,578 bytes. The CI limit
+is **854,236 bytes**, the final measurement plus 10%, rounded up, following the
+v0.6 rule below.
+
 ## Bundle budget for v0.6
 
 Phase 4A measured `dist/ggh.js` at 791,604 bytes before cuts, 739,130 after cuts,
