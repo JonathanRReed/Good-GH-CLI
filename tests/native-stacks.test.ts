@@ -121,6 +121,26 @@ describe("stacked merges", () => {
     expect(result.stderr).toContain("Required status check is failing");
   });
 
+  it("follows a pending merge request GitHub returns with HTTP 409", async () => {
+    const result = await runFixture(["pr", "merge", "42", "--squash", "--yes", "--json"], { root, cwd: repo, responses: [
+      { prefix: ["pr", "view", "42"], stdout: JSON.stringify(detail) }, lookup,
+      { prefix: [...stackApi, "-X", "PUT"], exitCode: 1, stderr: "gh: Conflict (HTTP 409)", stdout: JSON.stringify({ status: "pending", details: { uuid: "req-9", expected_head_sha: head, merge_method: "squash", message: "pending" } }) },
+      { prefix: [...stackApi, "repos/fixture/repo/pulls/42/merge-async/req-9"], stdout: JSON.stringify({ status: "merged", details: { message: "merged", sha: sha("d") } }) },
+    ] });
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ outcome: "merged", mergeRequestId: "req-9" });
+  });
+
+  it("refuses a pending merge request that pins a different head", async () => {
+    const result = await runFixture(["pr", "merge", "42", "--squash", "--yes", "--json"], { root, cwd: repo, responses: [
+      { prefix: ["pr", "view", "42"], stdout: JSON.stringify(detail) }, lookup,
+      { prefix: [...stackApi, "-X", "PUT"], exitCode: 1, stderr: "gh: Conflict (HTTP 409)", stdout: JSON.stringify({ status: "pending", details: { uuid: "req-9", expected_head_sha: sha("e"), merge_method: "squash" } }) },
+    ] });
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("req-9");
+    expect(result.calls.some(call => call.some(arg => arg.endsWith("/req-9")))).toBe(false);
+  });
+
   it("keeps the single-PR merge for unstacked PRs", async () => {
     const result = await runFixture(["pr", "merge", "42", "--squash", "--yes", "--json", "--no-delete-branch"], { root, cwd: repo, responses: [
       { prefix: ["pr", "view", "42", "--json", "state,mergedAt,autoMergeRequest,mergeStateStatus"], stdout: JSON.stringify({ state: "MERGED", mergedAt: "now" }) },

@@ -5,6 +5,7 @@
  * PR below it, so callers must disclose the whole set before acting.
  */
 
+import { invalidateCache } from "../cache.ts";
 import { classifyGitHubError, GitHubError, ghGlobal } from "./client.ts";
 import type { MergeOptions, MergeOutcome } from "./prs.ts";
 
@@ -167,7 +168,26 @@ export function stackMergeSet(stack: NativeStack, target: number): NativeStackMe
 
 interface AsyncMergeResponse {
   status?: unknown;
-  details?: { uuid?: unknown; message?: unknown; sha?: unknown };
+  details?: { uuid?: unknown; message?: unknown; sha?: unknown; expected_head_sha?: unknown; merge_method?: unknown };
+}
+
+/**
+ * HTTP 409 means a merge request for this PR is already pending; its body
+ * carries that request. Follow it only when it pins the same head and method.
+ */
+function pendingConflict(err: unknown, options: Pick<MergeOptions, "matchHeadCommit" | "method">): AsyncMergeResponse | null {
+  const text = [(err as { stdout?: string })?.stdout, (err as { stderr?: string })?.stderr].filter(Boolean).join("\n");
+  if (!/HTTP 409/i.test(text)) return null;
+  let body: AsyncMergeResponse;
+  try { body = JSON.parse((err as { stdout?: string })?.stdout || "{}"); } catch { return null; }
+  const details = body.details;
+  if (typeof details?.uuid !== "string") return null;
+  const sameHead = typeof details.expected_head_sha === "string" && details.expected_head_sha.toLowerCase() === options.matchHeadCommit.toLowerCase();
+  const sameMethod = details.merge_method === undefined || details.merge_method === "default" || details.merge_method === options.method;
+  if (!sameHead || !sameMethod) {
+    throw new GitHubError("unknown", `Another merge request (${details.uuid}) is already pending for this PR with a different head or merge method. Wait for it to finish, then review the PR before retrying.`);
+  }
+  return { status: "pending", details };
 }
 
 function asyncOutcome(response: AsyncMergeResponse): { outcome?: MergeOutcome; failure?: string; uuid?: string } {
@@ -193,36 +213,46 @@ export async function mergeStackedPullRequest(
     throw new Error("A full reviewed head SHA is required. Refresh the PR and retry.");
   }
   const path = `repos/${target.nameWithOwner}/pulls/${target.number}/merge-async`;
-  let response: AsyncMergeResponse;
   try {
-    const { stdout } = await stackApi(target, ["-X", "PUT", path], {
-      sha: options.matchHeadCommit,
-      merge_method: options.method,
-      ...(options.subject ? { commit_title: options.subject } : {}),
-      ...(options.body !== undefined ? { commit_message: options.body } : {}),
-    });
-    response = JSON.parse(stdout || "{}");
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (/head.*(?:does not match|doesn't match|changed|modified|mismatch)|expected.*(?:head|sha)/i.test(message)) {
-      throw new GitHubError("unknown", "PR head changed since review. Review the new head and retry with its SHA.");
-    }
-    throw classifyGitHubError(err, "stacked merge");
-  }
-
-  let result = asyncOutcome(response);
-  const uuid = result.uuid;
-  const deadline = Date.now() + MERGE_POLL_DEADLINE_MS;
-  for (let attempt = 1; !result.outcome && !result.failure && uuid && Date.now() < deadline; attempt += 1) {
-    await sleep(Math.min(1_000 * attempt, 5_000));
+    let response: AsyncMergeResponse;
     try {
-      const { stdout } = await stackApi(target, [`${path}/${uuid}`]);
-      result = { ...asyncOutcome(JSON.parse(stdout || "{}")), uuid };
-    } catch {
-      // A failed poll leaves the merge state unknown, never failed.
-      break;
+      const { stdout } = await stackApi(target, ["-X", "PUT", path], {
+        sha: options.matchHeadCommit,
+        merge_method: options.method,
+        ...(options.subject ? { commit_title: options.subject } : {}),
+        ...(options.body !== undefined ? { commit_message: options.body } : {}),
+      });
+      response = JSON.parse(stdout || "{}");
+    } catch (err) {
+      // A retry while GitHub still processes the first request: follow that request.
+      const pending = pendingConflict(err, options);
+      if (pending) response = pending;
+      else {
+        const message = err instanceof Error ? err.message : String(err);
+        if (/head.*(?:does not match|doesn't match|changed|modified|mismatch)|expected.*(?:head|sha)/i.test(message)) {
+          throw new GitHubError("unknown", "PR head changed since review. Review the new head and retry with its SHA.");
+        }
+        throw classifyGitHubError(err, "stacked merge");
+      }
     }
+
+    let result = asyncOutcome(response);
+    const uuid = result.uuid;
+    const deadline = Date.now() + MERGE_POLL_DEADLINE_MS;
+    for (let attempt = 1; !result.outcome && !result.failure && uuid && Date.now() < deadline; attempt += 1) {
+      await sleep(Math.min(1_000 * attempt, 5_000));
+      try {
+        const { stdout } = await stackApi(target, [`${path}/${uuid}`]);
+        result = { ...asyncOutcome(JSON.parse(stdout || "{}")), uuid };
+      } catch {
+        // A failed poll leaves the merge state unknown, never failed.
+        break;
+      }
+    }
+    if (result.failure) throw new GitHubError("unknown", `GitHub could not merge the stack: ${result.failure}`);
+    return { outcome: result.outcome ?? "unknown", ...(uuid ? { mergeRequestId: uuid } : {}) };
+  } finally {
+    // Any attempt may have merged PRs, including unknown outcomes.
+    invalidateCache("pr-list:");
   }
-  if (result.failure) throw new GitHubError("unknown", `GitHub could not merge the stack: ${result.failure}`);
-  return { outcome: result.outcome ?? "unknown", ...(uuid ? { mergeRequestId: uuid } : {}) };
 }
