@@ -26,8 +26,9 @@
     "developer-tools",
     "bun"
   ],
+  "packageManager": "bun@1.4.4",
   "engines": {
-    "bun": ">=1.4.0",
+    "bun": ">=1.4.4",
     "node": ">=22.0.0"
   },
   "bin": {
@@ -50,8 +51,8 @@
     "prepublishOnly": "bun run typecheck && bun run lint && bun test --timeout 30000 && bun run build",
     "test": "bun test --timeout 30000",
     "lint": "eslint src/ tests/ bin/ scripts/ bench/agent/",
-    "typecheck": "tsc --noEmit",
-    "format": "prettier --write \"src/**/*.{ts,js,json}\" \"tests/**/*.{ts,js,json}\" \"bin/**/*.{ts,js,json}\"",
+    "typecheck": "bun check",
+    "format": "bun fmt \"src/**/*.{ts,js,json}\" \"tests/**/*.{ts,js,json}\" \"bin/**/*.{ts,js,json}\"",
     "release": "bun run scripts/release.ts",
     "compile": "bun build bin/ggh.ts --compile --no-compile-autoload-dotenv --no-compile-autoload-bunfig --minify --outfile ggh",
     "package:macos": "bun run scripts/package-macos.ts",
@@ -70,7 +71,6 @@
     "@types/node": "^26.4.0",
     "eslint": "^10.9.1",
     "execa": "^10.0.1",
-    "prettier": "^3.5.2",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.25.0"
   },
