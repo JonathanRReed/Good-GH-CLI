@@ -38,6 +38,7 @@ ggh lost                             # Find work absent from local tracking refs
 ggh tidy --dry-run                    # Preview cleanup in the current clone
 ggh tidy --audit codex --ai --dry-run # Optional provider audit; requires consent
 ggh sync --all                       # Fetch and fast-forward eligible checkouts
+ggh inbox                            # Review requests, PRs to fix, PRs ready to merge
 ggh review 42 --editor                # Prepare a review checkout and open it
 ggh ci why                           # Bounded failure evidence for this branch's PR
 ```
@@ -66,6 +67,8 @@ The shell hook also supports bash, fish, and PowerShell through `init bash`, `in
 `lost` counts unpublished commits once per clone, with shared/exclusive branch counts and fetch age. It also reports stashes, dirty host checkouts, and broken gitdirs. Its suggested recovery commands are never executed. Tracking refs can be stale; the report cannot prove that a host session is abandoned. `lost --fetch` explicitly updates tracking refs first.
 
 Bulk sync fetches each remote once per clone and fast-forwards eligible checkouts to their own upstream. It skips dirty, detached, busy, locked, diverged, upstreamless, and host-owned checkouts. It never switches branches, rebases, pushes, or deletes local branches. Select names with `ggh sync api web`. Remote fork updates require `--fork-upstream` and confirmation. Plain `ggh sync` retains single-repository stale-branch cleanup.
+
+`ggh inbox` brings GitHub's pull request inbox to the terminal: review requests, your PRs with failing checks, requested changes, or conflicts, and your PRs ready to merge or already queued. Each PR names the local checkout from the projects index (for your own PRs, one on the PR branch when it exists) and the next command to run there. It never runs them. One GraphQL request with a 20-second deadline; a failed section reports why while the others still show. Filter with `ggh inbox owner` or `ggh inbox owner/repo`. A PR with no required review counts as ready once checks pass and it is mergeable.
 
 Review prepares a separate checkout without copying `.env` files or initializing submodules. `--editor` requires a supported GUI editor; plain review can fall back to terminal diff tools. `--mark` records inspected base/head SHAs explicitly; `--since last` compares against that mark. Opening an editor does not mark a review complete. Agent mode returns data without launching an editor, but can fetch refs and create the checkout.
 

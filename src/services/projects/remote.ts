@@ -11,10 +11,10 @@ import type { RemoteField, RemoteFieldName, RemoteFields, RemoteRepository, Remo
 const ALL_FIELDS: RemoteFieldName[] = ["defaultBranch", "archived", "fork", "permission", "authored", "reviewRequested", "defaultCi"];
 const TTL = 5 * 60_000;
 const RESERVE = 500;
-const RATE_FIELDS = "rateLimit { remaining resetAt cost }";
-interface Budget { remaining: number; resetAt: string; cost: number; retryAt?: string }
+export const RATE_FIELDS = "rateLimit { remaining resetAt cost }";
+export interface Budget { remaining: number; resetAt: string; cost: number; retryAt?: string }
 interface GraphError { message: string; path: (string | number)[] }
-interface Response { data: Record<string, unknown>; errors: GraphError[]; budget: Budget | null; retryAt?: string; failed: boolean }
+export interface Response { data: Record<string, unknown>; errors: GraphError[]; budget: Budget | null; retryAt?: string; failed: boolean }
 export interface RemoteOptions {
   refresh?: boolean;
   uncloned?: boolean;
@@ -40,6 +40,17 @@ function timestamp(value: unknown): string { const text = string(value); if (!Nu
 function budget(value: unknown): Budget {
   const row = object(value);
   return { remaining: count(row.remaining), resetAt: timestamp(row.resetAt), cost: count(row.cost), ...(row.retryAt ? { retryAt: timestamp(row.retryAt) } : {}) };
+}
+/** Rate-limit budget shared by every foreground remote read for one account. */
+export function remoteBudgetKey(host: string, login: string): string { return `projects-remote-budget:v1:${JSON.stringify([host, login.toLowerCase()])}`; }
+export function readRemoteBudget(key: string): Budget | null {
+  try { const saved = readCacheValue(key, 24 * 3600_000); return saved ? budget(saved) : null; } catch { return null; }
+}
+/** Why a request must not start under the saved budget, or undefined when it may. */
+export function budgetBlock(rate: Budget | null, estimatedCost: number, reserve = RESERVE, now = Date.now()): string | undefined {
+  if (rate?.retryAt && Date.parse(rate.retryAt) > now) return "GitHub retry delay";
+  if (rate && Date.parse(rate.resetAt) > now && rate.remaining - estimatedCost < reserve) return "Foreground rate-limit reserve";
+  return undefined;
 }
 export function remoteRepoKey(repo: RemoteRepoId): string { return `${repo.host}/${repo.owner}/${repo.name}`.toLowerCase(); }
 export function cloneRemoteIds(clone: IndexedClone): RemoteRepoId[] {
@@ -112,7 +123,7 @@ function retryTime(headers: Map<string, string>): string | undefined {
   if (headers.get("x-ratelimit-remaining") === "0") { const date = Number(headers.get("x-ratelimit-reset")) * 1000; if (Number.isFinite(date) && date > Date.now()) return new Date(date).toISOString(); }
   return undefined;
 }
-async function graphql(host: string, query: string, timeoutMs: number): Promise<Response> {
+export async function graphql(host: string, query: string, timeoutMs: number): Promise<Response> {
   // --include preserves retry/reset headers even when gh exits nonzero for GraphQL partial errors.
   const result = await ghGlobal(["api", "graphql", "--hostname", host, "--include", "--input", "-"], { input: JSON.stringify({ query }), reject: false, timeoutMs });
   const start = result.stdout.indexOf("{");
@@ -218,17 +229,16 @@ export async function readProjectRemotes(clones: IndexedClone[], options: Remote
           const saved = cachedRepos.get(remoteRepoKey(repo));
           if (!saved || fields.some(key => saved[key]?.state !== "ok")) pending.push(repo);
         }
-        const budgetKey = `projects-remote-budget:v1:${principal}`;
-        let rate: Budget | null = null;
-        try { const saved = readCacheValue(budgetKey, 24 * 3600_000); if (saved) rate = budget(saved); } catch { /* Invalid budget is re-read from GitHub. */ }
+        const budgetKey = remoteBudgetKey(host, authenticatedLogin);
+        // Invalid budget is re-read from GitHub.
+        let rate: Budget | null = readRemoteBudget(budgetKey);
         let stopped: string | undefined;
         let batches = 0;
         const hostResult: Pick<RemoteResult, "repositories" | "uncloned"> = { repositories: [], uncloned: [] };
         const request = async (query: string, size = 1, estimatedCost = 1): Promise<Response> => {
           const now = Date.now();
           if (performance.now() >= deadline) stopped = "deadline";
-          else if (rate?.retryAt && Date.parse(rate.retryAt) > now) stopped = "GitHub retry delay";
-          else if (rate && Date.parse(rate.resetAt) > now && rate.remaining - estimatedCost < (options.reserve ?? RESERVE)) stopped = "Foreground rate-limit reserve";
+          else stopped ??= budgetBlock(rate, estimatedCost, options.reserve ?? RESERVE, now);
           if (!stopped && batches >= (options.maxBatches ?? 200)) stopped = "Request batch cap reached";
           if (stopped) throw new Error(stopped);
           batches++; output.requests++;

@@ -1,5 +1,6 @@
 import { lostResultSchema, tidyResultSchema } from "./projects/tidy-schema.ts";
 import { projectsResultSchema } from "./projects/schema.ts";
+import { inboxResultSchema } from "./inbox-schema.ts";
 import { projectSyncResultSchema } from "./projects/sync-schema.ts";
 import type { ProjectSyncResult } from "./projects/sync.ts";
 import type { OperationRecord } from "./operations.ts";
@@ -221,6 +222,7 @@ export const coreResultSchemas = {
   tidy: { commandPaths: [["tidy"]], schema: tidyResultSchema },
   lost: { commandPaths: [["lost"]], schema: lostResultSchema },
   review: { commandPaths: [["review"]], schema: reviewResultSchema },
+  inbox: { commandPaths: [["inbox"]], schema: inboxResultSchema },
   sync: { commandPaths: [["sync"]], schema: { anyOf: [projectSyncResultSchema,
     { type: "object", required: ["schemaVersion", "query", "candidates"], properties: { schemaVersion: { const: 1 }, query: { type: "string" }, candidates: { type: "array", items: { type: "object", required: ["name", "paths"], properties: { name: { type: "string" }, paths: stringArraySchema } } } } },
     { type: "object", required: ["currentBranch", "goneBranches", "deletedCount"], properties: { currentBranch: { type: "string" }, goneBranches: stringArraySchema, deletedCount: { type: "integer", minimum: 0 } } },

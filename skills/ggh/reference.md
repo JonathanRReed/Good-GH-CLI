@@ -107,6 +107,7 @@ Every managed command accepts `--agent`. It wraps this payload in `result` and d
 | `ggh pr review` | `[prNumber]` | --guidance value, --approve, --request-changes, --comment, --local, --fix, --yes, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
 | `ggh pr threads` | `[number]` | --unresolved, --all, --since value, --max-body value, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | [reviewThreads](#reviewthreads) |
 | `ggh review` | `<pr>` | --editor, --pager, --since value, --mark, --agent, --quiet, --no-input, --json, --dry-run | [review](#review) |
+| `ggh inbox` | `[filter]` | --limit value, --agent, --quiet, --no-input, --json | [inbox](#inbox) |
 | `ggh issue` | `[issueNumber]` | --state value, --assignee value, --author value, --label value, --search value, --mine, --limit value, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
 | `ggh issue create` |  | --title value, --body value, --body-file value, --attach value, --label value, --assignee value, --ai, --from-diff, --notes value, --provider value, --agent, --quiet, --no-input, --no-ai, --json, --dry-run, --repo value | Unspecified |
 | `ggh issue close` | `<issueNumber>` | --yes, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
@@ -519,6 +520,159 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.since.threadsChanged.pagination.comments` | integer | yes |  | Comments fetched before filters. |
 | `result.since.rangeDiff` | string | no |  |  |
 | `result.since.ambiguity` | string | no |  |  |
+
+## inbox
+
+| Field | Type / values | Required in parent | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `result` | object | no |  |  |
+| `result.schemaVersion` | `1` | yes |  |  |
+| `result.host` | string | yes |  |  |
+| `result.login` | string / null | yes |  |  |
+| `result.filter` | string / null | yes |  |  |
+| `result.limit` | integer | yes |  |  |
+| `result.sections` | object | yes |  |  |
+| `result.sections.reviewRequested` | varies | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1]` | object | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1].state` | `"available"` | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1].total` | integer | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1].complete` | boolean | yes |  | False when more PRs matched than were fetched, or some were hidden. |
+| `result.sections.reviewRequested [oneOf 1].skipped` | integer | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1].skippedReason` | string | no |  |  |
+| `result.sections.reviewRequested [oneOf 1].items` | array | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[]` | object | no |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].repo` | string | yes |  | owner/name |
+| `result.sections.reviewRequested [oneOf 1].items[].number` | integer | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].title` | string | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].url` | string | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].draft` | boolean | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].author` | string / null | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].updatedAt` | string | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].headRefName` | string | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].baseRefName` | string | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].checks` | string / null | yes |  | Head commit rollup. Null means no checks; UNKNOWN means GitHub did not return it. |
+| `result.sections.reviewRequested [oneOf 1].items[].reviewDecision` | string / null | yes |  | Null means the base branch requires no review. |
+| `result.sections.reviewRequested [oneOf 1].items[].mergeable` | `["MERGEABLE","CONFLICTING","UNKNOWN"]` | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].mergeQueue` | varies | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].mergeQueue [anyOf 1]` | null | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].mergeQueue [anyOf 2]` | object | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].mergeQueue [anyOf 2].position` | integer / null | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].request` | object | no |  | Review requests only. |
+| `result.sections.reviewRequested [oneOf 1].items[].request.direct` | boolean | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].request.teams` | array | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].request.teams[]` | string | no |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].reasons` | array | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].reasons[]` | `["requested_directly","requested_via_team","checks_failing","changes_requested","conflicts","merge_queue","approved","no_review_required","checks_passing","no_checks","mergeable"]` | no |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].local` | varies | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].local [anyOf 1]` | null | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].local [anyOf 2]` | object | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].local [anyOf 2].name` | string | yes |  | Argument for ggh go. |
+| `result.sections.reviewRequested [oneOf 1].items[].local [anyOf 2].path` | string | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].local [anyOf 2].branchCheckedOut` | boolean | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].local [anyOf 2].clones` | integer | yes |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].next` | array | yes |  | Suggested argv steps in order. ggh never runs them. |
+| `result.sections.reviewRequested [oneOf 1].items[].next[]` | array | no |  |  |
+| `result.sections.reviewRequested [oneOf 1].items[].next[][]` | string | no |  |  |
+| `result.sections.reviewRequested [oneOf 2]` | object | yes |  |  |
+| `result.sections.reviewRequested [oneOf 2].state` | `"unavailable"` | yes |  |  |
+| `result.sections.reviewRequested [oneOf 2].reason` | string | yes |  |  |
+| `result.sections.reviewRequested [oneOf 2].retryAt` | string | no |  |  |
+| `result.sections.needsFix` | varies | yes |  |  |
+| `result.sections.needsFix [oneOf 1]` | object | yes |  |  |
+| `result.sections.needsFix [oneOf 1].state` | `"available"` | yes |  |  |
+| `result.sections.needsFix [oneOf 1].total` | integer | yes |  |  |
+| `result.sections.needsFix [oneOf 1].complete` | boolean | yes |  | False when more PRs matched than were fetched, or some were hidden. |
+| `result.sections.needsFix [oneOf 1].skipped` | integer | yes |  |  |
+| `result.sections.needsFix [oneOf 1].skippedReason` | string | no |  |  |
+| `result.sections.needsFix [oneOf 1].items` | array | yes |  |  |
+| `result.sections.needsFix [oneOf 1].items[]` | object | no |  |  |
+| `result.sections.needsFix [oneOf 1].items[].repo` | string | yes |  | owner/name |
+| `result.sections.needsFix [oneOf 1].items[].number` | integer | yes |  |  |
+| `result.sections.needsFix [oneOf 1].items[].title` | string | yes |  |  |
+| `result.sections.needsFix [oneOf 1].items[].url` | string | yes |  |  |
+| `result.sections.needsFix [oneOf 1].items[].draft` | boolean | yes |  |  |
+| `result.sections.needsFix [oneOf 1].items[].author` | string / null | yes |  |  |
+| `result.sections.needsFix [oneOf 1].items[].updatedAt` | string | yes |  |  |
+| `result.sections.needsFix [oneOf 1].items[].headRefName` | string | yes |  |  |
+| `result.sections.needsFix [oneOf 1].items[].baseRefName` | string | yes |  |  |
+| `result.sections.needsFix [oneOf 1].items[].checks` | string / null | yes |  | Head commit rollup. Null means no checks; UNKNOWN means GitHub did not return it. |
+| `result.sections.needsFix [oneOf 1].items[].reviewDecision` | string / null | yes |  | Null means the base branch requires no review. |
+| `result.sections.needsFix [oneOf 1].items[].mergeable` | `["MERGEABLE","CONFLICTING","UNKNOWN"]` | yes |  |  |
+| `result.sections.needsFix [oneOf 1].items[].mergeQueue` | varies | yes |  |  |
+| `result.sections.needsFix [oneOf 1].items[].mergeQueue [anyOf 1]` | null | yes |  |  |
+| `result.sections.needsFix [oneOf 1].items[].mergeQueue [anyOf 2]` | object | yes |  |  |
+| `result.sections.needsFix [oneOf 1].items[].mergeQueue [anyOf 2].position` | integer / null | yes |  |  |
+| `result.sections.needsFix [oneOf 1].items[].request` | object | no |  | Review requests only. |
+| `result.sections.needsFix [oneOf 1].items[].request.direct` | boolean | yes |  |  |
+| `result.sections.needsFix [oneOf 1].items[].request.teams` | array | yes |  |  |
+| `result.sections.needsFix [oneOf 1].items[].request.teams[]` | string | no |  |  |
+| `result.sections.needsFix [oneOf 1].items[].reasons` | array | yes |  |  |
+| `result.sections.needsFix [oneOf 1].items[].reasons[]` | `["requested_directly","requested_via_team","checks_failing","changes_requested","conflicts","merge_queue","approved","no_review_required","checks_passing","no_checks","mergeable"]` | no |  |  |
+| `result.sections.needsFix [oneOf 1].items[].local` | varies | yes |  |  |
+| `result.sections.needsFix [oneOf 1].items[].local [anyOf 1]` | null | yes |  |  |
+| `result.sections.needsFix [oneOf 1].items[].local [anyOf 2]` | object | yes |  |  |
+| `result.sections.needsFix [oneOf 1].items[].local [anyOf 2].name` | string | yes |  | Argument for ggh go. |
+| `result.sections.needsFix [oneOf 1].items[].local [anyOf 2].path` | string | yes |  |  |
+| `result.sections.needsFix [oneOf 1].items[].local [anyOf 2].branchCheckedOut` | boolean | yes |  |  |
+| `result.sections.needsFix [oneOf 1].items[].local [anyOf 2].clones` | integer | yes |  |  |
+| `result.sections.needsFix [oneOf 1].items[].next` | array | yes |  | Suggested argv steps in order. ggh never runs them. |
+| `result.sections.needsFix [oneOf 1].items[].next[]` | array | no |  |  |
+| `result.sections.needsFix [oneOf 1].items[].next[][]` | string | no |  |  |
+| `result.sections.needsFix [oneOf 2]` | object | yes |  |  |
+| `result.sections.needsFix [oneOf 2].state` | `"unavailable"` | yes |  |  |
+| `result.sections.needsFix [oneOf 2].reason` | string | yes |  |  |
+| `result.sections.needsFix [oneOf 2].retryAt` | string | no |  |  |
+| `result.sections.readyToMerge` | varies | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1]` | object | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1].state` | `"available"` | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1].total` | integer | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1].complete` | boolean | yes |  | False when more PRs matched than were fetched, or some were hidden. |
+| `result.sections.readyToMerge [oneOf 1].skipped` | integer | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1].skippedReason` | string | no |  |  |
+| `result.sections.readyToMerge [oneOf 1].items` | array | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[]` | object | no |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].repo` | string | yes |  | owner/name |
+| `result.sections.readyToMerge [oneOf 1].items[].number` | integer | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].title` | string | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].url` | string | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].draft` | boolean | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].author` | string / null | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].updatedAt` | string | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].headRefName` | string | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].baseRefName` | string | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].checks` | string / null | yes |  | Head commit rollup. Null means no checks; UNKNOWN means GitHub did not return it. |
+| `result.sections.readyToMerge [oneOf 1].items[].reviewDecision` | string / null | yes |  | Null means the base branch requires no review. |
+| `result.sections.readyToMerge [oneOf 1].items[].mergeable` | `["MERGEABLE","CONFLICTING","UNKNOWN"]` | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].mergeQueue` | varies | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].mergeQueue [anyOf 1]` | null | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].mergeQueue [anyOf 2]` | object | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].mergeQueue [anyOf 2].position` | integer / null | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].request` | object | no |  | Review requests only. |
+| `result.sections.readyToMerge [oneOf 1].items[].request.direct` | boolean | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].request.teams` | array | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].request.teams[]` | string | no |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].reasons` | array | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].reasons[]` | `["requested_directly","requested_via_team","checks_failing","changes_requested","conflicts","merge_queue","approved","no_review_required","checks_passing","no_checks","mergeable"]` | no |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].local` | varies | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].local [anyOf 1]` | null | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].local [anyOf 2]` | object | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].local [anyOf 2].name` | string | yes |  | Argument for ggh go. |
+| `result.sections.readyToMerge [oneOf 1].items[].local [anyOf 2].path` | string | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].local [anyOf 2].branchCheckedOut` | boolean | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].local [anyOf 2].clones` | integer | yes |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].next` | array | yes |  | Suggested argv steps in order. ggh never runs them. |
+| `result.sections.readyToMerge [oneOf 1].items[].next[]` | array | no |  |  |
+| `result.sections.readyToMerge [oneOf 1].items[].next[][]` | string | no |  |  |
+| `result.sections.readyToMerge [oneOf 2]` | object | yes |  |  |
+| `result.sections.readyToMerge [oneOf 2].state` | `"unavailable"` | yes |  |  |
+| `result.sections.readyToMerge [oneOf 2].reason` | string | yes |  |  |
+| `result.sections.readyToMerge [oneOf 2].retryAt` | string | no |  |  |
+| `result.waiting` | integer / null | yes |  | Your open PRs in neither section. |
+| `result.local` | object | yes |  |  |
+| `result.local.indexedAt` | string | yes |  |  |
+| `result.local.clones` | integer | yes |  |  |
+| `result.requests` | integer | yes |  |  |
+| `result.cost` | integer | yes |  |  |
 
 ## sync
 

@@ -7,6 +7,10 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add `inbox`: review requests (direct and team), your PRs that need a fix
+  (failing checks, changes requested, conflicts), and your PRs ready to merge,
+  each tied to its local clone with a suggested next command. One bounded
+  GraphQL request, a deadline, and per-section partial results. Read-only.
 - Link `stack submit` PRs as a native GitHub stack when the branches form one
   chain. Extend a matching stack, report conflicts without changing them, and
   opt out with `--no-native-stack`.
