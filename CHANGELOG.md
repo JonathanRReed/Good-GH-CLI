@@ -15,6 +15,13 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Keep push and pull request CI runs separate in `ci why`, retain completed
+  failures at the head SHA, and report disagreements with failed PR checks.
+- Group identical CI errors, cap total stdout with `--max-output-bytes`, and
+  report omitted evidence. Keep `--max-bytes` as the per-job evidence limit.
+- Name the repository and PR in CI evidence, and omit annotation truncation
+  metadata when all annotations fit.
+
 - Merge stacked PRs through GitHub's async merge API; the legacy merge path
   refuses them. Disclose every PR the merge lands, recheck their heads after
   confirmation, refuse `--auto`, and report merged, queued, or unknown.

@@ -13,10 +13,10 @@ or billed-token measurement has run.
 
 | Case | Native bytes | ggh bytes | Native ~tokens | ggh ~tokens | Native / ggh recall | Native / ggh calls |
 |---|---:|---:|---:|---:|---|---|
-| Zod CI | 5,402 | 7,231 | 1,350.5 | 1,807.75 | 100% / 100% | 4 / 1 |
+| Zod CI | 5,402 | 7,224 | 1,350.5 | 1,806 | 100% / 100% | 4 / 1 |
 | Zod status | 121 | 181 | 30.25 | 45.25 | 100% / 100% | 1 / 1 |
 | Zod run | 230,459 | 233,858 | 57,614.75 | 58,464.5 | 100% / 100% | 2 / 1 |
-| VS Code CI | 133,470 | 8,625 | 33,367.5 | 2,156.25 | 100% / 100% | 5 / 1 |
+| VS Code CI | 133,470 | 8,565 | 33,367.5 | 2,141.25 | 100% / 100% | 5 / 1 |
 | VS Code status | 121 | 181 | 30.25 | 45.25 | 100% / 100% | 1 / 1 |
 | VS Code run | 11,533 | 11,846 | 2,883.25 | 2,961.5 | 100% / 100% | 2 / 1 |
 
@@ -33,6 +33,23 @@ retrieval. A native script can combine its command sequence into one tool call;
 the calls column assumes separate native invocations and one ggh invocation.
 `results.json` also records ggh's internal subprocess calls. This is not a claim
 that ggh makes fewer GitHub requests.
+
+The CI walkthrough fix was measured at `e192b1e` and again after the fix with
+`bun run bench:agent`. Zod CI changed from 7,231 to 7,224 stdout bytes; VS Code CI
+changed from 8,625 to 8,565 bytes. Both runs retained 100% of declared evidence.
+Other rows were unchanged. These pinned specimens have no repeated failure
+groups, so they do not measure the savings from grouping repeated errors.
+
+`ci why --max-bytes` remains a per-job evidence and annotation budget, default
+6144. `--max-output-bytes` now caps complete stdout, including metadata and the
+agent envelope or terminal rendering, default 16384 and minimum 1024. Matching
+normalized error lines and annotations share a failure entry with affected
+`jobs`. Group line numbers and log byte totals refer to the first job. Empty
+error evidence never groups. `outputTruncated` reports the pre-cap rendered
+bytes and omitted evidence, annotations, jobs, groups, runs, and unavailable
+entries. Annotation truncation metadata appears only when annotations are
+omitted. Regression fixtures cover 23 repeated or distinct failures, UTF-8 and
+JSON escaping, and total output caps in agent, JSON, and terminal modes.
 
 ## Fixtures and replay
 

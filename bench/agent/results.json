@@ -45,8 +45,8 @@
       "ggh": {
         "recall": 1,
         "missing": [],
-        "bytes": 7231,
-        "tokens": 1807.75,
+        "bytes": 7224,
+        "tokens": 1806,
         "toolCalls": 1,
         "subprocessCalls": 6,
         "exitCode": 0,
@@ -188,8 +188,8 @@
       "ggh": {
         "recall": 1,
         "missing": [],
-        "bytes": 8625,
-        "tokens": 2156.25,
+        "bytes": 8565,
+        "tokens": 2141.25,
         "toolCalls": 1,
         "subprocessCalls": 10,
         "exitCode": 0,

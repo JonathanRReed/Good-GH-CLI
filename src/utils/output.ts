@@ -25,13 +25,22 @@ export function emitJson(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
+/** Serialize the pending result exactly as stdout will emit it, including its envelope. */
+export function formatJsonOutput(value: unknown): string {
+  const issue = getCommandIssue();
+  if (getFlags().agent) {
+    return `${JSON.stringify(agentEnvelope({ command: getCommandPath(), result: value, issue: issue ? { ...issue, message: stripAnsi(issue.message) } : undefined, operation: getFinishedOperation(), failed: Boolean(process.exitCode), dryRun: getFlags().dryRun, preview: getPreview(), completedEffects: getCompletedEffects(), uncertainEffects: getUncertainEffects() }))}\n`;
+  }
+  return `${JSON.stringify(value, null, ["pr threads", "projects", "go", "sync"].includes(getCommandPath().join(" ")) || getCommandPath()[0] === "projects" ? undefined : 2)}\n`;
+}
+
 export function finalizeJsonOutput(): void {
   if (!getFlags().json) return;
   const issue = getCommandIssue();
   if (getFlags().agent) {
     const result = getEmittedJson()?.value;
     takePendingJson();
-    process.stdout.write(`${JSON.stringify(agentEnvelope({ command: getCommandPath(), result, issue: issue ? { ...issue, message: stripAnsi(issue.message) } : undefined, operation: getFinishedOperation(), failed: Boolean(process.exitCode), dryRun: getFlags().dryRun, preview: getPreview(), completedEffects: getCompletedEffects(), uncertainEffects: getUncertainEffects() }))}\n`);
+    process.stdout.write(formatJsonOutput(result));
     return;
   }
   if (!hasJsonOutput() && issue) {
@@ -42,7 +51,7 @@ export function finalizeJsonOutput(): void {
     emitJson({ status: "planned", steps: getPreview() });
   }
   const pending = takePendingJson();
-  if (pending) process.stdout.write(`${JSON.stringify(pending.value, null, ["pr threads", "projects", "go", "sync"].includes(getCommandPath().join(" ")) || getCommandPath()[0] === "projects" ? undefined : 2)}\n`);
+  if (pending) process.stdout.write(formatJsonOutput(pending.value));
 }
 
 function chromeSuppressed(): boolean {

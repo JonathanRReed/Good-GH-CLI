@@ -124,7 +124,7 @@ Every managed command accepts `--agent`. It wraps this payload in `result` and d
 | `ggh run cancel` | `<runId>` | --yes, --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run, --repo value | Unspecified |
 | `ggh checks` |  | --watch, --timeout value, --dry-run, --agent, --quiet, --no-input, --json, --repo value | Unspecified |
 | `ggh ci` |  | --agent, --quiet, --no-input, --json, --repo value | Unspecified |
-| `ggh ci why` | `[target]` | --run, --max-bytes value, --context value, --agent, --quiet, --no-input, --json, --repo value | [ciWhy](#ciwhy) |
+| `ggh ci why` | `[target]` | --run, --max-bytes value, --max-output-bytes value, --context value, --agent, --quiet, --no-input, --json, --repo value | [ciWhy](#ciwhy) |
 | `ggh api` | `<endpoint...>` | --agent, --quiet, --no-input, --json, --dry-run, --repo value | Unspecified |
 | `ggh notifications` |  | --limit value, --all, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
 | `ggh notifications list` |  | --limit value, --all, --agent, --quiet, --no-input, --json, --dry-run | Unspecified |
@@ -600,6 +600,7 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | --- | --- | --- | --- | --- |
 | `result` | object | no |  |  |
 | `result.schemaVersion` | `1` | yes |  |  |
+| `result.repository` | string | yes |  |  |
 | `result.headSha` | string | yes |  |  |
 | `result.pr` | object | no |  |  |
 | `result.pr.number` | integer | yes |  |  |
@@ -609,6 +610,7 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.runs[].id` | integer | yes |  |  |
 | `result.runs[].url` | string | yes |  |  |
 | `result.runs[].workflow` | string | yes |  |  |
+| `result.runs[].event` | string | no |  |  |
 | `result.runs[].conclusion` | string | yes |  |  |
 | `result.runs[].sha` | string | yes |  |  |
 | `result.runs[].stale` | boolean | yes |  |  |
@@ -617,11 +619,18 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.failures[].job` | string | yes |  |  |
 | `result.failures[].step` | string | yes |  |  |
 | `result.failures[].url` | string | yes |  |  |
+| `result.failures[].jobs` | array | no |  |  |
+| `result.failures[].jobs[]` | object | no |  |  |
+| `result.failures[].jobs[].job` | string | yes |  |  |
+| `result.failures[].jobs[].step` | string | yes |  |  |
+| `result.failures[].jobs[].url` | string | yes |  |  |
+| `result.failures[].jobs[].runId` | integer | yes |  |  |
+| `result.failures[].jobs[].logSource` | `["failed-step","full-job"]` | yes |  |  |
 | `result.failures[].logSource` | `["failed-step","full-job"]` | yes |  |  |
 | `result.failures[].truncated` | object | yes |  |  |
 | `result.failures[].truncated.bytesTotal` | integer | yes |  |  |
 | `result.failures[].truncated.bytesShown` | integer | yes |  |  |
-| `result.failures[].annotationsTruncated` | object | yes |  |  |
+| `result.failures[].annotationsTruncated` | object | no |  |  |
 | `result.failures[].annotationsTruncated.bytesTotal` | integer | yes |  |  |
 | `result.failures[].annotationsTruncated.bytesShown` | integer | yes |  |  |
 | `result.failures[].annotations` | array | yes |  |  |
@@ -637,6 +646,15 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.failures[].evidence[]` | object | no |  |  |
 | `result.failures[].evidence[].line` | integer | yes |  |  |
 | `result.failures[].evidence[].text` | string | yes |  |  |
+| `result.outputTruncated` | object | no |  |  |
+| `result.outputTruncated.bytesTotal` | integer | yes |  |  |
+| `result.outputTruncated.maxBytes` | integer | yes |  |  |
+| `result.outputTruncated.evidenceLines` | integer | yes |  |  |
+| `result.outputTruncated.annotations` | integer | yes |  |  |
+| `result.outputTruncated.jobs` | integer | yes |  |  |
+| `result.outputTruncated.failures` | integer | yes |  |  |
+| `result.outputTruncated.runs` | integer | yes |  |  |
+| `result.outputTruncated.unavailable` | integer | yes |  |  |
 | `result.unavailable` | array | yes |  |  |
 | `result.unavailable[]` | object | no |  |  |
 | `result.unavailable[].source` | string | yes |  |  |
