@@ -3,6 +3,190 @@
 All notable changes to this project are documented here.
 This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Added
+
+- Add `inbox`: review requests (direct and team), your PRs that need a fix
+  (failing checks, changes requested, conflicts), and your PRs ready to merge,
+  each tied to its local clone with a suggested next command. One bounded
+  GraphQL request, a deadline, and per-section partial results. Read-only.
+- `tidy --allow-unknown-under <dir>` approves plain Git checkouts strictly below
+  one directory. Host worktrees (T3, Claude, Cursor, Codex) stay manual-only, and
+  home directories and filesystem roots are refused.
+- Link `stack submit` PRs as a native GitHub stack when the branches form one
+  chain. Extend a matching stack, report conflicts without changing them, and
+  opt out with `--no-native-stack`.
+- Show issue artifacts (plans, documents, links) in `issue <number>` and its
+  JSON. Older GitHub CLI versions report them as unavailable.
+- Add `issue plan <issue> [file]` to save a plan as an issue artifact. It
+  updates the plan with the same name as a new version instead of duplicating
+  it, reports `no_op` for unchanged content, refuses ambiguous names, and needs
+  `--approve-plan` in agent mode. `--show` prints the current plan to stdout.
+- Add `agent brief`, one session-start read of checkout identity, the branch
+  PR, CI counts with failing check names, the unresolved thread count, linked
+  issues with artifacts, and native stack position. Each GitHub section reports
+  its own availability under one 15-second deadline; `--local` skips GitHub.
+- Add `agent schema <command>`, which returns one command's flags and result
+  schema instead of the whole 160 KB contract. Aliases such as `st` resolve.
+- Report `unpublished` (commits on no remote ref, including a detached HEAD's
+  own), `aheadOfDefault`, and an unfinished `stackOperation` in `agent brief`.
+  Suggest `pr create --dry-run` for unpublished work, `git switch -c` for
+  detached commits, and `stack restack --continue`/`--abort` for a stopped
+  restack, including with `--local`.
+
+### Changed
+
+- **Breaking:** `stack submit --agent` requires `--approve-plan <snapshotId>` from
+  an identical `--dry-run --agent`; `--yes` no longer authorizes an agent
+  submission. The snapshot binds the GitHub repository, each push URL, every
+  branch's exact tip and parent tip, the draft flag, and the GitHub-stack choice.
+  Humans can still pass `--yes`.
+- **Breaking:** `stack submit` refuses a push remote whose URL is not a GitHub
+  repository, more than one push URL, and branches behind their recorded parent.
+  Run `ggh stack restack` first, or pass `--allow-stale`.
+- **Breaking:** `stack submit` JSON reports `completed`, `remaining`, and
+  `uncertain` as named effects (`push:<branch>`, `create_pr:<branch>`,
+  `link_native_stack`) instead of branch names, and adds `snapshotId` and
+  `plan`. It always opens Pull Requests in the planned repository.
+- **Breaking:** `pr create` and `repo create` plans add `pushUrl`, the exact URL
+  `git push` uses, and refuse more than one push URL or one with embedded
+  credentials. Recovery records saved before this change cannot be resumed.
+- Tidy plans a merged branch's deletion right after its checkout's removal in
+  the same plan, with the same proofs, instead of in a second pass.
+- Tidy prunes missing-worktree metadata per entry with `git worktree remove`, so
+  one unsafe entry no longer blocks the others. A branch-backed entry can be
+  pruned while its branch holds unpushed commits; the branch stays.
+- **Breaking (agent contract):** add error codes `not_found`, `forbidden`,
+  `rate_limited` (with `retryAfterSeconds` when GitHub reports it), `network`,
+  and `precondition_failed`, and the retryability `after_delay`. `not_found` is
+  `after_input`, `forbidden` is `never`, and `rate_limited` and `network` are
+  `after_delay` for reads and `after_inspection` when a mutation's outcome is
+  uncertain. `precondition_failed` means local or remote state blocked the
+  command before any effect; it is `after_inspection` with no uncertain effects.
+- **Breaking (agent contract):** a failed read no longer reports
+  `effects.uncertain: ["command_effects"]`. Only commands that can mutate do.
+- **Breaking (agent contract):** `needs_input` always has code `missing_input`
+  or `confirmation_required` and names real flags or arguments in
+  `requiredInputs`. Prompts without a single flag fail with `invalid_arguments`
+  instead of naming `explicit_options`. `commit` without `-m` names `-m`, and
+  its `--yes` gates name `--yes`.
+- **Breaking (agent and JSON):** publication preflight reports state problems,
+  such as a stale base, a diverged remote branch, or an unavailable repository,
+  as `status: "failed"` with `precondition_failed` instead of `needs_input`.
+  Real inputs report `required: "name"`, `"base"`, or `"remote"`.
+- **Breaking:** `commit` with nothing staged and no terminal fails with
+  `precondition_failed` and asks for `git add <paths>`, instead of a staging
+  prompt that suggested `--all`. A clean tree reports `status: "no_op"` in its
+  result instead of `succeeded` with `noOp: true`.
+- **Breaking:** `status --agent` outside a repository fails with
+  `invalid_arguments` instead of succeeding with `result: null`. Every command
+  that needs a checkout uses the same code and message.
+- **Breaking (agent contract):** `agent brief` reports `ahead` and `behind` as
+  null without an upstream.
+- `tidy` results carry `snapshotId` at the top level, like `pr create`.
+- `review` resolves its checkout under the main clone, so a rerun from inside a
+  review checkout reuses it instead of nesting another. A rerun at the same
+  head reports `no_op` and `result.checkout: "reused"`, and revisions already
+  present locally are not fetched again.
+- `stack on` reports `no_op` when the parent is already recorded and keeps the
+  recorded fork point.
+- `projects` reports `projects_index_updated` only when a scan changed the
+  index, not when only scan timestamps moved.
+- Classify GitHub push-protection rejections (GH013/GH009, including AI-detected
+  secrets) from `commit --push`, `pr create`, `repo create`, `operation resume`,
+  `stack submit`, and `rename`. Git's remote output still streams live. ggh
+  never retries the push, lists each secret's type, commit, path, and line,
+  explains how to rewrite the unpublished commits and rotate the secret, and
+  shows GitHub's bypass page only as a person's decision. `--agent` reports
+  `push_protection_blocked` with retryability `never`, the findings in
+  `error.pushProtection`, and the push as pending. Operation records mark the
+  push `failed`, not uncertain.
+- Accept `repo view [owner/name]` as an alias of the repository detail view,
+  matching `gh repo view` muscle memory.
+- Group top-level `--help` by workflow (Projects, Review & publish, Branches
+  & stacks, CI, Agents, Native escapes), lead with the one-line pitch, and add
+  three example invocations.
+
+### Fixed
+
+- `go` never jumps on a typo. Fuzzy matching runs against the project name and
+  owner/repo only, never filesystem paths, and a match must be a run of adjacent
+  characters or an in-order match that skips at most as many name characters as
+  the query types. A miss exits nonzero with a clone suggestion; exact paths
+  still resolve.
+- `go` resolves from the saved project index instead of rescanning every root on
+  every call. It refreshes only when the index cannot answer (a miss, or every
+  indexed checkout has vanished) and retries once before reporting.
+- Every `inbox` suggestion is now one self-contained command that works from any
+  directory: remote commands carry `-R owner/repo` (`ci why`, `pr threads`,
+  `pr view`, `pr merge`), and local ones start with `cd "$(ggh go ... --print)"`.
+  `clone` registers each checkout it creates, so `go` finds it immediately even
+  outside every scan root.
+- `inbox` shows the base branch when it is not the default branch, warns when a
+  PR is stacked on another open PR (`stacked on #N`), and no longer renders
+  PRs without checks as plainly green ("no checks (unverified)").
+- `inbox --limit` rejects invalid values (`0`, `abc`, negatives) with a clear
+  error instead of silently defaulting, and says when a value is clamped to 50,
+  in the warning and in the JSON payload (`requestedLimit`).
+- Keep push and pull request CI runs separate in `ci why`, retain completed
+  failures at the head SHA, and report disagreements with failed PR checks.
+- Group identical CI errors, cap total stdout with `--max-output-bytes`, and
+  report omitted evidence. Keep `--max-bytes` as the per-job evidence limit.
+- Name the repository and PR in CI evidence, and omit annotation truncation
+  metadata when all annotations fit.
+- Report uncommitted changes in every checkout in `lost`, including plain Git
+  and ggh worktrees. Exclude ignored files from dirty state.
+- Skip missing and prunable worktrees during bulk sync so other checkouts can
+  still update. Label offline dry-run outcomes with their last fetch timestamp.
+- Scope project warnings and broken-checkout items to the selected projects;
+  summarize broken checkouts elsewhere without assigning them to another clone.
+- Batch `lost` commit and reflog walks, inspect clones with bounded workers,
+  and show terminal progress on stderr. Sort discovery gaps and lost items.
+- Suggest distinct, unused recovery branch names. Label completed restack
+  pre-images separately when the saved checkpoint matches the branch tip.
+
+- `tidy --fetch` snapshots can now be approved. They bind the exact refs and
+  OIDs the fetch observed instead of its timestamp, and the fetch is reported as
+  a completed `fetch:<clone>:<remote>` effect, including in a dry run.
+- `pr create` plans showed the fetch URL while publication pushed to the push
+  URL. The plan now shows and binds the push URL, and execution refuses if it
+  changed before any push.
+- Missing-worktree pruning also keeps entries with staged index content,
+  per-worktree refs, an operation in progress, or reflog commits nothing else
+  keeps.
+- Merge stacked PRs through GitHub's async merge API; the legacy merge path
+  refuses them. Disclose every PR the merge lands, recheck their heads after
+  confirmation, refuse `--auto`, and report merged, queued, or unknown.
+- Report an unreachable GitHub (offline, dead proxy) as `network` with gh's own
+  error, instead of "GitHub CLI is not authenticated".
+- `pr view <n>`, `issue <n>`, `run <id>`, and `repo view` report a missing
+  target as `not_found` and network or permission failures as such, instead of
+  treating every failure as missing. `pr view <n>` says the PR was not found
+  rather than "No PR found for the current branch".
+- Strip raw GraphQL response bodies from error messages.
+- `go`, `projects`, and `sync` report a query with no matching project as
+  `not_found`; an ambiguous one names the real argument (`query` or `project`).
+- `stack restack` during a stopped restack names it and points at `--continue`
+  or `--abort` instead of "Cannot restack from a detached HEAD".
+- Print read-only browse output instead of cancelling when there is no terminal:
+  `pr`, `pr <n>`, `pr list`, `issue`, `issue <n>`, `run`, and `switch` list or
+  summarize on stdout and exit 0. Cannot-prompt hints now name only flags the
+  running command actually declares.
+- Report commander usage errors (missing arguments, unknown options) exactly
+  once, and replace the internal `(outputHelp)` sentinel from `ggh help
+  <unknown>` with a clean unknown-command message.
+- Fail fast with "Not in a GitHub repository; pass -R owner/repo." when GitHub
+  commands run outside a repository, instead of dumping the raw `gh` error or
+  reporting a missing issue.
+- Fall back to 80 columns when the terminal width reports zero instead of
+  collapsing every table row to an ellipsis; keep 100 columns when piped.
+- Keep the projects table readable: never shrink Name below the longest name
+  (capped at 28), shrink other columns first, drop all-zero columns such as an
+  unused Stashes column, replace per-row "stale" labels with one "cached
+  <age>" header line, say "N dirty checkouts", and truncate checkout paths in
+  the middle so the leaf directory stays visible.
+
 ## 0.6.0-beta.1 - 2026-10-22
 
 

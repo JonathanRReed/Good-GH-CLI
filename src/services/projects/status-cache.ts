@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { lstatSync, readFileSync } from "node:fs";
-import { open, rename, unlink } from "node:fs/promises";
+import { open, unlink } from "node:fs/promises";
+import { replaceFile } from "../../utils/replace-file.ts";
 import { join } from "node:path";
 import { getConfigDir, type GoodGhConfig } from "../config.ts";
 import { acquireProcessLock } from "../process-lock.ts";
@@ -69,7 +70,7 @@ export async function writeProjectStatusCache(scope: string, statuses: CloneStat
     const snapshot: StatusSnapshot = { version: 1, scope, observedAt: new Date().toISOString(), statuses };
     const handle = await open(temporary, "wx", 0o600);
     try { await handle.writeFile(`${JSON.stringify(snapshot)}\n`, "utf8"); await handle.sync(); } finally { await handle.close(); }
-    await rename(temporary, projectStatusPath(configDir));
+    await replaceFile(temporary, projectStatusPath(configDir));
   } finally {
     try { await unlink(temporary).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; }); }
     finally { await release(); }

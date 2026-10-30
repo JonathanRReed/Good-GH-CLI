@@ -1,11 +1,11 @@
 import type { Command } from "commander";
-import { getFlags, setFlags, setAIExplicitlyDisabled, beginCommandOutput, recordPreview, setCommandPath } from "../services/runtime.ts";
+import { getFlags, setFlags, setAIExplicitlyDisabled, beginCommandOutput, recordPreview, setCommandPath, setCommandOptions } from "../services/runtime.ts";
 import { getConfig } from "../services/config.ts";
 import { p, pc } from "./ui.ts";
 
 /** Commands that can emit structured data instead of a rendered view. */
 export const JSON_CAPABLE = new Set([
-  "tidy", "lost", "projects", "go", "clone", "commit", "operation", "review",
+  "tidy", "lost", "projects", "go", "clone", "commit", "operation", "review", "inbox",
   "status", "pr", "checks", "ci", "log", "stash", "worktree", "config",
   "issue", "run", "repo", "stack", "sync", "api",
   "notifications",
@@ -83,6 +83,8 @@ export function applyGlobalFlags(program: Command): void {
     const names: string[] = [];
     for (let current: Command | null = actionCommand; current?.parent; current = current.parent) names.unshift(current.name());
     setCommandPath(names);
+    // Prompts can only suggest flags this command really declares.
+    setCommandOptions(actionCommand.options.filter(option => !option.hidden).map(option => ({ ...(option.short ? { short: option.short } : {}), ...(option.long ? { long: option.long } : {}), takesValue: option.required || option.optional })));
     const parent = actionCommand.parent;
     for (let ancestor = parent; ancestor; ancestor = ancestor.parent) {
       for (const [key, value] of Object.entries(ancestor.opts())) {

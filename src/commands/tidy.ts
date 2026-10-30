@@ -24,6 +24,7 @@ export function registerTidyCommand(program: Command): void {
     .option("--remote-branches", "Include proven merged branches on your own origin")
     .option("--allow-ignored <path>", "Approve ignored files for this exact checkout in a new plan", append, [])
     .option("--allow-unknown <path>", "Approve unknown provenance for this exact checkout in a new plan", append, [])
+    .option("--allow-unknown-under <dir>", "Approve unknown provenance for plain Git checkouts below this directory; never host worktrees", append, [])
     .option("--stale-days <days>", "Report repositories inactive for this many days", Number, 120)
     .option("-y, --yes", "Approve the displayed snapshot without prompting")
     .option("--approve-plan <id>", "Approve an exact dry-run snapshot, required for agents")
@@ -36,11 +37,12 @@ export function registerTidyCommand(program: Command): void {
         if (options.proceedWithoutAudit && !options.audit) throw new Error("--proceed-without-audit requires --audit");
         const { clones, coverage } = await cleanupProjects(names, Boolean(options.all));
         if (options.fetch) await fetchCleanupClones(clones, "tidy", controller.signal);
-        const originalPlan = await buildTidyPlan(clones, { remoteBranches: options.remoteBranches, allowIgnored: options.allowIgnored, allowUnknown: options.allowUnknown, staleDays: options.staleDays });
+        const originalPlan = await buildTidyPlan(clones, { remoteBranches: options.remoteBranches, allowIgnored: options.allowIgnored, allowUnknown: options.allowUnknown, allowUnknownUnder: options.allowUnknownUnder, staleDays: options.staleDays });
         const audited = options.audit ? await auditTidyPlan(originalPlan, { provider: options.audit, approvePlan: options.approvePlan }) : undefined;
         const plan = audited?.plan ?? originalPlan;
         const lost = await findLost(clones);
-        const payload = { schemaVersion: 1, plan, lost, coverage, ...(audited ? { audit: audited.audit } : {}) };
+        // snapshotId sits at the top level, like pr create and repo create plans.
+        const payload = { schemaVersion: 1, snapshotId: plan.snapshotId, plan, lost, coverage, ...(audited ? { audit: audited.audit } : {}) };
         const count = plan.clones.reduce((n, clone) => n + clone.actions.length, 0);
         if (!getFlags().json) {
           if (audited) for (const line of renderTidyAudit(originalPlan, audited.audit)) p.log.message(fitProjectLine(line, options));

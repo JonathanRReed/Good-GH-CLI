@@ -54,11 +54,11 @@ const project = {
 };
 export const projectsResultSchema = {
   type: "object", required: ["schemaVersion"], properties: {
-    schemaVersion: { const: 1 }, updatedAt: { type: "string" },
+    schemaVersion: { const: 1 }, updatedAt: { type: "string", description: "When the index was last scanned. A rescan that changes nothing but scan timestamps reports no projects_index_updated effect." },
     remote: { type: "object", required: ["requests", "cost", "uncloned"], properties: { requests: count, cost: count, uncloned: { type: "array", items: uncloned } } },
     projects: { type: "array", items: project }, project,
     history: { type: "object", required: ["recent", "unpublished"], properties: { recent: field({ type: "array", items: commit }), unpublished: field({ type: "array", items: commit }) } },
-    coverage: { type: "object", required: ["roots", "skipped", "truncated"], properties: { roots: strings, truncated: { type: "boolean" }, skipped: { type: "array", items: { type: "object", required: ["path", "reason"], properties: { path: { type: "string" }, reason: { type: "string" } } } } } },
+    coverage: { type: "object", required: ["roots", "skipped", "truncated"], properties: { roots: strings, brokenElsewhere: { type: "integer", minimum: 0 }, truncated: { type: "boolean" }, skipped: { type: "array", items: { type: "object", required: ["path", "reason"], properties: { path: { type: "string" }, reason: { type: "string" } } } } } },
     query: { type: "string" }, candidates: { type: "array", items: { type: "object", required: ["name", "paths"], properties: { name: { type: "string" }, paths: strings, primary: remote } } }, suggestion: strings,
     roots: strings, registered: { type: "string" }, excluded: { type: "string" },
   },

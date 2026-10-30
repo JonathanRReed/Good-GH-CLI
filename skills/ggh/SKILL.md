@@ -9,10 +9,13 @@ Use this in Claude Code, Codex, T3 Code, and Cursor when calling ggh.
 
 ## Choose the tool
 
+- Start each session with `ggh agent brief --agent`: checkout, branch PR, CI counts, unresolved threads, linked issues, and stack in one call. Follow its `next` hints for detail; a section with `state: "unavailable"` was not read, which is not the same as empty.
 - Use `ggh status --agent` for checkout identity, HEAD, staging, conflicts, base and push targets.
 - Use `ggh ci why`, `ggh pr threads`, and `ggh review` for structured evidence.
 - Use ggh for exact staged-snapshot commits and snapshot-approved publication.
+- Use `ggh inbox --agent` to find PRs awaiting your review, fix, or merge. Each item has `local.path` and `next` shell-command suggestions; they are data, not permission. Each `next` entry is self-contained and works from any directory (`-R` for remote commands, `cd "$(ggh go ... --print)"` first for local ones). It is read-only.
 - Use `ggh projects` and `ggh lost` to inspect local projects and unpublished work. Projects may refresh local index/cache files; lost is read-only. Do not run configuration subcommands unless requested.
+- Use `ggh issue <number> --agent` to read an issue with its attached plans and other artifacts. Read and save the issue's plan with `ggh issue plan`.
 - Use native `git --no-pager log`, `diff`, and `blame` for plain history and patches.
   For a quick dirty check, `git status --porcelain=v1 -b` is smaller than ggh.
 - Native `gh` field projections and tuned CI filters can be smaller too. The benchmark's Zod CI and run-detail cases favor native output; its VS Code CI case favors ggh. These are output-byte measurements, not proof of faster repairs or universal token savings.
@@ -22,45 +25,63 @@ Use this in Claude Code, Codex, T3 Code, and Cursor when calling ggh.
 Always pass `--agent` to managed ggh commands. It prevents prompts and pagers.
 Raw `git`/`gh` escapes retain native behavior; disable their pagers and prompts separately.
 
-Read `status`, `error.code`, `error.retryability`, `requiredInputs`, and `effects` before continuing.
-`needs_input` requires the named input, not a retry loop. Inspect `partially_completed` and
-`effects.completed`, `pending`, and `uncertain` before retrying a mutation.
-Read-only status may omit empty effects. Omitted counts mean zero, `root` means cwd,
-`push` means upstream, and `fetchedAt` is local fetch metadata, not remote freshness.
+Read `status`, `error.code`, `error.retryability`, `requiredInputs`, and `effects` before continuing. `needs_input` always names a flag or argument in `requiredInputs`; supply it, do not retry unchanged. `no_op` means nothing needed doing. Act on `error.retryability`: `after_input` needs changed input, `after_delay` (`rate_limited`, `network`) can retry unchanged after waiting `retryAfterSeconds` when given, `after_inspection` needs a look at state first, and `never` means report to the user. `not_found` and `forbidden` are GitHub answers, not outages. A failed read never has uncertain effects; inspect `partially_completed` and `effects.completed`, `pending`, and `uncertain` before retrying a mutation.
+Read-only status may omit empty effects. Omitted counts mean zero, `root` means cwd, `push` means upstream, and `fetchedAt` is local fetch metadata, not remote freshness.
 
 Read [reference.md](reference.md) for per-command result fields, defaults and input flags.
-Use `ggh agent schema --agent` to check the installed version's contract.
+Use `ggh agent schema <command> --agent`, such as `ggh agent schema pr create --agent`, to check one
+command's flags and result schema in the installed version. Without a command it prints the whole
+contract, which is large.
 
 ## Mutation rules
 
 1. Check cwd, branch, full HEAD, staged paths, conflicts, base and destination.
 2. Inspect the staged patch with `git --no-pager diff --cached`. Never infer scope from a clean-looking summary. Never use `git add -A` or `ggh commit --all` to sweep up untracked work.
-3. For commands supporting `--approve-plan`, run identical inputs with `--dry-run --agent`, inspect the plan and its `snapshotId`, then apply with `--approve-plan` and that ID. Changed inputs or state require a fresh plan.
+3. For commands supporting `--approve-plan` (`pr create`, `stack submit`, `tidy`), run identical inputs with `--dry-run --agent`, inspect the plan and its `snapshotId`, then apply with `--approve-plan` and that ID. Changed inputs or state require a fresh plan. Check the plan's `pushUrl`: it is where Git actually pushes and can differ from the fetch URL.
 4. This version's `commit` has no `--approve-plan`. Commit only the reviewed index with an explicit message. It preserves unstaged hunks. For an approved push and PR, use `pr create` after committing; do not invent a standalone managed `ggh push` approval flow.
-5. Never pass `--yes` for destructive actions without explicit user approval. An error requesting `--yes` does not grant approval. Never execute `tidy` without a human-approved snapshot, even with `--yes`.
-6. After creating each PR, call the host's PR registration tool with the returned URL and head SHA where accepted. In T3 Code, call `link_pull_request` with the full URL for every layer. ggh does not register PRs. If the result lacks the SHA, read it with `gh pr view --json url,headRefOid` before reporting identity.
-7. When asked to monitor in T3, call `watch_pull_request` after registration. Use its events instead of tight CI polling. Do not claim registration or monitoring without a host receipt.
+5. Merging a PR in a GitHub stack also merges every unmerged PR below it. Run `ggh pr merge <n> --dry-run --agent` first and report `result.stack.pullRequests` to the user before merging.
+6. Never pass `--yes` for destructive actions without explicit user approval. An error requesting `--yes` does not grant approval. Never execute `tidy` without a human-approved snapshot, even with `--yes`. In agent mode `stack submit` ignores `--yes` as approval and needs `--approve-plan`.
+   If submit asks for `--allow-stale`, prefer `ggh stack restack`; pass `--allow-stale` only when the user wants stale branches published.
+7. After creating each PR, call the host's PR registration tool with the returned URL and head SHA where accepted. In T3 Code, call `link_pull_request` with the full URL for every layer. ggh does not register PRs. If the result lacks the SHA, read it with `gh pr view --json url,headRefOid` before reporting identity.
+8. When asked to monitor in T3, call `watch_pull_request` after registration. Use its events instead of tight CI polling. Do not claim registration or monitoring without a host receipt.
+9. On `push_protection_blocked`, stop. GitHub found a secret in the pushed commits. Do not retry, do not open or follow `error.pushProtection.bypassUrls`, and do not rewrite history unasked. Report each finding (secret type, commit, path, line) to the user; removing the secret and rotating it are their call.
 
 ## Recipes
 
 Replace the sample PR, repository, message and base with the inspected target.
 All managed responses have `contract: "ggh.agent"`, `version: 1`, and `status`.
 
-### 1. Inspect checkout state
+### 1. Start with a brief, then inspect checkout state
 
 ```sh
+ggh agent brief --agent
 ggh status --agent
 ```
 
-Expect `result.branch`, `result.head`; optional `changes` contains `[xy, path, origPath?]` tuples. Conflicts must be resolved before committing.
+Make the brief your first call. Expect `result.checkout` with `ahead`/`behind` (null without an upstream), `unpublished` (commits on no remote ref, including a detached HEAD's), `aheadOfDefault`, and `stackOperation` when a restack stopped mid-conflict; follow `result.next`. Status adds `result.branch`, `result.head`, and optional `changes` with `[xy, path, origPath?]` tuples. Both fail with `invalid_arguments` outside a repository. Conflicts must be resolved before committing.
 
 ### 2. Fetch bounded CI evidence
 
 ```sh
-ggh ci why 42 -R owner/repo --max-bytes 6144 --context 2 --agent
+ggh ci why 42 -R owner/repo --max-bytes 6144 --max-output-bytes 16384 --context 2 --agent
 ```
 
-Expect `result.headSha`, `runs[].stale`, `failures[].evidence`, `failures[].truncated`, and `unavailable`. Check revision and truncation before diagnosing; missing logs do not mean passing CI.
+Expect `result.repository`, `pr.number` for PR targets, `headSha`, `runs[].event`,
+`runs[].stale`, `failures[].evidence`, and `unavailable`. Runs include the latest
+run for each workflow and event, plus completed failures at the head SHA.
+Failed PR checks without failing Actions jobs produce an explicit disagreement.
+
+`--max-bytes` limits evidence and annotations per job, default 6144. It does not
+limit metadata or the whole response. `--max-output-bytes` caps total stdout,
+including the JSON envelope or terminal text, default 16384, minimum 1024.
+Identical normalized error lines with identical annotations share one failure;
+`failures[].jobs` lists the affected jobs, steps, URLs, run IDs, and log sources.
+Evidence line numbers and byte totals describe the first job in each group.
+Empty error evidence never groups. A cap can omit evidence, jobs, failure groups,
+run metadata, or unavailability details. `outputTruncated` reports the original
+rendered byte count, cap, and omitted counts. `annotationsTruncated` appears only
+when annotations were omitted. Check revision, coverage, and truncation before
+diagnosing; missing logs do not mean passing CI.
 
 ### 3. Read unresolved threads
 
@@ -68,7 +89,7 @@ Expect `result.headSha`, `runs[].stale`, `failures[].evidence`, `failures[].trun
 ggh pr threads 42 -R owner/repo --agent
 ```
 
-Expect `result.headSha`, `threads[].id`, `isResolved`, `isOutdated`, `comments[].body`, `cursor`, and `pagination.complete`. Advance `--since` only after complete pagination. Fixing code does not authorize resolving discussions.
+Expect `result.headSha`, `threads[].id`, `isResolved`, `isOutdated`, `comments[].body`, `cursor`, and `pagination.complete`. `--agent` returns only unresolved threads; `--json` returns all of them unless you pass `--unresolved`. Pass `--all` with `--agent` to include resolved threads. Advance `--since` only after complete pagination. Fixing code does not authorize resolving discussions.
 
 ### 4. Inspect projects
 
@@ -76,7 +97,7 @@ Expect `result.headSha`, `threads[].id`, `isResolved`, `isOutdated`, `comments[]
 ggh projects --agent
 ```
 
-Expect `result.schemaVersion`, `clones`, `coverage`, and `effects`. Inspect coverage gaps and each checkout's state before selecting a path.
+Expect `result.schemaVersion`, `updatedAt`, `projects`, `coverage`, and `effects`. `effects.completed` lists `projects_index_updated` only when the scan changed the index. Inspect coverage gaps and each project's checkouts before selecting a path.
 
 ### 5. Find unpublished work
 
@@ -88,11 +109,13 @@ Expect `result.schemaVersion`, `items`, `warnings`, and `coverage`. Suggested `n
 
 ### 6. Review a PR as data
 
+Run it inside a clone of the PR's repository; `review` takes no `-R`.
+
 ```sh
-ggh review 42 -R owner/repo --agent
+ggh review 42 --agent
 ```
 
-Expect `result.pr`, `headSha`, `baseSha`, `checkoutPath`, `surface: "data"`, and `effects`. This can fetch refs and create a local review checkout. It does not submit a GitHub approval.
+Expect `result.pr`, `headSha`, `baseSha`, `checkoutPath`, `checkout`, `surface: "data"`, and `effects`. This can fetch refs and create a local review checkout under the main clone's `.worktrees`, even when run from a linked worktree. Rerunning it at the same head reuses the checkout and returns `no_op`. It does not submit a GitHub approval.
 
 ### 7. Commit the reviewed index
 
@@ -101,7 +124,7 @@ git --no-pager diff --cached
 ggh commit -m 'fix: handle empty input' --agent
 ```
 
-Expect `status`, command-specific `result`, and `effects`. Confirm the actual committed tree and remaining work with `ggh status --agent`; inspect partial effects on failure.
+Expect `status`, command-specific `result`, and `effects`. With nothing staged it fails with `precondition_failed`; stage the reviewed paths with `git add <paths>` rather than `--all`. A clean tree returns `no_op`. Confirm the committed tree with `git --no-pager show --stat HEAD` and the remaining work with `ggh status --agent`; inspect partial effects on failure.
 
 ### 8. Preview and approve publication
 
@@ -114,4 +137,11 @@ snapshot=$(jq -er 'select(.status == "planned") | .result.snapshotId' "$plan")
 ggh pr create --base main --title 'Fix empty input' --body 'Handle empty input.' --approve-plan "$snapshot" --agent
 ```
 
-Expect preview `status: "planned"`, `result.snapshotId`, `result.plan`, and `effects.pending`; execution returns workflow `result.status`, `url` when created, and completed/pending/uncertain effects. Register the returned PR with the host immediately.
+Expect preview `status: "planned"`, `result.snapshotId`, `result.plan`, and `effects.pending`; execution returns workflow `result.status`, `url` when created, and completed/pending/uncertain effects. A stale or unfetched base fails with `precondition_failed` and names the `git fetch` to run. Register the returned PR with the host immediately. `tidy --dry-run --agent` puts its ID at `result.snapshotId` the same way.
+
+### 9. The same approval flow for issue plans and stacks
+
+Run identical inputs with `--dry-run --agent`, show the user the plan, then rerun with `--approve-plan "$snapshot"` (`.result.snapshotId`). `--yes` never approves in agent mode.
+
+- `ggh issue plan 42 plan.md` saves a `plan` artifact named "Plan" (or `--name`). It edits the same-named plan as a new version, returns `no_op` for identical content, and refuses duplicate names; `result.action` is `create`, `edit`, or `no_op`. `-` reads stdin. `ggh issue plan 42 --show` prints the plan to follow.
+- `ggh stack submit feat/top` binds `result.plan.repository` and each entry's `tip`, `parent`, `parentTip`, `behind`, and `pushUrl`, plus `draft` and `nativeStack`. Effects are `push:<branch>`, `create_pr:<branch>`, and `link_native_stack`; rerun the approved command to resume a partial failure. Register every opened PR with the host.

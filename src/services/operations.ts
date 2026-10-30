@@ -1,12 +1,13 @@
 import { assertWindowsPrivateDirectory } from "./private-storage.ts";
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile, readdir, realpath, rename, stat, lstat, unlink } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, realpath, stat, lstat, unlink } from "node:fs/promises";
 import { getConfigDir } from "./config.ts";
 import { isAbsolute, join, resolve } from "node:path";
 import type { AIUsageReport } from "./ai/index.ts";
 import { run } from "../utils/exec.ts";
 import { acquireProcessLock, inspectProcessLock, recoverProcessLock } from "./process-lock.ts";
 import { parsePublicationIntent, type PublicationIntent } from "./publication-intent.ts";
+import { replaceFile } from "../utils/replace-file.ts";
 
 export type OperationId = string & { readonly __brand: "OperationId" };
 export type StepState = "pending" | "completed" | "failed" | "unknown" | "skipped" | "refused" | "uncertain";
@@ -290,7 +291,7 @@ async function writeAt(directory: string, record: OperationRecord): Promise<void
     if (existing && (!existing.isFile() || existing.isSymbolicLink() || !hasPrivateUnixMode || (typeof process.getuid === "function" && existing.uid !== process.getuid()))) {
       throw new Error("Operation record has unsafe ownership or type.");
     }
-    await rename(temp, path);
+    await replaceFile(temp, path);
   } catch (error) {
     await unlink(temp).catch(() => undefined);
     throw error;

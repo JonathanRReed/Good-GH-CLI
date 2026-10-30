@@ -72,6 +72,7 @@ export interface DiscoveryOptions {
   excluded?: string[];
   known?: IndexedClone[];
   workers?: number;
+  scanHostLocations?: boolean;
 }
 
 export async function discoverProjects(options: DiscoveryOptions = {}): Promise<DiscoveryResult> {
@@ -120,7 +121,7 @@ export async function discoverProjects(options: DiscoveryOptions = {}): Promise<
     }
   }
   for (const root of roots) walk(root, root, 0, "root-scan");
-  for (const prefix of Object.values(config.host_worktree_dirs ?? {})) {
+  for (const prefix of options.scanHostLocations === false ? [] : Object.values(config.host_worktree_dirs ?? {})) {
     const root = projectPath(prefix);
     if (existsSync(root)) walk(root, root, 0, "host-location");
   }
@@ -185,11 +186,12 @@ export async function discoverProjects(options: DiscoveryOptions = {}): Promise<
         });
       }
       group.sources.add("worktree-list");
-      return { commonDir, displayName: basename(basename(commonDir) === ".git" ? dirname(commonDir) : commonDir), remotes, primary: remotes.find(remote => remote.name === "origin")?.repo ?? remotes.find(remote => remote.repo)?.repo ?? null, checkouts, sources: [...group.sources], lastSeen: now };
+      return { commonDir, displayName: basename(basename(commonDir) === ".git" ? dirname(commonDir) : commonDir), remotes, primary: remotes.find(remote => remote.name === "origin")?.repo ?? remotes.find(remote => remote.repo)?.repo ?? null, checkouts, sources: [...group.sources].sort(), lastSeen: now };
     } catch {
       coverage.skipped.push({ path: group.path, reason: "Cannot read clone metadata" });
       return null;
     }
   }, options.workers);
-  return { clones: clones.filter((clone): clone is IndexedClone => clone !== null && clone.checkouts.length > 0), coverage };
+  coverage.skipped.sort((a, b) => a.path.localeCompare(b.path) || a.reason.localeCompare(b.reason));
+  return { clones: clones.filter((clone): clone is IndexedClone => clone !== null && clone.checkouts.length > 0).sort((a, b) => a.commonDir.localeCompare(b.commonDir)), coverage };
 }

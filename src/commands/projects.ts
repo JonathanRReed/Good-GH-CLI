@@ -4,6 +4,7 @@ import { getConfig, saveConfig } from "../services/config.ts";
 import { isNonInteractive, getFlags, recordCompletedEffect } from "../services/runtime.ts";
 import { discoverProjects, projectPath } from "../services/projects/discovery.ts";
 import { forgetProject, readProjectIndex, refreshProjectIndex, registerProject } from "../services/projects/index-store.ts";
+import { selectedCoverage } from "../services/projects/coverage.ts";
 import { resolveProjects } from "../services/projects/query.ts";
 import { projectHistory, readCloneStatus, readProjectStatuses } from "../services/projects/status.ts";
 import { formatProjects, formatProjectCard, formatUncloned, renderProjectCard, renderProjects, shortPath, sortProjects, type ProjectRow, type ProjectViewOptions } from "../services/projects/view.ts";
@@ -23,19 +24,32 @@ export function projectPayload({ clone, status, remote }: ProjectRow) {
   };
 }
 
-export async function selectProject(clones: IndexedClone[], query: string): Promise<IndexedClone | null> {
+export interface SelectProjectOptions {
+  /** Only consider clones with a checkout that still exists, so a resolution never lands on a vanished path. */
+  requireCheckout?: boolean;
+  /** The caller's positional name, so needs_input names a real input. */
+  argument?: string;
+}
+
+export async function selectProject(clones: IndexedClone[], query: string, options: SelectProjectOptions = {}): Promise<IndexedClone | null> {
   const candidates = resolveProjects(clones, query);
-  if (candidates.length === 1) return candidates[0] ?? null;
-  const message = candidates.length ? `Several projects match ${query}. Use an exact checkout path.` : `No local project matches ${query}. Run ggh clone ${JSON.stringify(query)} to clone it.`;
-  if (candidates.length && !isNonInteractive()) {
-    return selectMenu({ message: "Choose a project", options: candidates.map(clone => ({ value: clone, label: `${clone.displayName}  ${shortPath(clone.checkouts[0]?.path ?? clone.commonDir)}` })) });
+  const usable = options.requireCheckout ? candidates.filter(clone => clone.checkouts.some(checkout => existsSync(checkout.path))) : candidates;
+  if (usable.length === 1) return usable[0] ?? null;
+  const message = usable.length ? `Several projects match ${query}. Use an exact checkout path.`
+    : options.requireCheckout && candidates.length ? `A project matches ${query}, but none of its checkouts exist on disk. Restore the checkout, then run ggh projects.`
+    : `No local project matches ${query}. Run ggh clone ${JSON.stringify(query)} to clone it.`;
+  if (usable.length && !isNonInteractive()) {
+    return selectMenu({ message: "Choose a project", options: usable.map(clone => ({ value: clone, label: `${clone.displayName}  ${shortPath(clone.checkouts[0]?.path ?? clone.commonDir)}` })) });
   }
-  fail(message, { code: "missing_input", requiredInputs: [{ name: "query", description: "An exact local name or path", alternatives: candidates.flatMap(clone => clone.checkouts.map(checkout => checkout.path)) }] });
+  // Alternatives name every matched path, even a vanished one, so the report says what to restore or clone.
+  fail(message, candidates.length
+    ? { code: "missing_input", requiredInputs: [{ name: options.argument ?? "query", description: "An exact local name or path", alternatives: candidates.flatMap(clone => clone.checkouts.map(checkout => checkout.path)) }] }
+    : { code: "not_found" });
   // Even plain noninteractive go reports candidates as data rather than guessing.
-  if (getFlags().json) jsonOut({ schemaVersion: 1, query, candidates: candidates.map(clone => ({ name: clone.displayName, paths: clone.checkouts.map(checkout => checkout.path), primary: clone.primary })), ...(!candidates.length ? { suggestion: ["ggh", "clone", query] } : {}) });
+  if (getFlags().json) jsonOut({ schemaVersion: 1, query, candidates: usable.map(clone => ({ name: clone.displayName, paths: clone.checkouts.map(checkout => checkout.path), primary: clone.primary })), ...(!usable.length ? { suggestion: ["ggh", "clone", query] } : {}) });
   else if (isNonInteractive()) {
     const { data } = await import("../utils/output.ts");
-    data(JSON.stringify({ schemaVersion: 1, query, candidates: candidates.map(clone => ({ name: clone.displayName, paths: clone.checkouts.map(checkout => checkout.path) })), ...(!candidates.length ? { suggestion: ["ggh", "clone", query] } : {}) }));
+    data(JSON.stringify({ schemaVersion: 1, query, candidates: usable.map(clone => ({ name: clone.displayName, paths: clone.checkouts.map(checkout => checkout.path) })), ...(!usable.length ? { suggestion: ["ggh", "clone", query] } : {}) }));
   }
   return null;
 }
@@ -55,15 +69,17 @@ export async function showProjects(query?: string, options: ProjectViewOptions =
       }));
       if (rows.length) {
         // Keep the preview in the viewport so redraw cannot erase earlier output.
+        const previewOptions: ProjectViewOptions = { ...options, cachedAt: cached.observedAt };
         const visible = rows.slice(0, Math.max(1, (process.stderr.rows ?? 24) - 2));
-        cachedLines = previewHeight(formatProjects(visible, options));
-        renderProjects(visible, options);
+        cachedLines = previewHeight(formatProjects(visible, previewOptions));
+        renderProjects(visible, previewOptions);
       }
     }
   }
   const index = await refreshProjectIndex();
   if (query !== undefined) {
     const clone = await selectProject(index.clones, query); if (!clone) return;
+    if (index.coverage) index.coverage = selectedCoverage(index.coverage, [clone]);
     const status = await readCloneStatus(clone);
     const history = await projectHistory(clone, status);
     const row: ProjectRow = { clone, status };
@@ -97,6 +113,7 @@ export async function showProjects(query?: string, options: ProjectViewOptions =
   }
   if (index.coverage) {
     for (const skipped of index.coverage.skipped) p.log.warn(`${shortPath(skipped.path)}: ${skipped.reason}`);
+    if (index.coverage.brokenElsewhere) p.log.warn(`${index.coverage.brokenElsewhere} broken checkouts elsewhere: ggh lost`);
     if (index.coverage.truncated) p.log.warn("Scan depth reached. Register a nested repository or increase project_scan_depth.");
   }
 }

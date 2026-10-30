@@ -97,10 +97,13 @@ export async function isGitRepo(cwd = process.cwd()): Promise<boolean> {
  */
 
 
+/** One message and code for every command that needs a checkout. */
+export const NOT_A_GIT_REPOSITORY = "Not a git repository. Run from inside a checkout, or run `git init`.";
+
 export async function requireGitRepo(cwd = process.cwd()): Promise<boolean> {
   if (await isGitRepo(cwd)) return true;
   const { fail } = await import("../utils/ui.ts");
-  fail("Not a git repository. Run `git init` or navigate to a repository.");
+  fail(NOT_A_GIT_REPOSITORY, { code: "invalid_arguments" });
   return false;
 }
 

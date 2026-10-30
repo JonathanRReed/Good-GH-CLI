@@ -2,11 +2,12 @@ import type { Command } from "commander";
 import { getConfig } from "../services/config.ts";
 import { discoverProjects, projectPath } from "../services/projects/discovery.ts";
 import { readProjectIndex } from "../services/projects/index-store.ts";
-import { findLost } from "../services/projects/lost.ts";
+import { coverageOwner, selectedCoverage } from "../services/projects/coverage.ts";
+import { findLost, sortLost } from "../services/projects/lost.ts";
 import { resolveProjects } from "../services/projects/query.ts";
 import { projectGit } from "../services/projects/git.ts";
 import type { DiscoveryCoverage, IndexedClone } from "../services/projects/types.ts";
-import { setCommandCancellation } from "../services/runtime.ts";
+import { getFlags, setCommandCancellation } from "../services/runtime.ts";
 import { fetchCleanupClones } from "../services/projects/cleanup-fetch.ts";
 import { formatLost, type CleanupViewOptions } from "../services/projects/cleanup-view.ts";
 import { fail, jsonOut, p } from "../utils/ui.ts";
@@ -23,7 +24,7 @@ export async function cleanupProjects(names: string[], all: boolean, defaultAll 
     let clone = available.find(clone => clone.commonDir === current);
     if (!clone) clone = (await discoverProjects({ config: { ...getConfig(), project_roots: [] }, registered: [process.cwd()] })).clones.find(clone => clone.commonDir === current);
     if (!clone) throw new Error("Current clone is unavailable; name a project or use --all");
-    return { clones: [clone], coverage: discovered.coverage };
+    return { clones: [clone], coverage: selectedCoverage(discovered.coverage, [clone]) };
   }
   const selected: IndexedClone[] = [];
   for (const name of names) {
@@ -31,7 +32,8 @@ export async function cleanupProjects(names: string[], all: boolean, defaultAll 
     if (matches.length !== 1 || !matches[0]) throw new Error(`Project ${JSON.stringify(name)} is missing or ambiguous; use an exact checkout path`);
     selected.push(matches[0]);
   }
-  return { clones: [...new Map(selected.map(clone => [clone.commonDir, clone])).values()], coverage: discovered.coverage };
+  const clones = [...new Map(selected.map(clone => [clone.commonDir, clone])).values()];
+  return { clones, coverage: selectedCoverage(discovered.coverage, clones) };
 }
 export { formatLost as renderLost } from "../services/projects/cleanup-view.ts";
 export function registerLostCommand(program: Command): void {
@@ -46,13 +48,17 @@ export function registerLostCommand(program: Command): void {
       process.on("SIGINT", interrupt);
       setCommandCancellation(interrupt);
       try {
+        const progress = process.stderr.isTTY && !getFlags().json && !getFlags().quiet;
+        if (progress) p.log.info("Discovering projects for lost inventory...");
         const { clones, coverage } = await cleanupProjects(names, Boolean(options.all), true);
         if (options.fetch) await fetchCleanupClones(clones, "lost", controller.signal);
         if (controller.signal.aborted) { jsonOut({ schemaVersion: 1, clones: [], items: [], warnings: [], coverage, status: "cancelled" }); return; }
-        const result = await findLost(clones);
+        if (progress) p.log.info(`Inspecting ${clones.length} clones for unpublished work...`);
+        const result = await findLost(clones, getConfig(), { onProgress: progress ? (completed, total, name) => p.log.info(`Inspected ${completed}/${total}: ${name}`) : undefined });
         for (const gap of coverage.skipped) {
-          if (/Broken checkout/.test(gap.reason) && !result.items.some(item => item.path === gap.path)) result.items.push({ kind: "broken-gitdir", commonDir: "unknown", path: gap.path, createdBy: "unknown", reason: gap.reason, nextSteps: [["git", "-C", gap.path, "rev-parse", "--git-dir"]] });
+          if (/Broken checkout/.test(gap.reason) && !result.items.some(item => item.path === gap.path)) result.items.push({ kind: "broken-gitdir", commonDir: coverageOwner(clones, gap.path)?.commonDir ?? "unknown", path: gap.path, createdBy: "unknown", reason: gap.reason, nextSteps: [["git", "-C", gap.path, "rev-parse", "--git-dir"]] });
         }
+        sortLost(result.items);
         if (jsonOut({ ...result, coverage })) return;
         for (const line of formatLost(result, { ...options, verbose: options.verbose || (names.length === 1 && clones.length === 1), coverage, clones })) p.log.message(line);
       } catch (error) { fail(error instanceof Error ? error.message : "Lost inventory failed"); }

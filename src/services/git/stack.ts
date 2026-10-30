@@ -5,11 +5,12 @@ import { assertWindowsPrivateDirectory } from "../private-storage.ts";
 
 import { run } from "../../utils/exec.ts";
 import { existsSync, readFileSync } from "node:fs";
-import { link, lstat, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
+import { link, lstat, mkdir, open, readFile, unlink } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { execGitWithRetry } from "./exec.ts";
 import { getCurrentBranch, listBranches, resolveBranchRef } from "./branch.ts";
+import { replaceFile } from "../../utils/replace-file.ts";
 
 export interface StackNode {
   branch: string;
@@ -117,6 +118,15 @@ function parseCheckpoint(value: unknown): StackRecoveryCheckpoint {
 
 export async function readStackRecovery(cwd = process.cwd()): Promise<StackRecoveryCheckpoint | null> {
   const directory = await recoveryDirectory(cwd);
+  return readStackRecoveryFromCommonDir(join(directory, ".."));
+}
+
+/** Inventory reads existing state without creating recovery storage. */
+export async function readStackRecoveryFromCommonDir(commonDir: string): Promise<StackRecoveryCheckpoint | null> {
+  const directory = join(commonDir, "ggh-stack-recovery");
+  const storage = await lstat(directory).catch((error: NodeJS.ErrnoException) => error.code === "ENOENT" ? null : Promise.reject(error));
+  if (!storage) return null;
+  if (!storage.isDirectory() || storage.isSymbolicLink() || (process.platform !== "win32" && (storage.mode & 0o077) !== 0) || (typeof process.getuid === "function" && storage.uid !== process.getuid())) throw new Error("Stack recovery storage has unsafe ownership or type.");
   const path = checkpointPath(directory);
   const info = await lstat(path).catch((error: NodeJS.ErrnoException) => error.code === "ENOENT" ? null : Promise.reject(error));
   if (!info) return null;
@@ -223,7 +233,7 @@ export async function writeStackRecovery(checkpoint: StackRecoveryCheckpoint, cw
   const handle = await open(temp, "wx", 0o600);
   try { await handle.writeFile(json, "utf8"); await handle.sync(); }
   finally { await handle.close(); }
-  try { await rename(temp, path); }
+  try { await replaceFile(temp, path); }
   catch (error) { await unlink(temp).catch(() => undefined); throw error; }
 }
 

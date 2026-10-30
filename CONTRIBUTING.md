@@ -21,8 +21,8 @@ bun run lint
 bun test --timeout 30000
 ```
 
-CI runs the same three on Linux and macOS, then builds and checks the bundle
-stays under 400 KB.
+CI runs the same three on Linux, macOS, and Windows, then builds and checks the
+bundle stays within the budget in `.github/workflows/ci.yml`.
 
 The 30-second timeout is not decoration: the suite spawns a lot of real `git`
 processes in temporary repositories, and the default 5 seconds is not enough

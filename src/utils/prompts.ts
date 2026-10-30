@@ -2,7 +2,7 @@ import * as readline from "node:readline";
 import * as readlinePromises from "node:readline/promises";
 import { Writable } from "node:stream";
 import pc from "picocolors";
-import { isNonInteractive, recordCommandIssue } from "../services/runtime.ts";
+import { getCommandOptions, isNonInteractive, recordCommandIssue } from "../services/runtime.ts";
 import { BufferedLineInput } from "./line-input.ts";
 import { hideCursorTracked, log, showCursorTracked, stripAnsi, terminalText } from "./output.ts";
 
@@ -19,6 +19,26 @@ function writePrompt(text: string): void {
 const p = { log };
 const promptInputLines = new BufferedLineInput(process.stdin);
 
+/** Flags every command shares; naming them in a prompt hint says nothing. */
+const GLOBAL_PROMPT_FLAGS = new Set(["--json", "--agent", "--quiet", "--no-input", "--dry-run", "--repo"]);
+
+/**
+ * Names only flags the running command actually declares: a confirmation points
+ * at `-y/--yes`, other prompts at the command's own value-taking options.
+ */
+function nonInteractiveHint(confirmation: boolean): string {
+  const options = getCommandOptions();
+  if (confirmation) {
+    const yes = options.find(option => option.long === "--yes");
+    if (yes) return [yes.short, yes.long].filter(Boolean).join(", ");
+  }
+  return options
+    .filter(option => option.takesValue && option.long && !GLOBAL_PROMPT_FLAGS.has(option.long))
+    .slice(0, 4)
+    .map(option => option.long)
+    .join(", ");
+}
+
 /**
  * A prompt cannot be answered without a TTY. Auto-answering is never safe here:
  * the first option of a menu may be destructive (`ggh resolve` -> "accept ours")
@@ -26,17 +46,19 @@ const promptInputLines = new BufferedLineInput(process.stdin);
  * cancel loudly and point at the explicit, scriptable alternative.
  */
 function nonInteractiveNotice(what: string, confirmation = false): void {
-  recordCommandIssue({
-    status: "needs_input",
-    code: confirmation ? "confirmation_required" : "missing_input",
-    requiredInputs: [{ name: confirmation ? "--yes" : "explicit_options", description: what }],
-    message: `Input required: ${what}. Pass explicit command options.`,
-  });
+  // Only a confirmation names a real flag here. A menu has no single flag, so it
+  // fails with invalid_arguments instead of a needs_input that names nothing.
+  recordCommandIssue(confirmation
+    ? { status: "needs_input", code: "confirmation_required", requiredInputs: [{ name: "--yes", description: what }], message: `Input required: ${what}. Pass --yes to authorize it.` }
+    : { status: "failed", code: "invalid_arguments", message: `Input required: ${what}. Pass explicit command options; see ggh agent schema for this command's flags.` });
   // The command could not do its job, so scripts must see a failure.
   process.exitCode = 1;
   p.log.warn(pc.yellow(`Cannot prompt for "${what}": no interactive terminal.`));
+  const hint = nonInteractiveHint(confirmation);
   p.log.info(
-    pc.dim("Re-run in a terminal, or pass explicit flags (for example -m, -a, -y, --no-ai)."),
+    pc.dim(hint
+      ? `Re-run in a terminal, or pass explicit flags (${hint}).`
+      : "Re-run in a terminal, or pass explicit options."),
   );
 }
 

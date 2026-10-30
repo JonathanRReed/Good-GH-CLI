@@ -2,6 +2,7 @@ const text = { type: "string" };
 const nullableText = { type: ["string", "null"] };
 const paths = { type: "array", items: text };
 const ref = { type: "object", required: ["ref", "oid"], properties: { ref: text, oid: text } };
+const dirty = { type: "object", required: ["staged", "unstaged", "untracked", "conflicted"], properties: Object.fromEntries(["staged", "unstaged", "untracked", "conflicted"].map(key => [key, { type: "integer", minimum: 0 }])) };
 const creator = { enum: ["ggh", "t3", "claude", "cursor", "codex", "unknown"] };
 const checkout = { type: "object", required: ["path", "gitDir", "branch", "head", "createdBy", "hostClaims"], properties: { path: text, gitDir: text, branch: nullableText, head: nullableText, createdBy: creator, hostClaims: { type: "array", items: { type: "object" } } } };
 const notice = { type: "object", required: ["target", "reason"], properties: { target: text, reason: text } };
@@ -22,7 +23,9 @@ export const lostResultSchema = { type: "object", required: ["schemaVersion", "c
     { required: ["branch", "head", "commits", "uniqueCommits", "sharedCommits", "newestSubject", "newestDate", "oldestDate"], properties: { kind: { const: "unpublished" }, branch: nullableText, head: text, commits: { type: "integer", minimum: 1 }, uniqueCommits: { type: "integer", minimum: 0 }, sharedCommits: { type: "integer", minimum: 0 }, newestSubject: text, newestDate: text, oldestDate: text } },
     { required: ["branch", "commits", "scannedEntries", "truncated"], properties: { kind: { const: "reflog-only" }, branch: nullableText, commits: paths, scannedEntries: { type: "integer", minimum: 1 }, truncated: { type: "boolean" } } },
     { required: ["count", "stashes", "oldestDate"], properties: { kind: { const: "stash" }, count: { type: "integer", minimum: 1 }, oldestDate: text, stashes: { type: "array", items: { type: "object", required: ["ref", "oid", "date", "message"], properties: { ref: text, oid: text, date: text, message: text } } } } },
-    { required: ["reason", "host"], properties: { kind: { const: "dirty-host-checkout" }, reason: text, host: text } },
+    { required: ["branch", "head", "operationId"], properties: { kind: { const: "restack-preimage" }, branch: text, head: text, operationId: text } },
+    { required: ["reason", "dirty"], properties: { kind: { const: "dirty-checkout" }, reason: text, dirty } },
+    { required: ["reason", "host"], properties: { kind: { const: "dirty-host-checkout" }, reason: text, host: text, dirty } },
     { required: ["reason"], properties: { kind: { const: "broken-gitdir" }, reason: text } },
   ] } },
 } };
@@ -31,13 +34,14 @@ export const tidyAuditSchema = { type: "object", required: ["state", "originalSn
   ...Object.fromEntries(["sentActions", "commitSubjects", "promptBytes", "omittedActions", "rejectedRecommendations"].map(key => [key, { type: "integer", minimum: 0 }])),
   decisions: { type: "array", items: { type: "object", required: ["id", "verdict", "reason"], properties: { id: text, verdict: { enum: ["prune", "keep", "keep-unaudited"] }, reason: text } } },
 } };
-export const tidyResultSchema = { type: "object", required: ["schemaVersion", "plan", "lost", "status"], properties: {
+export const tidyResultSchema = { type: "object", required: ["schemaVersion", "snapshotId", "plan", "lost", "status"], properties: {
+  snapshotId: { type: "string", pattern: "^[a-f0-9]{64}$", description: "Pass to --approve-plan. Same value as plan.snapshotId." },
   audit: { anyOf: [tidyAuditSchema, { type: "object", required: ["state", "reason"], properties: { state: { const: "failed" }, reason: text } }] },
   schemaVersion: { const: 1 }, status: { enum: ["planned", "needs_input", "no_op", "succeeded", "failed", "partially_completed", "cancelled"] }, lost: lostResultSchema,
   plan: { type: "object", required: ["schemaVersion", "snapshotId", "options", "clones"], properties: {
     audit: tidyAuditSchema,
     schemaVersion: { const: 1 }, snapshotId: { type: "string", pattern: "^[a-f0-9]{64}$" },
-    options: { type: "object", properties: { remoteBranches: { type: "boolean" }, allowIgnored: paths, allowUnknown: paths, staleDays: { type: "integer", minimum: 1 } } },
+    options: { type: "object", properties: { remoteBranches: { type: "boolean" }, allowIgnored: paths, allowUnknown: paths, allowUnknownUnder: paths, staleDays: { type: "integer", minimum: 1 } } },
     clones: { type: "array", items: { type: "object", required: ["commonDir", "name", "fetchedAt", "actions", "kept", "hostManual", "hints"], properties: {
       commonDir: text, name: text, fetchedAt: nullableText, actions: { type: "array", items: tidyActionSchema }, kept: { type: "array", items: notice },
       hostManual: { type: "array", items: { ...notice, required: ["target", "reason", "host"], properties: { ...notice.properties, host: { enum: ["t3", "claude", "cursor", "codex"] } } } },

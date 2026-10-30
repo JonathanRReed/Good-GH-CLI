@@ -5,13 +5,13 @@ import { publicationSnapshot, assertPublicationApproval, PublicationApprovalErro
 import type { Command } from "commander";
 import { getFlags, isNonInteractive, recordCommandIssue } from "../services/runtime.ts";
 import { findPrTemplate, findPrTemplateByName, getBranchDiff, getBranchDiffStat, getCommitsSinceBase, listPrTemplates } from "../services/git.ts";
-import { preparePublication, executePublication, type PullRequestPlan } from "../services/publication.ts";
+import { preparePublication, executePublication, publicationRequiredInput, type PullRequestPlan } from "../services/publication.ts";
 import { prepareAttachmentPlan } from "../services/github.ts";
 import { readAttachmentBodyFile } from "../services/github/attachments.ts";
 import { generatePrWithFallback, type AIAttempt, type AIAttemptFailure } from "../services/ai/index.ts";
 import { sanitizeDiffForAI } from "../utils/diff.ts";
 import { dryRun } from "../utils/flags.ts";
-import { confirmOrAbort, jsonOut, fail, failFromGitHub, formatAIFallback, header, p, promptInput, reportAIFailure } from "../utils/ui.ts";
+import { confirmOrAbort, jsonOut, fail, failFromGitHub, failPublication, formatAIFallback, header, p, promptInput, reportAIFailure } from "../utils/ui.ts";
 
 export interface PrCreateOptions {
   approvePlan?: string; title?: string; body?: string; bodyFile?: string; base?: string; draft?: boolean;
@@ -48,8 +48,7 @@ export async function openPullRequest(options: PrCreateOptions): Promise<void> {
   if (typeof options.editor === "string" && (options.title !== undefined || options.body !== undefined || options.bodyFile !== undefined)) { fail("Choose --editor FILE or explicit title/body options."); return; }
   if (options.editor !== undefined && !getFlags().dryRun && (isNonInteractive() || getFlags().json || getFlags().agent)) {
     const message = "The editor needs an interactive terminal. Run ggh pr create --editor in a terminal, or pass --title and --body-file with --yes.";
-    recordCommandIssue({ status: "needs_input", code: "missing_input", requiredInputs: [{ name: "interactive terminal", description: message }], message });
-    fail(message); jsonOut({ status: "needs_input", message }); return;
+    fail(message, { code: "missing_input", requiredInputs: [{ name: "--title", description: message }, { name: "body", alternatives: ["--body", "--body-file"], description: message }] }); jsonOut({ status: "needs_input", message }); return;
   }
   let editorSession: PrDraftSession | undefined;
   try {
@@ -59,9 +58,9 @@ export async function openPullRequest(options: PrCreateOptions): Promise<void> {
       if (!base) { p.cancel("Cancelled."); return; }
       prepared = await preparePublication({ kind: "pr", base, name: options.repoName, remote: options.remote });
     }
-    if (prepared.status === "needs_input") {
-      recordCommandIssue({ status: "needs_input", code: "missing_input", requiredInputs: [{ name: prepared.required, description: prepared.message }], message: prepared.message });
-      fail(prepared.message);
+    if (prepared.status !== "ready") {
+      if (prepared.status === "needs_input") recordCommandIssue({ status: "needs_input", code: "missing_input", requiredInputs: [publicationRequiredInput("pr", prepared.required, prepared.message)], message: prepared.message });
+      fail(prepared.message, prepared.status === "failed" ? { code: "precondition_failed" } : {});
       jsonOut(options.priorCompleted?.length ? { ...prepared, status: "partially_completed", completed: options.priorCompleted } : prepared);
       return;
     }
@@ -110,7 +109,7 @@ export async function openPullRequest(options: PrCreateOptions): Promise<void> {
     const content = { title, body, draft: options.draft, web: options.web, attachments: options.attachments };
     const snapshotId = await publicationSnapshot(plan, content);
     assertPublicationApproval(options.approvePlan, snapshotId);
-    p.note(`${plan.host}/${plan.target} (${plan.visibility})\n${plan.remote}: ${plan.remoteUrl}\n${plan.base} ${plan.baseTip.slice(0, 12)} ← ${plan.head} ${plan.headTip.slice(0, 12)}\n${steps.join(" → ")}\n${options.draft ? "Draft pull request" : "Ready for review"} · ${options.web ? "Open browser create page" : "Create pull request directly"}\n\n${title}\n${body}`, "Publication plan");
+    p.note(`${plan.host}/${plan.target} (${plan.visibility})\n${plan.remote}: ${plan.remoteUrl}${plan.pushUrl !== plan.remoteUrl ? `\npush: ${plan.pushUrl}` : ""}\n${plan.base} ${plan.baseTip.slice(0, 12)} ← ${plan.head} ${plan.headTip.slice(0, 12)}\n${steps.join(" → ")}\n${options.draft ? "Draft pull request" : "Ready for review"} · ${options.web ? "Open browser create page" : "Create pull request directly"}\n\n${title}\n${body}`, "Publication plan");
     if (dryRun(`publish ${plan.target}: ${steps.join(", ")}${options.attachments?.length ? `; attach ${options.attachments.join(", ")}` : ""}`)) {
       jsonOut({ status: "planned", snapshotId, plan, target: plan.target, host: plan.host, base: plan.base, head: plan.head, title, body, steps, attachments: options.attachments ?? [], ...(options.editor !== undefined ? { editorRun: false, snapshotProvisional: true } : {}) });
       return;
@@ -125,7 +124,7 @@ export async function openPullRequest(options: PrCreateOptions): Promise<void> {
     else if (editorSession) reportRetainedDraft(editorSession.path, options);
     const completed = [...(options.priorCompleted ?? []), ...result.completed];
     const status = result.status === "failed" && options.priorCompleted?.length ? "partially_completed" : result.status;
-    if (status !== "succeeded") fail(result.error ?? "Publication did not complete.");
+    if (status !== "succeeded") failPublication(result, "Publication did not complete.");
     if (jsonOut({ ...result, status, completed, title, body, base: plan.base, head: plan.head, draft: Boolean(options.draft), ...(options.web ? { action: "open_create_page" } : {}) })) return;
     if (result.url) p.log.message(result.url);
     if (status === "succeeded") p.outro(options.web ? "Finish creating the pull request in your browser." : "Pull request ready.");

@@ -30,7 +30,7 @@ afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: 
 
 test("snapshot includes content, draft, browser mode, description and file bytes", async () => {
   const { repo } = fixture();
-  const plan: PullRequestPlan = { kind: "pr", cwd: repo, root: repo, host: "github.com", target: "fixture/project", remote: "origin", remoteUrl: "https://github.com/fixture/project.git", visibility: "private", createRepository: true, head: "feature", headTip: "a".repeat(40), base: "main", baseTip: "b".repeat(40), mergeBaseTip: "b".repeat(40), steps: ["create_pull_request"] };
+  const plan: PullRequestPlan = { kind: "pr", cwd: repo, root: repo, host: "github.com", target: "fixture/project", remote: "origin", remoteUrl: "https://github.com/fixture/project.git", pushUrl: "https://github.com/fixture/project.git", visibility: "private", createRepository: true, head: "feature", headTip: "a".repeat(40), base: "main", baseTip: "b".repeat(40), mergeBaseTip: "b".repeat(40), steps: ["create_pull_request"] };
   const content = { title: "Title", body: "Body" };
   const original = await publicationSnapshot(plan, content);
   for (const changed of [{ ...content, title: "Other" }, { ...content, body: "Other" }, { ...content, draft: true }, { ...content, web: true }]) expect(await publicationSnapshot(plan, changed)).not.toBe(original);
@@ -40,7 +40,7 @@ test("snapshot includes content, draft, browser mode, description and file bytes
   writeFileSync(image, '<svg xmlns="http://www.w3.org/2000/svg">x</svg>');
   expect(await publicationSnapshot(plan, attached)).not.toBe(before);
   expect(await publicationSnapshot(plan, { ...content, attachments: [image + "#Alt"] })).not.toBe(await publicationSnapshot(plan, attached));
-  const repository = { kind: "repo" as const, cwd: repo, host: plan.host, target: plan.target, remote: plan.remote, remoteUrl: plan.remoteUrl, visibility: plan.visibility, push: false, steps: [] };
+  const repository = { kind: "repo" as const, cwd: repo, host: plan.host, target: plan.target, remote: plan.remote, remoteUrl: plan.remoteUrl, pushUrl: plan.pushUrl, visibility: plan.visibility, push: false, steps: [] };
   expect(await publicationSnapshot({ ...repository, description: "A" })).not.toBe(await publicationSnapshot({ ...repository, description: "B" }));
 });
 
@@ -62,7 +62,7 @@ test("unavailable live base requires an explicit fetch without changing refs", a
   git(["remote", "add", "origin", "https://github.com/fixture/project.git"], repo);
   const invoke = `${rewrite(bare)} const spawn=Bun.spawn.bind(Bun); Bun.spawn=(args,options)=>args[0]==='git'&&args[1]==='ls-remote'?{stdout:new Blob([args.at(-1)==='refs/heads/main'?${JSON.stringify("f".repeat(40) + "\trefs/heads/main\n")}: '']).stream(),stderr:new Blob([]).stream(),exited:Promise.resolve(0),kill(){},stdin:null}:spawn(args,options); const {preparePublication}=await import(${JSON.stringify(service)}); process.stdout.write(JSON.stringify(await preparePublication({kind:'pr',base:'main'})));`;
   const result = await runFixture([], { root, cwd: repo, invoke });
-  expect(JSON.parse(result.stdout)).toMatchObject({ status: "needs_input", required: "base", message: expect.stringContaining("git fetch origin main") });
+  expect(JSON.parse(result.stdout)).toMatchObject({ status: "failed", message: expect.stringContaining("git fetch origin main") });
   expect(git(["rev-parse", "main"], repo)).toBe(base);
 });
 
@@ -99,7 +99,7 @@ test("PR snapshot approval binds the supplied body before any creation", async (
 test("execution rechecks selected attachment bytes after approval", async () => {
   const { repo } = fixture();
   const image = join(repo, "image.svg"); writeFileSync(image, "<svg></svg>");
-  const plan: PullRequestPlan = { kind: "pr", cwd: repo, root: repo, host: "github.com", target: "fixture/project", remote: "origin", remoteUrl: "https://github.com/fixture/project.git", visibility: "private", createRepository: true, head: "feature", headTip: "a".repeat(40), base: "main", baseTip: "b".repeat(40), mergeBaseTip: "b".repeat(40), steps: ["create_repository"] };
+  const plan: PullRequestPlan = { kind: "pr", cwd: repo, root: repo, host: "github.com", target: "fixture/project", remote: "origin", remoteUrl: "https://github.com/fixture/project.git", pushUrl: "https://github.com/fixture/project.git", visibility: "private", createRepository: true, head: "feature", headTip: "a".repeat(40), base: "main", baseTip: "b".repeat(40), mergeBaseTip: "b".repeat(40), steps: ["create_repository"] };
   const content = { title: "Title", body: "Body", attachments: [image] };
   const approvedSnapshot = await publicationSnapshot(plan, content);
   writeFileSync(image, "<svg>changed</svg>");
@@ -125,7 +125,7 @@ test("unavailable existing target cannot become an approved private default", as
   git(["remote", "add", "origin", "https://github.com/fixture/project.git"], repo);
   for (const response of [{ exitCode: 1, stderr: "HTTP 404: Not Found" }, { stdout: JSON.stringify({ html_url: "https://github.com/fixture/project" }) }]) {
     const result = await runFixture([], { root, cwd: repo, responses: [{ prefix: ["api", "repos/fixture/project"], ...response }], invoke: `${rewrite(bare)} const {preparePublication}=await import(${JSON.stringify(service)}); process.stdout.write(JSON.stringify(await preparePublication({kind:'pr',base:'main'})));` });
-    expect(JSON.parse(result.stdout)).toMatchObject({ status: "needs_input", required: "repository" });
+    expect(JSON.parse(result.stdout)).toMatchObject({ status: "failed", message: expect.any(String) });
     expect(result.calls.some(args => args[1] === "create")).toBe(false);
   }
   expect(git(["--git-dir", bare, "for-each-ref", "--format=%(refname)"], root)).toBe("");

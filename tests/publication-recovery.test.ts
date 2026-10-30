@@ -96,7 +96,7 @@ describe("publication recovery", () => {
         const record=await startOperation({command:'repo create',cwd:process.cwd()});
         setActiveOperation({id:record.id,cwd:process.cwd(),command:record.command});
         try {
-          const result=await executePublication({kind:'repo',cwd:process.cwd(),root:repositoryRoot,source:repositoryRoot,host:'github.com',target:'fixture/project',remote:'origin',remoteUrl:'https://github.com/fixture/project.git',visibility:'private',push:false,steps:['add_remote']});
+          const result=await executePublication({kind:'repo',cwd:process.cwd(),root:repositoryRoot,source:repositoryRoot,host:'github.com',target:'fixture/project',remote:'origin',remoteUrl:'https://github.com/fixture/project.git',pushUrl:'https://github.com/fixture/project.git',visibility:'private',push:false,steps:['add_remote']});
           let held='';
           try { const release=await claimOperationResume(record.id,process.cwd(),0);await release(); }
           catch(error) { held=error.message; }
@@ -154,7 +154,7 @@ describe("publication recovery", () => {
     git(["add", "later"], repo); git(["commit", "-m", "later work"], repo);
     const head = git(["rev-parse", "HEAD"], repo);
     const retry = await runFixture([], { root, cwd: repo, responses: responses(true, true), invoke: invoke(["operation", "resume", id, "--title", "title", "--body", "body", "--yes", "--agent"], bare) });
-    expect(JSON.parse(retry.stdout)).toMatchObject({ status: "needs_input", error: { code: "missing_input" } });
+    expect(JSON.parse(retry.stdout)).toMatchObject({ status: "failed", error: { code: "precondition_failed", retryability: "after_inspection" } });
     expect(retry.calls.some(call => ["create", "edit"].includes(call[1] ?? ""))).toBe(false);
     expect(git(["rev-parse", "HEAD"], repo)).toBe(head);
     expect(readFileSync(recordPath, "utf8")).toBe(before);

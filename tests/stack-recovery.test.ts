@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { runFixture } from "./cli-fixture.ts";
 import { acquireStackOperationLock, createStackRecovery, readStackRecovery, writeStackRecovery, type StackRecoveryCheckpoint } from "../src/services/git/stack.ts";
 
@@ -23,6 +24,8 @@ interface RemoteViewBranch {
     };
   };
 }
+
+const stackApi = ["api", "--hostname", "github.com", "-H", "X-GitHub-Api-Version: 2026-03-10"];
 
 function git(...args: string[]): string {
   return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }).trim();
@@ -71,6 +74,12 @@ function setupStack(conflict = false): { parentTip: string; childTip: string; gr
   git("-c", "commit.gpgsign=false", "commit", "--amend", "--no-edit");
   git("switch", "main");
   return { parentTip: git("rev-parse", "parent"), childTip, grandTip, sideTip };
+}
+
+/** Origin is a GitHub URL, as submit requires; Git transparently redirects it to a local bare repository. */
+function githubOrigin(bare: string): void {
+  git("remote", "add", "origin", "https://github.com/test/repo.git");
+  git("config", "url." + pathToFileURL(bare).href + ".insteadOf", "https://github.com/test/repo.git");
 }
 
 function originalTips(): Record<string, string> {
@@ -255,6 +264,38 @@ describe("stack recovery", () => {
     expect(git("config", "branch.grandchild.gh-merge-base")).toBe("child");
   });
 
+  it("names a stopped restack in agent brief and in a second restack instead of the detached HEAD", async () => {
+    setupStack(true);
+    const first = await cli("restack", "child", "--yes", "--json");
+    expect(first.exitCode).not.toBe(0);
+    const fixture = join(root, "fixture-");
+    const brief = JSON.parse((await runFixture(["agent", "brief", "--local", "--agent"], { root: fixture, cwd: root })).stdout);
+    expect(brief.result.checkout).toMatchObject({ branch: null, operation: "rebase", stackOperation: { mode: "restack", selected: "child", operationId: expect.any(String) } });
+    expect(brief.result.next).toEqual(["ggh stack restack --continue --agent", "ggh stack restack --abort --agent"]);
+    const again = await runFixture(["stack", "restack", "-y", "--agent"], { root: fixture, cwd: root });
+    expect(again.exitCode).toBe(1);
+    const envelope = JSON.parse(again.stdout);
+    expect(envelope.error.message).toContain("ggh stack restack --continue");
+    expect(envelope.error.message).not.toContain("detached HEAD");
+    expect(envelope).toMatchObject({ status: "failed", error: { code: "precondition_failed" }, effects: { uncertain: [] } });
+  });
+
+  it("records a stack parent once and reports a repeat as no_op", async () => {
+    setupStack();
+    git("switch", "side");
+    const fixture = join(root, "fixture-");
+    mkdirSync(fixture, { recursive: true });
+    const first = JSON.parse((await runFixture(["stack", "on", "parent", "--agent"], { root: fixture, cwd: root })).stdout);
+    expect(first).toMatchObject({ status: "succeeded", result: { branch: "side", parent: "parent" }, effects: { completed: ["stack_parent_recorded"] } });
+    const tip = git("config", "branch.side.gh-merge-base-sha");
+    git("switch", "parent");
+    commitFile("later.txt", "later\n", "later");
+    git("switch", "side");
+    const second = JSON.parse((await runFixture(["stack", "on", "parent", "--agent"], { root: fixture, cwd: root })).stdout);
+    expect(second).toMatchObject({ status: "no_op", result: { status: "no_op", branch: "side", parent: "parent" }, effects: { completed: [], uncertain: [] } });
+    expect(git("config", "branch.side.gh-merge-base-sha")).toBe(tip);
+  });
+
   it("aborts a conflict, restores saved tips, and returns to the original branch", async () => {
     setupStack(true);
     const tips = originalTips();
@@ -271,10 +312,11 @@ describe("stack recovery", () => {
     setupStack();
     const remote = join(root, "remote.git");
     execFileSync("git", ["init", "--bare", "--initial-branch=main", remote], { cwd: root, stdio: "ignore" });
-    git("remote", "add", "origin", remote);
+    githubOrigin(remote);
     git("push", "-u", "origin", "main");
     mkdirSync(join(root, "fixture-one-"), { recursive: true });
-    const partial = await runFixture(["stack", "submit", "child", "--yes", "--json"], {
+    // The amended parent leaves child one commit behind; this test submits it deliberately.
+    const partial = await runFixture(["stack", "submit", "child", "--allow-stale", "--yes", "--json"], {
       root: join(root, "fixture-one-"), cwd: root,
       responses: [
         { prefix: ["pr", "view"], stdout: "" },
@@ -294,21 +336,26 @@ describe("stack recovery", () => {
     expect(git("show-ref", "--verify", "refs/heads/side")).toBeTruthy();
 
     mkdirSync(join(root, "fixture-two-"), { recursive: true });
-    const retry = await runFixture(["stack", "submit", "child", "--yes", "--json"], {
+    const retry = await runFixture(["stack", "submit", "child", "--allow-stale", "--yes", "--json"], {
       root: join(root, "fixture-two-"), cwd: root,
       responses: [
         { prefix: ["pr", "view"], stdout: "" },
         { prefix: ["pr", "create", "--title", "child"], stdout: "https://github.com/test/repo/pull/11" },
         { prefix: ["pr", "view"], stdout: "" },
         { prefix: ["pr", "create", "--title", "grandchild"], stdout: "https://github.com/test/repo/pull/12" },
+        ...[10, 11, 12].map(number => ({ prefix: [...stackApi, `repos/test/repo/stacks?pull_request=${number}`], stdout: "[]" })),
+        { prefix: [...stackApi, "-X", "POST", "repos/test/repo/stacks"], stdout: JSON.stringify({ number: 3, open: true, base: { ref: "main" }, pull_requests: [10, 11, 12].map(number => ({ number, state: "open", head: { ref: "b", sha: "c".repeat(40) } })) }) },
       ],
     });
-    expect(retry.exitCode).toBe(0);
-    expect(JSON.parse(retry.stdout).map((item: { url: string }) => item.url)).toEqual([
+    expect(retry.exitCode, retry.stderr).toBe(0);
+    const submitted = JSON.parse(retry.stdout);
+    expect(submitted.opened.map((item: { url: string }) => item.url)).toEqual([
       "https://github.com/test/repo/pull/10",
       "https://github.com/test/repo/pull/11",
       "https://github.com/test/repo/pull/12",
     ]);
+    expect(submitted.nativeStack).toEqual({ state: "created", number: 3, pullRequests: [10, 11, 12] });
+    expect(retry.inputs.find(input => input.args.includes("repos/test/repo/stacks"))?.text).toBe(JSON.stringify({ pull_requests: [10, 11, 12] }));
     expect(git("branch", "--show-current")).toBe("main");
     expect(git("show-ref", "--verify", "refs/remotes/origin/grandchild")).toBeTruthy();
     expect(git("show-ref", "--verify", "refs/heads/side")).toBeTruthy();
@@ -327,7 +374,7 @@ describe("stack recovery", () => {
     setParent("feature", "main", git("rev-parse", "main"));
     const remote = join(root, "remote.git");
     execFileSync("git", ["init", "--bare", "--initial-branch=main", remote], { cwd: root, stdio: "ignore" });
-    git("remote", "add", "origin", remote);
+    githubOrigin(remote);
     git("push", "-u", "origin", "main");
     git("push", "-u", "origin", "feature");
 

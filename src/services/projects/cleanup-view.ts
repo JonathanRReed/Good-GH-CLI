@@ -37,6 +37,7 @@ export function renderCoverage(options: CleanupViewOptions, examples = 1): strin
   const lines = [...groups.values()].flatMap(group => options.verbose ? group.paths.map(path => `${group.label}: ${group.broken ? "broken checkout " : ""}${shortPath(path)}`)
     : examples === 1 ? [`${group.label}: ${group.paths.length}${group.broken ? " broken checkout dirs" : " paths"}; e.g. ${shortPath(group.paths[0] ?? "")}`]
       : [`${group.label}: ${group.paths.length}${group.broken ? " broken checkout dirs" : " paths"}`, ...group.paths.slice(0, examples).map(path => `  ${shortPath(path)}`)]);
+  if (options.coverage?.brokenElsewhere) lines.push(`${options.coverage.brokenElsewhere} broken checkouts elsewhere: ggh lost`);
   if (options.coverage?.truncated) lines.push("Discovery incomplete: scan depth reached");
   return lines.map(line => fitProjectLine(line, options));
 }
@@ -74,7 +75,7 @@ export function formatTidyPlan(plan: TidyPlan, options: CleanupViewOptions = {})
         lines.push(`  delete${action.kind === "delete-remote-branch" ? " remote" : ""}  ${action.branch}  ${action.tip.slice(0, 7)} ⊂ ${action.integration.ref.replace(/^refs\/(remotes|heads)\//, "")} ${action.integration.oid.slice(0, 7)} (fetched ${fetchAge(clone.fetchedAt)})`);
         if (action.kind === "delete-remote-branch") lines.push(`    ${action.destination}; lease ${action.tip.slice(0, 7)}; owner ${action.login}`);
       } else if (action.kind === "remove-checkout") lines.push(`  remove checkout ${shortPath(action.checkout.path)}; ignored override ${action.allowIgnored}; unknown-owner override ${action.allowUnknown}`);
-      else lines.push(`  prune metadata: ${action.entries.length} missing checkouts; expiry ${action.expire}`);
+      else lines.push(`  prune metadata: ${action.entries.map(entry => shortPath(entry.path)).join(", ")}; expiry ${action.expire}`);
     }
     if (options.verbose) {
       for (const [reason, count] of counts(clone.kept.map(kept => kept.reason))) lines.push(`  KEEP ${count}: ${reason}`);
@@ -116,11 +117,13 @@ export function formatLost(result: LostResult, options: CleanupViewOptions = {})
     const unpublished = items.filter(item => item.kind === "unpublished").sort((a, b) => b.uniqueCommits - a.uniqueCommits || Date.parse(b.newestDate) - Date.parse(a.newestDate) || (a.branch ?? a.head).localeCompare(b.branch ?? b.head));
     const stashes = items.filter(item => item.kind === "stash").flatMap(item => item.stashes).sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
     const dirty = items.filter(item => item.kind === "dirty-host-checkout");
+    const ordinaryDirty = items.filter(item => item.kind === "dirty-checkout");
     const broken = items.filter(item => item.kind === "broken-gitdir").filter(item => !options.coverage?.skipped.some(gap => gap.path === item.path));
     const top = unpublished[0];
-    lines.push(`${clone.name} · ${clone.uniqueCommits.toLocaleString("en-US")} unique · ${clone.branches} branch${clone.branches === 1 ? "" : "es"}${clone.detachedHeads ? ` + ${clone.detachedHeads} HEAD` : ""} · ${stashes.length} stash${stashes.length === 1 ? "" : "es"} · fetch ${fetchAge(clone.fetchedAt)}${dirty.length ? ` · ${dirty.length} dirty host` : ""}${broken.length ? ` · ${broken.length} broken` : ""}${top ? ` · ${top.branch ?? `HEAD ${top.head.slice(0, 7)}`}` : ""}`);
+    lines.push(`${clone.name} · ${clone.uniqueCommits.toLocaleString("en-US")} unique · ${clone.branches} branch${clone.branches === 1 ? "" : "es"}${clone.detachedHeads ? ` + ${clone.detachedHeads} HEAD` : ""} · ${stashes.length} stash${stashes.length === 1 ? "" : "es"} · fetch ${fetchAge(clone.fetchedAt)}${dirty.length ? ` · ${dirty.length} dirty host` : ""}${ordinaryDirty.length ? ` · ${ordinaryDirty.length} dirty` : ""}${broken.length ? ` · ${broken.length} broken` : ""}${top ? ` · ${top.branch ?? `HEAD ${top.head.slice(0, 7)}`}` : ""}`);
     const detail: string[] = [];
     for (const item of items.filter(item => item.kind === "reflog-only")) detail.push(`  REFLOG ${item.branch ?? shortPath(item.path ?? item.commonDir)}: ${item.commits.length} unpublished commits; last ${item.scannedEntries} entries scanned${item.truncated ? "; older history unknown" : ""}`);
+    for (const item of items.filter(item => item.kind === "restack-preimage")) detail.push(`  RESTACK PRE-IMAGE ${item.branch}: ${item.head.slice(0, 12)}; saved by stack recovery ${item.operationId}`);
     const shown = options.verbose ? unpublished : unpublished.slice(0, 3);
     for (const item of shown) {
       detail.push(`  ${item.branch ?? `HEAD ${item.head.slice(0, 7)}`}  ${item.commits} (${item.uniqueCommits} unique to it, ${item.sharedCommits} shared)  ${fetchAge(item.newestDate)}`);
@@ -137,7 +140,11 @@ export function formatLost(result: LostResult, options: CleanupViewOptions = {})
     }
     if (dirty.length) {
       detail.push(`  DIRTY HOST ${dirty.length}`);
-      for (const item of dirty.slice(0, options.verbose ? undefined : 3)) detail.push(`    ${shortPath(item.path ?? item.commonDir)}; ${item.host}`);
+      for (const item of dirty.slice(0, options.verbose ? undefined : 3)) detail.push(`    ${shortPath(item.path ?? item.commonDir)}; ${item.host}${item.dirty ? `; ${item.dirty.staged} staged, ${item.dirty.unstaged} unstaged, ${item.dirty.untracked} untracked, ${item.dirty.conflicted} conflicted` : ""}`);
+    }
+    if (ordinaryDirty.length) {
+      detail.push(`  DIRTY ${ordinaryDirty.length}`);
+      for (const item of ordinaryDirty.slice(0, options.verbose ? undefined : 3)) detail.push(`    ${shortPath(item.path ?? item.commonDir)}; ${item.dirty.staged} staged, ${item.dirty.unstaged} unstaged, ${item.dirty.untracked} untracked, ${item.dirty.conflicted} conflicted`);
     }
     if (broken.length) {
       detail.push(`  BROKEN ${broken.length}`);

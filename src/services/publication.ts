@@ -1,6 +1,7 @@
 import { publicationSnapshot, assertPublicationApproval, type PublicationContent } from "./publication-approval.ts";
 import { basename, resolve } from "node:path";
 import { getActiveOperation, setActiveOperation } from "./runtime.ts";
+import type { RequiredInput } from "./agent-contract.ts";
 import { claimOperationResume, updateOperation } from "./operations.ts";
 import { publicationIntent, type PublicationIntent } from "./publication-intent.ts";
 import { run } from "../utils/exec.ts";
@@ -20,7 +21,8 @@ import {
   PartialGitHubMutationError,
   PartialAttachmentOperationError,
 } from "./github.ts";
-import { execGitWithRetry } from "./git/exec.ts";
+import { execGitPush, execGitWithRetry } from "./git/exec.ts";
+import { PushProtectionError, type PushProtectionDetails } from "./git/push-protection.ts";
 import { getRepoRoot } from "./git/branch.ts";
 import { detectPullRequestBase } from "./git/sync.ts";
 
@@ -67,6 +69,8 @@ export interface RepositoryPlan {
   target: string;
   remote: string;
   remoteUrl: string;
+  /** The exact URL `git push` will contact for this remote, after rewrites. */
+  pushUrl: string;
   visibility: RepositoryVisibility;
   description?: string;
   push: boolean;
@@ -86,6 +90,8 @@ export interface PullRequestPlan {
   target: string;
   remote: string;
   remoteUrl: string;
+  /** The exact URL `git push` will contact for this remote, after rewrites. */
+  pushUrl: string;
   visibility: RepositoryVisibility;
   remoteAtPrepare?: string;
   createRepository: boolean;
@@ -105,10 +111,22 @@ export type PublicationPlan = RepositoryPlan | PullRequestPlan;
 export type PreparePublicationResult =
   | { status: "ready"; plan: PublicationPlan }
   | {
+      /** An input the caller can supply; see publicationRequiredInput. */
       status: "needs_input";
-      required: "name" | "base" | "branch" | "repository";
+      required: "name" | "base" | "remote";
+      message: string;
+    }
+  | {
+      /** Local or remote state blocks publication; the message names the fix. Nothing changed. */
+      status: "failed";
       message: string;
     };
+
+/** The flag or argument that supplies a publication input for each command. */
+export function publicationRequiredInput(kind: "pr" | "repo", required: "name" | "base" | "remote", description: string): RequiredInput {
+  const name = required === "base" ? "--base" : required === "remote" ? "--remote" : kind === "pr" ? "--repo-name" : "name";
+  return { name, description };
+}
 
 export interface PublicationResult {
   status: "succeeded" | "partially_completed" | "failed";
@@ -118,6 +136,9 @@ export interface PublicationResult {
   url?: string;
   error?: string;
   attachments?: { uploaded: Array<{ file: string; url: string }>; remainingFiles: string[]; phase: "storage_upload" | "github_mutation" };
+  /** Remaining steps that definitively did not happen. */
+  failed?: PublicationStep[];
+  pushProtection?: PushProtectionDetails;
 }
 
 interface RemoteInfo {
@@ -256,6 +277,60 @@ function chooseRemote(
   );
 }
 
+/** Credentials in a push URL would be shown in the plan and saved in the recovery record. */
+export function hasUrlCredentials(url: string): boolean {
+  if (!url.includes("://")) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.password !== "" || (parsed.username !== "" && parsed.protocol !== "ssh:");
+  } catch { return true; }
+}
+
+/** Git's rewrite rule: the longest matching prefix wins. */
+function rewriteUrl(url: string, rules: Array<[string, string]>): string | null {
+  let best: [string, string] | undefined;
+  for (const [base, prefix] of rules) {
+    if (url.startsWith(prefix) && (!best || prefix.length > best[1].length)) best = [base, prefix];
+  }
+  return best ? best[0] + url.slice(best[1].length) : null;
+}
+
+/**
+ * The push URL Git will use for a remote that does not exist yet: pushInsteadOf
+ * first, then insteadOf, as `git remote get-url --push` would report it.
+ */
+async function futurePushUrl(url: string, cwd: string): Promise<string> {
+  const result = await run("git", ["config", "-z", "--get-regexp", "^url\\..*\\.(insteadof|pushinsteadof)$"], { cwd, reject: false });
+  if (result.exitCode > 1) throw new Error("Could not read Git URL rewrite settings.");
+  const fetch: Array<[string, string]> = [];
+  const push: Array<[string, string]> = [];
+  for (const record of result.stdout.split("\0").filter(Boolean)) {
+    const newline = record.indexOf("\n");
+    const key = newline === -1 ? record : record.slice(0, newline);
+    const value = newline === -1 ? "" : record.slice(newline + 1);
+    const lower = key.toLowerCase();
+    if (lower.endsWith(".pushinsteadof")) push.push([key.slice(4, -".pushinsteadof".length), value]);
+    else if (lower.endsWith(".insteadof")) fetch.push([key.slice(4, -".insteadof".length), value]);
+  }
+  return rewriteUrl(url, push) ?? rewriteUrl(url, fetch) ?? url;
+}
+
+/** Exactly one push destination, as `push()` requires. */
+export async function remotePushUrl(remote: string, cwd: string): Promise<string> {
+  const result = await run("git", ["remote", "get-url", "--push", "--all", "--", remote], { cwd, reject: false });
+  const urls = result.stdout.split(/\r?\n/).map(url => url.trim()).filter(Boolean);
+  if (result.exitCode !== 0 || urls.length !== 1 || !urls[0]) throw new Error(`Remote "${remote}" must have exactly one push URL. Configure a single push URL before publishing.`);
+  return urls[0];
+}
+
+async function planPushUrl(remote: string, url: string, exists: boolean, cwd: string): Promise<{ pushUrl: string } | { message: string }> {
+  let pushUrl: string;
+  try { pushUrl = exists ? await remotePushUrl(remote, cwd) : await futurePushUrl(url, cwd); }
+  catch (error) { return { message: error instanceof Error ? error.message : String(error) }; }
+  if (hasUrlCredentials(pushUrl)) return { message: `The push URL for remote "${remote}" embeds credentials. Use a credential helper instead; the URL will not be shown or saved.` };
+  return { pushUrl };
+}
+
 export async function preparePublication(
   request: PublicationRequest,
 ): Promise<PreparePublicationResult> {
@@ -268,8 +343,7 @@ export async function preparePublication(
   } catch {
     if (request.source)
       return {
-        status: "needs_input",
-        required: "repository",
+        status: "failed",
         message: `Source "${request.source}" is not a Git repository.`,
       };
   }
@@ -283,15 +357,14 @@ export async function preparePublication(
   ) {
     return {
       status: "needs_input",
-      required: "repository",
+      required: "remote",
       message:
         "Choose a remote because this repository has multiple non-origin remotes.",
     };
   }
   if (selected && !selected.target) {
     return {
-      status: "needs_input",
-      required: "repository",
+      status: "failed",
       message: `Remote "${selected.name}" is not a supported GitHub repository URL. Use a credential-free GitHub URL. The remote will not be changed.`,
     };
   }
@@ -301,8 +374,7 @@ export async function preparePublication(
     flagRepo = parseRepoFlag();
   } catch (error) {
     return {
-      status: "needs_input",
-      required: "repository",
+      status: "failed",
       message: error instanceof Error ? error.message : String(error),
     };
   }
@@ -316,8 +388,7 @@ export async function preparePublication(
     selected.host.toLowerCase() !== requestedHost
   ) {
     return {
-      status: "needs_input",
-      required: "repository",
+      status: "failed",
       message: `Remote "${selected.name}" uses ${selected.host}, but GH_HOST targets ${requestedHost}.`,
     };
   }
@@ -330,8 +401,7 @@ export async function preparePublication(
   ).toLowerCase();
   if (!/^[A-Za-z0-9][A-Za-z0-9.-]*(?::\d+)?$/.test(host)) {
     return {
-      status: "needs_input",
-      required: "repository",
+      status: "failed",
       message: `Invalid GitHub host "${host}".`,
     };
   }
@@ -347,8 +417,7 @@ export async function preparePublication(
   const accountHost = account.host ?? host;
   if (accountHost.toLowerCase() !== host.toLowerCase()) {
     return {
-      status: "needs_input",
-      required: "repository",
+      status: "failed",
       message: `Authenticated GitHub host ${accountHost} does not match target host ${host}.`,
     };
   }
@@ -367,8 +436,7 @@ export async function preparePublication(
       nameIdentity.target.toLowerCase() !== selected.target?.toLowerCase())
   ) {
     return {
-      status: "needs_input",
-      required: "repository",
+      status: "failed",
       message: `Requested repository ${nameIdentity.target} conflicts with remote "${selected.name}" (${selected.target}).`,
     };
   }
@@ -379,8 +447,7 @@ export async function preparePublication(
       flagRepo.nameWithOwner.toLowerCase() !== selected.target?.toLowerCase())
   ) {
     return {
-      status: "needs_input",
-      required: "repository",
+      status: "failed",
       message: `GH_REPO targets ${flagRepo.nameWithOwner}, but remote "${selected.name}" points to ${selected.target}.`,
     };
   }
@@ -392,8 +459,7 @@ export async function preparePublication(
           nameIdentity.target.toLowerCase()))
   ) {
     return {
-      status: "needs_input",
-      required: "repository",
+      status: "failed",
       message: `GH_REPO targets ${flagRepo.nameWithOwner} and conflicts with the requested publication target.`,
     };
   }
@@ -426,13 +492,12 @@ export async function preparePublication(
     if (!(await validRemoteName(remoteName, root ?? cwd)))
       return {
         status: "needs_input",
-        required: "repository",
+        required: "remote",
         message: `Remote name "${remoteName}" is invalid.`,
       };
     if (push && !root)
       return {
-        status: "needs_input",
-        required: "repository",
+        status: "failed",
         message: "A local Git repository is required to push.",
       };
     const head = root
@@ -441,12 +506,13 @@ export async function preparePublication(
     const headTip = root && head ? await tip("HEAD", root) : null;
     if (push && (!head || !headTip))
       return {
-        status: "needs_input",
-        required: "repository",
+        status: "failed",
         message:
           "A checked out branch with at least one commit is required to push.",
       };
     const remoteUrl = selected?.url ?? repositoryUrl(host, target, account.protocol);
+    const destination = await planPushUrl(remoteName, remoteUrl, Boolean(selected), root ?? cwd);
+    if ("message" in destination) return { status: "failed", message: destination.message };
     const steps: PublicationStep[] = selected ? [] : ["create_repository"];
     if (root && !selected) steps.push("add_remote");
     let remoteHeadTip: string | null = null;
@@ -455,8 +521,7 @@ export async function preparePublication(
         remoteHeadTip = await remoteBranchTip(selected.name, head, root);
       } catch (error) {
         return {
-          status: "needs_input",
-          required: "repository",
+          status: "failed",
           message: error instanceof Error ? error.message : String(error),
         };
       }
@@ -468,8 +533,7 @@ export async function preparePublication(
         !(await isAncestor(remoteHeadTip, headTip, root))
       ) {
         return {
-          status: "needs_input",
-          required: "branch",
+          status: "failed",
           message: `Remote branch "${head}" has commits that are not in the local branch.`,
         };
       }
@@ -478,7 +542,7 @@ export async function preparePublication(
     }
     if (selected) {
       const current = await inspectExistingRepository({ cwd, host, target });
-      if (current.exists !== true) return { status: "needs_input", required: "repository", message: current.exists === "unknown" ? current.error : `Repository ${target} is unavailable. Check access before publication.` };
+      if (current.exists !== true) return { status: "failed", message: current.exists === "unknown" ? current.error : `Repository ${target} is unavailable. Check access before publication.` };
       visibility = current.visibility === "PUBLIC" ? "public" : current.visibility === "INTERNAL" ? "internal" : "private";
     }
     const plan: RepositoryPlan = {
@@ -490,6 +554,7 @@ export async function preparePublication(
       target,
       remote: remoteName,
       remoteUrl,
+      pushUrl: destination.pushUrl,
       visibility,
       ...(request.description ? { description: request.description } : {}),
       push,
@@ -504,8 +569,7 @@ export async function preparePublication(
 
   if (!root)
     return {
-      status: "needs_input",
-      required: "repository",
+      status: "failed",
       message: "A local Git repository is required to open a pull request.",
     };
   const inferredTarget = `${account.login}/${basename(root)}`;
@@ -524,8 +588,7 @@ export async function preparePublication(
   const headTip = head ? await tip("HEAD", root) : null;
   if (!(await isValidBranch(head, root)) || !headTip)
     return {
-      status: "needs_input",
-      required: "branch",
+      status: "failed",
       message:
         "Check out a named branch with at least one commit before opening a pull request.",
     };
@@ -554,7 +617,7 @@ export async function preparePublication(
     return {
       status: "needs_input",
       required: "base",
-      message: `Base branch "${baseName}" is not available locally. Fetch it before preparing the pull request.`,
+      message: `Base branch "${baseName}" is not available locally. Pass an existing --base, or fetch it before preparing the pull request.`,
     };
   const steps: PublicationStep[] = [];
   const createRepositoryForPr = !selected;
@@ -562,10 +625,12 @@ export async function preparePublication(
   if (!(await validRemoteName(remoteName, root)))
     return {
       status: "needs_input",
-      required: "repository",
+      required: "remote",
       message: `Remote name "${remoteName}" is invalid.`,
     };
   const remoteUrl = selected?.url ?? repositoryUrl(host, target, account.protocol);
+  const destination = await planPushUrl(remoteName, remoteUrl, Boolean(selected), root);
+  if ("message" in destination) return { status: "failed", message: destination.message };
   let remoteBaseTip: string | null = null;
   let remoteHeadTip: string | null = null;
   if (selected) {
@@ -576,8 +641,7 @@ export async function preparePublication(
       ]);
     } catch (error) {
       return {
-        status: "needs_input",
-        required: "repository",
+        status: "failed",
         message: error instanceof Error ? error.message : String(error),
       };
     }
@@ -585,7 +649,7 @@ export async function preparePublication(
   let baseTip = localBaseTip;
   if (remoteBaseTip && remoteBaseTip !== localBaseTip) {
     const available = await run("git", ["cat-file", "-e", `${remoteBaseTip}^{commit}`], { cwd: root, reject: false });
-    if (available.exitCode !== 0) return { status: "needs_input", required: "base", message: `Remote base "${baseName}" is newer than the local comparison. Run git fetch ${remoteName} ${baseName}, then prepare the plan again.` };
+    if (available.exitCode !== 0) return { status: "failed", message: `Remote base "${baseName}" is newer than the local comparison. Run git fetch ${remoteName} ${baseName}, then prepare the plan again.` };
     baseTip = remoteBaseTip;
   }
     if (
@@ -594,8 +658,7 @@ export async function preparePublication(
       !(await isAncestor(remoteHeadTip, headTip, root))
     ) {
       return {
-        status: "needs_input",
-        required: "branch",
+        status: "failed",
         message: `Remote branch "${head}" has commits that are not in the local branch.`,
       };
     }
@@ -605,8 +668,7 @@ export async function preparePublication(
   });
   if (mergeBase.exitCode !== 0 || !mergeBase.stdout.trim())
     return {
-      status: "needs_input",
-      required: "base",
+      status: "failed",
       message: `Branches "${baseName}" and "${head}" have no common commit.`,
     };
   const commitsAhead = await git(
@@ -616,8 +678,7 @@ export async function preparePublication(
   );
   if (Number.parseInt(commitsAhead, 10) < 1)
     return {
-      status: "needs_input",
-      required: "branch",
+      status: "failed",
       message: `Branch "${head}" has no commits that differ from "${baseName}".`,
     };
   if (createRepositoryForPr) steps.push("create_repository", "add_remote");
@@ -628,7 +689,7 @@ export async function preparePublication(
   let visibility = request.visibility ?? "private";
   if (selected) {
     const current = await inspectExistingRepository({ cwd, host, target });
-    if (current.exists !== true) return { status: "needs_input", required: "repository", message: current.exists === "unknown" ? current.error : `Repository ${target} is unavailable. Check access before publication.` };
+    if (current.exists !== true) return { status: "failed", message: current.exists === "unknown" ? current.error : `Repository ${target} is unavailable. Check access before publication.` };
     visibility = current.visibility === "PUBLIC" ? "public" : current.visibility === "INTERNAL" ? "internal" : "private";
   }
   const planMergeBase = mergeBase.stdout.trim();
@@ -644,6 +705,7 @@ export async function preparePublication(
       target,
       remote: remoteName,
       remoteUrl,
+      pushUrl: destination.pushUrl,
       visibility,
       createRepository: createRepositoryForPr,
       ...(selected ? { remoteAtPrepare: selected.url } : {}),
@@ -692,6 +754,8 @@ async function recheck(plan: PublicationPlan): Promise<string | null> {
     return `Remote "${plan.remote}" changed after publication was prepared.`;
   if (!plan.remoteAtPrepare && existing && existing.url !== plan.remoteUrl)
     return `Remote "${plan.remote}" was added after publication was prepared and points elsewhere. No remote will be overwritten.`;
+  const pushChanged = await pushDestinationChange(plan, root);
+  if (pushChanged) return pushChanged;
   if (existing) {
     const repository = await inspectExistingRepository(plan);
     if (repository.exists !== true) return repository.exists === "unknown" ? repository.error : `Repository ${plan.target} no longer exists.`;
@@ -859,6 +923,21 @@ async function matchingPullRequest(
   }
 }
 
+/** Run before every push: the approved plan names the exact destination. */
+async function pushDestinationChange(plan: PublicationPlan, cwd: string): Promise<string | null> {
+  if (!(await currentRemotes(cwd)).some(item => item.name === plan.remote)) return null;
+  let current: string;
+  try { current = await remotePushUrl(plan.remote, cwd); }
+  catch (error) { return error instanceof Error ? error.message : String(error); }
+  return current === plan.pushUrl ? null : `The push URL for remote "${plan.remote}" changed after publication was prepared. Prepare and approve a new publication plan.`;
+}
+
+async function assertPushDestination(plan: PublicationPlan, cwd: string): Promise<void> {
+  if (!(await currentRemotes(cwd)).some(item => item.name === plan.remote)) throw new Error(`Remote "${plan.remote}" is missing. Prepare and approve a new publication plan.`);
+  const changed = await pushDestinationChange(plan, cwd);
+  if (changed) throw new Error(changed);
+}
+
 async function pushHeadFastForward(
   plan: PublicationPlan,
   branch: string,
@@ -872,7 +951,8 @@ async function pushHeadFastForward(
       `Remote branch "${branch}" has commits that are not in the local branch.`,
     );
   }
-  await execGitWithRetry(
+  await assertPushDestination(plan, cwd);
+  await execGitPush(
     ["push", "--", plan.remote, `${headTip}:refs/heads/${branch}`],
     { cwd },
   );
@@ -946,6 +1026,7 @@ async function executePublicationSteps(
   if (plan.kind === "pr" && prContent?.attachments?.length && !executionSteps.includes("upload_attachments")) executionSteps.push("upload_attachments");
   const remaining = [...executionSteps];
   let url: string | undefined;
+  let blocked: PublicationStep | undefined;
   const active = getActiveOperation();
   const intent = context.intent ?? publicationIntent(plan, { attachments: prContent?.attachments, draft: prContent?.draft, web: prContent?.web });
   const priorCompleted = context.priorCompleted ?? [];
@@ -953,7 +1034,7 @@ async function executePublicationSteps(
     if (!active) return;
     await updateOperation(active.id, {
       target: `${plan.host}/${plan.target}`,
-      steps: [...new Set([...priorCompleted, ...executionSteps, ...remaining])].map(name => ({ name, state: priorCompleted.includes(name) || completed.some(step => step === name) ? "completed" : "pending" })),
+      steps: [...new Set([...priorCompleted, ...executionSteps, ...remaining])].map(name => ({ name, state: priorCompleted.includes(name) || completed.some(step => step === name) ? "completed" : name === blocked ? "failed" : "pending" })),
       resume: intent,
       ...(url ? { resources: [url] } : {}),
     }, active.cwd);
@@ -978,6 +1059,14 @@ async function executePublicationSteps(
 
     }
   };
+  // GitHub rejected this push outright, so the journal records it as failed, not uncertain.
+  const pushStep = async (step: PublicationStep, action: () => Promise<unknown>): Promise<void> => {
+    try { await action(); }
+    catch (error) {
+      if (error instanceof PushProtectionError) blocked = step;
+      throw error;
+    }
+  };
   const fail = (error: unknown): PublicationResult => ({
     status: completed.length || error instanceof PartialAttachmentOperationError ? "partially_completed" : "failed",
     target: plan.target,
@@ -986,6 +1075,7 @@ async function executePublicationSteps(
     ...(url ? { url } : {}),
     error: error instanceof Error ? error.message : String(error),
     ...(error instanceof PartialAttachmentOperationError ? { attachments: { uploaded: error.uploadedAttachments.map(item => ({ file: item.file.path, url: item.url })), remainingFiles: error.remainingFiles.map(file => file.path), phase: error.phase } } : {}),
+    ...(error instanceof PushProtectionError ? { pushProtection: error.details, ...(blocked ? { failed: [blocked] } : {}) } : {}),
   });
   if (
     plan.kind === "pr" &&
@@ -1056,8 +1146,9 @@ async function executePublicationSteps(
               `Remote base branch "${plan.base}" appeared with a different commit and will not be overwritten.`,
             ),
           );
+        if (!baseRef) await assertPushDestination(plan, plan.root);
         if (!baseRef)
-          await execGitWithRetry(
+          await pushStep("push_base", () => execGitPush(
             [
               "push",
               "--",
@@ -1065,14 +1156,14 @@ async function executePublicationSteps(
               `${plan.baseTip}:refs/heads/${plan.base}`,
             ],
             { cwd: plan.root },
-          );
+          ));
         await complete("push_base");
 
         await configureUpstream("set_base_upstream", plan.base, plan.baseTip, plan.root);
       }
       if (remaining.includes("set_base_upstream")) await configureUpstream("set_base_upstream", plan.base, plan.baseTip, plan.root);
       if (remaining.includes("push_head")) {
-        await pushHeadFastForward(plan, plan.head, plan.headTip, plan.root);
+        await pushStep("push_head", () => pushHeadFastForward(plan, plan.head, plan.headTip, plan.root));
         await complete("push_head");
 
         await configureUpstream("set_head_upstream", plan.head, plan.headTip, plan.root);
@@ -1202,7 +1293,8 @@ async function executePublicationSteps(
       plan.head &&
       plan.headTip
     ) {
-      await pushHeadFastForward(plan, plan.head, plan.headTip, plan.root);
+      const { head, headTip, root } = plan;
+      await pushStep("push_head", () => pushHeadFastForward(plan, head, headTip, root));
       await complete("push_head");
 
       await configureUpstream("set_head_upstream", plan.head, plan.headTip, plan.root);
@@ -1216,6 +1308,7 @@ async function executePublicationSteps(
       ...(url ? { url } : {}),
     };
   } catch (error) {
+    if (blocked) await persistProgress().catch(() => undefined);
     return fail(error);
   }
 }

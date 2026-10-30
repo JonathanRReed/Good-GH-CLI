@@ -6,57 +6,76 @@ import {
   getRepositoryReadme,
   gh,
   listUserRepositories,
+  parseRepoFlag,
   requireAuth,
   setDefaultRepository,
   viewRepository,
 } from "../services/github.ts";
-import { preparePublication, executePublication } from "../services/publication.ts";
+import { preparePublication, executePublication, publicationRequiredInput } from "../services/publication.ts";
 import { getConfig } from "../services/config.ts";
+import { isGitRepo } from "../services/git.ts";
 import { isNonInteractive, recordCommandIssue } from "../services/runtime.ts";
 import { invalidateCache } from "../services/cache.ts";
 import { dryRun } from "../utils/flags.ts";
-import { fail, failFromGitHub, header, p, pc, promptInput, jsonOut, confirmOrAbort } from "../utils/ui.ts";
+import { fail, failFromGitHub, failPublication, header, p, pc, promptInput, jsonOut, confirmOrAbort } from "../utils/ui.ts";
 
 export function registerRepoCommand(program: Command): void {
+  async function showRepository(nameWithOwner?: string, options?: { readme?: boolean }): Promise<void> {
+    header("Repository");
+    if (!(await requireAuth())) return;
+
+    // Outside a checkout there is nothing to infer; say so before asking GitHub.
+    if (!nameWithOwner && !parseRepoFlag() && !(await isGitRepo())) {
+      fail("Not inside a GitHub repository. Pass -R owner/repo.", { code: "invalid_arguments" });
+      return;
+    }
+
+    const s = p.spinner();
+    s.start(`Fetching ${nameWithOwner || "this repository"}...`);
+    let detail;
+    try { detail = await viewRepository(nameWithOwner); }
+    catch (err) { s.stop(pc.red("Failed.")); failFromGitHub(err); return; }
+    s.stop(detail ? "Loaded." : pc.yellow("Not found."));
+
+    if (!detail) {
+      fail(nameWithOwner ? `Repository '${nameWithOwner}' not found.` : "Not inside a GitHub repository. Pass -R owner/repo.", { code: nameWithOwner ? "not_found" : "invalid_arguments" });
+      return;
+    }
+
+    if (jsonOut(detail)) return;
+
+    p.log.step(pc.bold(detail.nameWithOwner) + (detail.isPrivate ? pc.dim(" (private)") : ""));
+    if (detail.description) p.log.message(`  ${detail.description}`);
+    p.log.message(
+      `  ${pc.yellow("★")} ${detail.stargazerCount}  ${pc.cyan("⑂")} ${detail.forkCount}` +
+        (detail.primaryLanguage ? `  ${pc.dim("·")} ${detail.primaryLanguage.name}` : "") +
+        (detail.licenseInfo ? `  ${pc.dim("·")} ${detail.licenseInfo.name}` : ""),
+    );
+    p.log.message(`  Default branch: ${pc.cyan(detail.defaultBranchRef?.name ?? "unknown")}`);
+    if (detail.repositoryTopics?.length) {
+      p.log.message(`  Topics: ${detail.repositoryTopics.map((t) => pc.cyan(t.name)).join(", ")}`);
+    }
+
+    if (options?.readme) {
+      const readme = await getRepositoryReadme(detail.nameWithOwner);
+      if (readme) p.note(readme.slice(0, 3000), "README");
+    }
+
+    p.outro(pc.dim(detail.url));
+  }
+
   const repo = program
     .command("repo [nameWithOwner]")
     .description("View, fork, create, and set the default repository")
     .option("--readme", "Include the README in the output")
-    .action(async (nameWithOwner?: string, options?: { readme?: boolean }) => {
-      header("Repository");
-      if (!(await requireAuth())) return;
+    .action(showRepository);
 
-      const s = p.spinner();
-      s.start(`Fetching ${nameWithOwner || "this repository"}...`);
-      const detail = await viewRepository(nameWithOwner);
-      s.stop(detail ? "Loaded." : pc.yellow("Not found."));
-
-      if (!detail) {
-        fail(nameWithOwner ? `Repository '${nameWithOwner}' not found.` : "Not inside a GitHub repository.");
-        return;
-      }
-
-      if (jsonOut(detail)) return;
-
-      p.log.step(pc.bold(detail.nameWithOwner) + (detail.isPrivate ? pc.dim(" (private)") : ""));
-      if (detail.description) p.log.message(`  ${detail.description}`);
-      p.log.message(
-        `  ${pc.yellow("★")} ${detail.stargazerCount}  ${pc.cyan("⑂")} ${detail.forkCount}` +
-          (detail.primaryLanguage ? `  ${pc.dim("·")} ${detail.primaryLanguage.name}` : "") +
-          (detail.licenseInfo ? `  ${pc.dim("·")} ${detail.licenseInfo.name}` : ""),
-      );
-      p.log.message(`  Default branch: ${pc.cyan(detail.defaultBranchRef?.name ?? "unknown")}`);
-      if (detail.repositoryTopics?.length) {
-        p.log.message(`  Topics: ${detail.repositoryTopics.map((t) => pc.cyan(t.name)).join(", ")}`);
-      }
-
-      if (options?.readme) {
-        const readme = await getRepositoryReadme(detail.nameWithOwner);
-        if (readme) p.note(readme.slice(0, 3000), "README");
-      }
-
-      p.outro(pc.dim(detail.url));
-    });
+  // `gh repo view` muscle memory: `ggh repo view [owner/name]` shows the same
+  // detail instead of being read as a repository literally named "view".
+  repo.command("view [nameWithOwner]")
+    .description("Show a repository's details, topics, and README")
+    .option("--readme", "Include the README in the output")
+    .action(showRepository);
 
   repo.command("fork <nameWithOwner>")
     .description("Fork a repository to your account")
@@ -139,21 +158,21 @@ export function registerRepoCommand(program: Command): void {
           if (!typed) { p.cancel("Cancelled."); return; }
           prepared = await preparePublication({ ...request, name: typed });
         }
-        if (prepared.status === "needs_input") {
-          recordCommandIssue({ status: "needs_input", code: "missing_input", requiredInputs: [{ name: prepared.required, description: prepared.message }], message: prepared.message });
+        if (prepared.status !== "ready") {
+          if (prepared.status === "needs_input") recordCommandIssue({ status: "needs_input", code: "missing_input", requiredInputs: [publicationRequiredInput("repo", prepared.required, prepared.message)], message: prepared.message });
           jsonOut(prepared);
-          fail(prepared.message);
+          fail(prepared.message, prepared.status === "failed" ? { code: "precondition_failed" } : {});
           return;
         }
         const plan = prepared.plan;
         const snapshotId = await publicationSnapshot(plan);
         assertPublicationApproval(options?.approvePlan, snapshotId);
-        p.note(`${plan.host}/${plan.target} (${plan.visibility})\n${plan.remote}: ${plan.remoteUrl}\n${plan.steps.join(" → ")}\n${plan.root ?? "Remote repository only"}${plan.headTip ? `\n${plan.head} ${plan.headTip.slice(0, 12)}` : ""}`, "Publication plan");
+        p.note(`${plan.host}/${plan.target} (${plan.visibility})\n${plan.remote}: ${plan.remoteUrl}${plan.pushUrl !== plan.remoteUrl ? `\npush: ${plan.pushUrl}` : ""}\n${plan.steps.join(" → ")}\n${plan.root ?? "Remote repository only"}${plan.headTip ? `\n${plan.head} ${plan.headTip.slice(0, 12)}` : ""}`, "Publication plan");
         if (dryRun(`publish ${plan.target}: ${plan.steps.join(", ")}`)) { jsonOut({ status: "planned", snapshotId, plan }); return; }
         const confirmSetting = options?.confirm ?? getConfig().repo_create_confirm;
         if (!(await confirmOrAbort(`Create or publish ${plan.target}${plan.steps.includes("create_repository") ? ` as ${plan.visibility}` : " using its existing visibility"}?`, { assumeYes: Boolean(options?.approvePlan) || options?.yes || !confirmSetting }))) return;
         const result = await executePublication(plan, undefined, { approvedSnapshot: snapshotId });
-        if (result.status !== "succeeded") fail(result.error ?? "Repository publication did not complete.");
+        if (result.status !== "succeeded") failPublication(result, "Repository publication did not complete.");
         if (jsonOut({ ...result, name: plan.target.split("/").at(-1), ...(plan.steps.includes("create_repository") ? { visibility: plan.visibility } : {}) })) return;
         if (result.url) p.log.message(result.url);
         if (result.status === "succeeded") p.outro("Repository ready.");

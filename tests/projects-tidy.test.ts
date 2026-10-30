@@ -89,15 +89,17 @@ describe("tidy checkout authority and files", () => {
     const path = await tree("safe"); const snapshot = await plan();
     expect(snapshot.clones[0]?.actions).toContainEqual(expect.objectContaining({ kind: "remove-checkout", checkout: expect.objectContaining({ path }) }));
     writeFileSync(join(path, ".env"), "secret\n");
-    expect(await apply(snapshot)).toMatchObject([{ state: "refused" }]); expect(existsSync(path)).toBe(true);
+    // The branch deletion depends on the checkout removal, so it is refused with it.
+    expect(await apply(snapshot)).toMatchObject([{ state: "refused", kind: "remove-checkout" }, { state: "refused", kind: "delete-local-branch" }]); expect(existsSync(path)).toBe(true);
+    expect(await git("branch", "--list", "safe")).toContain("safe");
     expect((await plan()).clones[0]?.kept).toContainEqual(expect.objectContaining({ target: path, reason: expect.stringContaining("Ignored files present") }));
-    rmSync(join(path, ".env")); expect(await apply(snapshot)).toMatchObject([{ state: "completed" }]); expect(existsSync(path)).toBe(false);
+    rmSync(join(path, ".env")); expect(await apply(snapshot)).toMatchObject([{ state: "completed" }, { state: "completed" }]); expect(existsSync(path)).toBe(false);
   });
   it("requires exact per-item ignored approval and refuses a changed ignored file", async () => {
     const path = await tree("ignored-tree"); writeFileSync(join(path, ".env"), "A=1\n");
-    const snapshot = await plan({ allowIgnored: [path] }); expect(snapshot.clones[0]?.actions).toHaveLength(1);
-    writeFileSync(join(path, ".env"), "A=2\n"); expect(await apply(snapshot)).toMatchObject([{ state: "refused" }]);
-    expect(await apply(await plan({ allowIgnored: [path] }))).toMatchObject([{ state: "completed" }]);
+    const snapshot = await plan({ allowIgnored: [path] }); expect(snapshot.clones[0]?.actions.map(action => action.kind)).toEqual(["remove-checkout", "delete-local-branch"]);
+    writeFileSync(join(path, ".env"), "A=2\n"); expect(await apply(snapshot)).toMatchObject([{ state: "refused" }, { state: "refused" }]);
+    expect(await apply(await plan({ allowIgnored: [path] }))).toMatchObject([{ state: "completed" }, { state: "completed" }]);
   });
   it("keeps locked, dirty, nested, and submodule checkouts", async () => {
     const locked = await tree("locked"); await git("worktree", "lock", locked);
@@ -125,14 +127,16 @@ describe("tidy checkout authority and files", () => {
     await git("worktree", "add", "-b", "unknown-a", a); await git("worktree", "add", "-b", "unknown-b", b);
     expect((await plan()).clones[0]?.actions).toEqual([]);
     const snapshot = await plan({ allowUnknown: [a] });
-    expect(snapshot.clones[0]?.actions).toMatchObject([{ kind: "remove-checkout", checkout: { path: a } }]);
+    expect(snapshot.clones[0]?.actions).toMatchObject([{ kind: "remove-checkout", checkout: { path: a } }, { kind: "delete-local-branch", branch: "unknown-a" }]);
     await apply(snapshot); expect(existsSync(a)).toBe(false); expect(existsSync(b)).toBe(true);
+    expect(await git("branch", "--list", "unknown-a")).toBe(""); expect(await git("branch", "--list", "unknown-b")).toContain("unknown-b");
   });
   it("refuses a locked checkout and a new stash after approval", async () => {
     const path = await tree("race"); const snapshot = await plan(); await git("worktree", "lock", path);
-    expect(await apply(snapshot)).toMatchObject([{ state: "refused" }]); await git("worktree", "unlock", path);
+    expect(await apply(snapshot)).toMatchObject([{ state: "refused" }, { state: "refused" }]); await git("worktree", "unlock", path);
     writeFileSync(join(repo, "stash-me"), "work"); await git("stash", "push", "-u");
-    expect(await apply(snapshot)).toMatchObject([{ state: "refused" }]);
+    expect(await apply(snapshot)).toMatchObject([{ state: "refused" }, { state: "refused" }]);
+    expect(await git("branch", "--list", "race")).toContain("race");
   });
 });
 
@@ -165,7 +169,7 @@ describe("lost", () => {
     await run("git", ["commit", "--allow-empty", "-m", "only here"], { cwd: path });
     const snapshot = await plan(); expect(snapshot.clones[0]?.actions).toEqual([]);
     const result = await findLost(await clones(), config());
-    expect(result.items).toContainEqual(expect.objectContaining({ kind: "unpublished", path, branch: null, commits: 1, newestSubject: "only here", nextSteps: [expect.arrayContaining(["branch", "rescue-work"])] }));
+    expect(result.items).toContainEqual(expect.objectContaining({ kind: "unpublished", path, branch: null, commits: 1, newestSubject: "only here", nextSteps: [expect.arrayContaining(["branch", `rescue-work-${(await run("git", ["rev-parse", "HEAD"], { cwd: path })).stdout.trim().slice(0, 12)}`])] }));
   });
   it("sorts by commit count then oldest unpublished date, and reports dirty hosts and broken gitdirs", async () => {
     const a = await tree("a"); const b = await tree("b"); const c = await tree("c");
@@ -458,4 +462,108 @@ it("tidy reports remote auth denial as refused and network timeout as uncertain"
     expect(result.exitCode, result.stderr).toBe(0);
     expect(JSON.parse(result.stdout)).toContainEqual(expect.objectContaining({ kind: "delete-remote-branch", state: denial ? "refused" : "uncertain" }));
   }
+});
+
+describe("plan binding and single-pass cleanup", () => {
+  const expire = (gitDir: string) => {
+    const old = new Date("2020-01-01T00:00:00Z");
+    utimesSync(join(gitDir, "gitdir"), old, old);
+    if (existsSync(join(gitDir, "index"))) utimesSync(join(gitDir, "index"), old, old);
+  };
+  const gitDirOf = async (path: string) => {
+    const data = (await clones())[0]?.checkouts.find(checkout => checkout.path === path)?.gitDir;
+    if (!data) throw new Error(`Missing fixture gitdir for ${path}`);
+    return data;
+  };
+
+  it("gives identical --fetch dry runs one snapshot, reports the fetch effect, and lets that snapshot apply", async () => {
+    const agentTree = join(root, "agent-tree"); await git("worktree", "add", "-b", "agent-done", agentTree);
+    const cfg = { project_roots: [repo], host_worktree_dirs: {} };
+    const args = ["tidy", "--all", "--fetch", "--allow-unknown", agentTree];
+    const first = await runFixture([...args, "--dry-run", "--agent"], { root, config: cfg });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const second = await runFixture([...args, "--dry-run", "--agent"], { root, config: cfg });
+    for (const output of [first, second]) expect(output.exitCode, output.stderr).toBe(0);
+    const [a, b] = [JSON.parse(first.stdout), JSON.parse(second.stdout)];
+    expect(a.result.plan.snapshotId).toBe(b.result.plan.snapshotId);
+    // The dry run fetched and pruned tracking refs; that is reported, not hidden.
+    expect(a.effects.completed).toContainEqual(expect.stringMatching(/^fetch:.*:origin$/));
+    expect(a.result.plan.clones[0].actions.map((action: { kind: string }) => action.kind)).toEqual(["remove-checkout", "delete-local-branch"]);
+    const applied = await runFixture([...args, "--agent", "--approve-plan", a.result.plan.snapshotId], { root, config: cfg });
+    expect(applied.exitCode, applied.stderr).toBe(0);
+    expect(JSON.parse(applied.stdout)).toMatchObject({ status: "succeeded", result: { outcomes: [{ state: "completed" }, { state: "completed" }] } });
+    expect(existsSync(agentTree)).toBe(false); expect(await git("branch", "--list", "agent-done")).toBe("");
+  }, 120_000);
+
+  it("still refuses a --fetch approval when the fetch observes moved refs", async () => {
+    await git("branch", "merged");
+    const cfg = { project_roots: [repo], host_worktree_dirs: {} };
+    const preview = await runFixture(["tidy", "--all", "--fetch", "--dry-run", "--agent"], { root, config: cfg });
+    const snapshot = JSON.parse(preview.stdout).result.plan.snapshotId;
+    const other = join(root, "other-writer"); await run("git", ["clone", "--branch", "main", remote, other]);
+    await run("git", ["-c", "user.name=Other", "-c", "user.email=other@example.invalid", "commit", "--allow-empty", "-m", "remote moved"], { cwd: other });
+    await run("git", ["push", "origin", "HEAD:refs/heads/main"], { cwd: other });
+    const changed = await runFixture(["tidy", "--all", "--fetch", "--agent", "--approve-plan", snapshot], { root, config: cfg });
+    expect(changed.exitCode).toBe(1); expect(JSON.parse(changed.stdout)).toMatchObject({ status: "needs_input", error: { code: "confirmation_required" } });
+    expect(await git("branch", "--list", "merged")).toContain("merged");
+  }, 120_000);
+
+  it("covers plain checkouts under --allow-unknown-under and never host worktrees", async () => {
+    const agents = join(root, "agents"); mkdirSync(agents);
+    const one = join(agents, "one"); const two = join(agents, "nested", "two"); const outside = join(root, "outside");
+    for (const [path, branch] of [[one, "agent-one"], [two, "agent-two"], [outside, "agent-outside"]] as const) await git("worktree", "add", "-b", branch, path);
+    const t3 = await tree("t3-owned", join(root, ".t3", "worktrees", "Project", "turn"));
+    const snapshot = await plan({ allowUnknownUnder: [agents, join(root, ".t3")] });
+    const removed = snapshot.clones[0]?.actions.flatMap(action => action.kind === "remove-checkout" ? [action.checkout.path] : []);
+    expect(removed?.sort()).toEqual([one, two].sort());
+    expect(snapshot.clones[0]?.kept).toContainEqual({ target: outside, reason: expect.stringContaining("--allow-unknown-under") });
+    expect(snapshot.clones[0]?.hostManual).toContainEqual(expect.objectContaining({ target: t3, host: "t3" }));
+    expect(snapshot.options.allowUnknownUnder).toEqual([agents, join(root, ".t3")].sort());
+    await apply(snapshot);
+    expect(existsSync(one)).toBe(false); expect(existsSync(two)).toBe(false); expect(existsSync(outside)).toBe(true); expect(existsSync(t3)).toBe(true);
+  }, 120_000);
+
+  it("refuses a broad or missing --allow-unknown-under directory and never treats the directory as below itself", async () => {
+    const outside = join(root, "outside"); await git("worktree", "add", "-b", "agent-outside", outside);
+    await expect(plan({ allowUnknownUnder: [home] })).rejects.toThrow("too broad");
+    await expect(plan({ allowUnknownUnder: [parseRoot()] })).rejects.toThrow("too broad");
+    await expect(plan({ allowUnknownUnder: [join(root, "absent")] })).rejects.toThrow("does not exist");
+    // The directory itself is not "under" itself.
+    expect((await plan({ allowUnknownUnder: [outside] })).clones[0]?.actions.some(action => action.kind === "remove-checkout")).toBe(false);
+  });
+
+  it("prunes missing entries one by one, keeping branches with unpushed work and the unsafe entry", async () => {
+    const merged = join(root, "gone-merged"); const unpushed = join(root, "gone-unpushed"); const detached = join(root, "gone-detached");
+    await git("worktree", "add", "-b", "gone-merged", merged);
+    await git("worktree", "add", "-b", "gone-unpushed", unpushed); await run("git", ["commit", "--allow-empty", "-m", "only on this branch"], { cwd: unpushed });
+    await git("worktree", "add", "--detach", detached); await run("git", ["commit", "--allow-empty", "-m", "only in this detached HEAD"], { cwd: detached });
+    const unpushedTip = await git("rev-parse", "gone-unpushed");
+    const data = await Promise.all([merged, unpushed, detached].map(gitDirOf));
+    for (const path of [merged, unpushed, detached]) rmSync(path, { recursive: true });
+    for (const gitDir of data) expire(gitDir);
+    const snapshot = await plan();
+    const actions = snapshot.clones[0]?.actions ?? [];
+    expect(actions.filter(action => action.kind === "prune-worktree-metadata").map(action => action.kind === "prune-worktree-metadata" ? action.entries.map(entry => entry.path) : []).sort()).toEqual([[merged], [unpushed]].sort());
+    expect(actions.findIndex(action => action.kind === "delete-local-branch" && action.branch === "gone-merged")).toBeGreaterThan(actions.findIndex(action => action.kind === "prune-worktree-metadata" && action.entries[0]?.path === merged));
+    expect(actions.some(action => action.kind === "delete-local-branch" && action.branch === "gone-unpushed")).toBe(false);
+    expect(snapshot.clones[0]?.kept).toContainEqual(expect.objectContaining({ target: detached, reason: expect.stringContaining("Unpublished or unknown HEAD") }));
+    expect((await apply(snapshot)).every(outcome => outcome.state === "completed")).toBe(true);
+    expect(existsSync(data[0]!)).toBe(false); expect(existsSync(data[1]!)).toBe(false); expect(existsSync(data[2]!)).toBe(true);
+    expect(await git("branch", "--list", "gone-merged")).toBe("");
+    expect(await git("rev-parse", "gone-unpushed")).toBe(unpushedTip);
+  }, 120_000);
+
+  it("keeps a missing entry whose index holds staged work or whose reflog alone keeps commits", async () => {
+    const staged = join(root, "gone-staged"); const rewritten = join(root, "gone-rewritten");
+    await git("worktree", "add", "-b", "gone-staged", staged); writeFileSync(join(staged, "staged.txt"), "staged\n"); await run("git", ["add", "staged.txt"], { cwd: staged });
+    await git("worktree", "add", "-b", "gone-rewritten", rewritten);
+    await run("git", ["commit", "--allow-empty", "-m", "dropped later"], { cwd: rewritten }); await run("git", ["reset", "--hard", "HEAD~1"], { cwd: rewritten });
+    const data = await Promise.all([staged, rewritten].map(gitDirOf));
+    for (const path of [staged, rewritten]) rmSync(path, { recursive: true });
+    for (const gitDir of data) expire(gitDir);
+    const snapshot = await plan();
+    expect(snapshot.clones[0]?.actions.some(action => action.kind === "prune-worktree-metadata")).toBe(false);
+    expect(snapshot.clones[0]?.kept).toContainEqual({ target: staged, reason: "Staged changes in the missing checkout's index" });
+    expect(snapshot.clones[0]?.kept).toContainEqual({ target: rewritten, reason: expect.stringContaining("commits no ref keeps") });
+  });
 });

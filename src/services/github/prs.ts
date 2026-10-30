@@ -2,7 +2,7 @@
  * Pull request operations. Depends on client only.
  */
 
-import { GitHubError, clampLimit, classifyGitHubError, getCurrentRepositoryNameWithOwner, gh, ghApi, ghGlobal, parseRepoFlag, stdinTextRequest } from "./client.ts";
+import { GitHubError, clampLimit, classifyGitHubError, foundOrThrow, getCurrentRepositoryNameWithOwner, gh, ghApi, ghGlobal, parseRepoFlag, stdinTextRequest } from "./client.ts";
 import { invalidateCache } from "../cache.ts";
 import { cachedGitHub } from "./cache.ts";
 import { addAttachmentArgs, appendFallbackMarkdown, fallbackMutationFailure, PartialAttachmentOperationError, PartialGitHubMutationError, prepareAttachmentPlan, uploadFallbackAttachments, type AttachmentPlan, type AttachmentVisibility } from "./attachments.ts";
@@ -145,6 +145,78 @@ export async function getPullRequestChecks(cwd = process.cwd()): Promise<CheckRu
 }
 
 
+export interface BranchPullRequest {
+  number: number;
+  url: string;
+  state: string;
+  isDraft: boolean;
+  headRefOid: string;
+  baseRefName: string;
+  reviewDecision: string | null;
+  mergeable: string;
+  closingIssuesReferences: Array<{ number: number; url?: string; repository?: { name?: string; owner?: { login?: string } } }>;
+}
+
+const NO_BRANCH_PR = /no (?:open )?pull requests? (?:found|associated)/i;
+
+/**
+ * The PR for the current branch, or null when the branch has none. Unlike
+ * `viewPullRequest`, a failed read throws instead of looking like "no PR".
+ */
+export async function getBranchPullRequest(options: { timeoutMs?: number; cwd?: string } = {}): Promise<BranchPullRequest | null> {
+  try {
+    const { stdout } = await gh(["pr", "view", "--json", "number,url,state,isDraft,headRefOid,baseRefName,reviewDecision,mergeable,closingIssuesReferences"], options);
+    const parsed: unknown = JSON.parse(stdout);
+    const pr = parsed as Partial<BranchPullRequest> | null;
+    if (!pr || typeof pr.number !== "number" || typeof pr.url !== "string" || typeof pr.headRefOid !== "string") {
+      throw new Error("GitHub CLI returned an unexpected pull request.");
+    }
+    return {
+      number: pr.number, url: pr.url, state: String(pr.state ?? ""), isDraft: pr.isDraft === true,
+      headRefOid: pr.headRefOid, baseRefName: String(pr.baseRefName ?? ""),
+      reviewDecision: typeof pr.reviewDecision === "string" && pr.reviewDecision ? pr.reviewDecision : null,
+      mergeable: String(pr.mergeable ?? "UNKNOWN"),
+      closingIssuesReferences: Array.isArray(pr.closingIssuesReferences) ? pr.closingIssuesReferences.filter(issue => typeof issue?.number === "number") : [],
+    };
+  } catch (err) {
+    const text = [(err as { stderr?: string })?.stderr, err instanceof Error ? err.message : String(err)].join("\n");
+    if (NO_BRANCH_PR.test(text)) return null;
+    throw classifyGitHubError(err, "pull request");
+  }
+}
+
+export interface CheckSummary {
+  total: number;
+  /** Non-zero counts by gh bucket: pass, fail, pending, skipping, cancel. */
+  counts: Record<string, number>;
+  failing: string[];
+}
+
+/** Counts a PR's checks by bucket. Throws on read failures; `gh pr checks` signals pending and failing checks through its exit code. */
+export async function getPullRequestCheckSummary(prNumber: number, options: { timeoutMs?: number; cwd?: string } = {}): Promise<CheckSummary> {
+  let result: Awaited<ReturnType<typeof gh>>;
+  try {
+    result = await gh(["pr", "checks", String(prNumber), "--json", "name,bucket"], { ...options, reject: false });
+  } catch (err) {
+    throw classifyGitHubError(err, "pull request checks");
+  }
+  let rows: unknown;
+  try { rows = JSON.parse(result.stdout); } catch { rows = undefined; }
+  if (!Array.isArray(rows)) {
+    if (/no checks reported/i.test(result.stderr)) return { total: 0, counts: {}, failing: [] };
+    throw classifyGitHubError(Object.assign(new Error(`gh pr checks exited with code ${result.exitCode}`), { stderr: result.stderr }), "pull request checks");
+  }
+  const summary: CheckSummary = { total: 0, counts: {}, failing: [] };
+  for (const row of rows as Array<{ name?: unknown; bucket?: unknown }>) {
+    const bucket = typeof row?.bucket === "string" && row.bucket ? row.bucket : "unknown";
+    summary.total++;
+    summary.counts[bucket] = (summary.counts[bucket] ?? 0) + 1;
+    if ((bucket === "fail" || bucket === "cancel") && typeof row.name === "string") summary.failing.push(row.name);
+  }
+  return summary;
+}
+
+
 export interface PullRequestDetail extends PullRequestItem {
   body: string;
   headRefOid: string;
@@ -168,9 +240,11 @@ export async function viewPullRequest(
 ): Promise<PullRequestDetail | null> {
   try {
     const args = ["pr", "view", ...(prNumber ? [String(prNumber)] : []), "--json", PR_VIEW_FIELDS];
-    const { stdout } = await gh(args, { cwd, reject: false });
-    if (!stdout.trim()) return null;
-    const parsed = JSON.parse(stdout);
+    const result = await gh(args, { cwd, reject: false });
+    // Without a number, gh reports a branch with no PR as an error; that is an empty answer.
+    if (!prNumber && result.exitCode !== 0 && /no (?:open )?pull requests? found/i.test(result.stderr)) return null;
+    if (!foundOrThrow(result, "pull request view") || !result.stdout.trim()) return null;
+    const parsed = JSON.parse(result.stdout);
     if (!parsed || typeof parsed !== "object") return null;
     return parsed;
   } catch (err) {

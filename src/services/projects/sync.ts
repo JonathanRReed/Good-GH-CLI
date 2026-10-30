@@ -8,6 +8,7 @@ import { acquireProcessLock } from "../process-lock.ts";
 import { projectPath, redactRemoteUrl, within } from "./discovery.ts";
 import { checkoutHost } from "./hosts.ts";
 import { gitLine, projectLockPath, projectNetworkOptions, safeTrackingFetch } from "./git.ts";
+import { fetchedAt } from "./tidy-plan.ts";
 import type { IndexedClone } from "./types.ts";
 
 export type SyncOutcome =
@@ -19,7 +20,7 @@ export type CheckoutSyncResult = { path: string; branch: string | null } & SyncO
 type FetchResult = { remote: string } & ({ outcome: "updated" } | { outcome: "failed" | "uncertain"; message: string });
 type ForkResult = { outcome: "skipped"; reason: string } | { target: string; outcome: "updated" } | { target: string; outcome: "uncertain"; message: string };
 export type CloneSyncResult = {
-  commonDir: string; name: string; checkouts: CheckoutSyncResult[]; fetches: FetchResult[]; forkUpstream: ForkResult;
+  commonDir: string; name: string; refSnapshot?: { fetchedAt: string | null }; checkouts: CheckoutSyncResult[]; fetches: FetchResult[]; forkUpstream: ForkResult;
 } & ({ outcome: "updated" | "up-to-date" } | { outcome: "skipped"; reason: string } | { outcome: "failed" | "uncertain"; message: string });
 export interface ProjectSyncResult {
   schemaVersion: 1;
@@ -66,6 +67,8 @@ function hostOwned(path: string, options: ProjectSyncOptions): boolean {
 }
 
 async function checkoutState(checkout: WorktreeInfo, commonDir: string, deadline: number): Promise<SyncOutcome | { outcome: "ready"; branch: string; old: string; new: string }> {
+  if (!existsSync(checkout.path)) return { outcome: "skipped", reason: "missing" };
+  if (checkout.prunable) return { outcome: "skipped", reason: "prunable" };
   if (checkout.locked) return { outcome: "skipped", reason: "locked" };
   if (checkout.isBare) return { outcome: "skipped", reason: "bare" };
   const cwd = checkout.path;
@@ -124,7 +127,7 @@ async function syncCheckout(checkout: WorktreeInfo, commonDir: string, deadline:
 
 async function syncClone(clone: IndexedClone, options: ProjectSyncOptions): Promise<CloneSyncResult> {
   const commonDir = projectPath(clone.commonDir);
-  const result: CloneSyncResult = { commonDir, name: clone.displayName, outcome: "up-to-date", checkouts: [], fetches: [], forkUpstream: { outcome: "skipped", reason: "not-requested" } };
+  const result: CloneSyncResult = { commonDir, name: clone.displayName, outcome: "up-to-date", ...(options.dryRun ? { refSnapshot: { fetchedAt: fetchedAt(commonDir) } } : {}), checkouts: [], fetches: [], forkUpstream: { outcome: "skipped", reason: "not-requested" } };
   const deadline = Date.now() + (options.timeoutMs ?? 120_000);
   let release: (() => Promise<void>) | undefined;
   try {

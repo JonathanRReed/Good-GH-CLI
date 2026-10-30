@@ -1,13 +1,15 @@
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { homedir } from "node:os";
+import { basename, dirname, join, parse, resolve } from "node:path";
 import { getConfig, type GoodGhConfig } from "../config.ts";
 import { worktreeList } from "../git/worktree.ts";
 import { run } from "../../utils/exec.ts";
 import { discoverProjects, projectPath, remoteIdentity } from "./discovery.ts";
 import { checkoutCreator } from "./hosts.ts";
 import { gitLine, inventoryGitOptions, projectGit } from "./git.ts";
-import { protectReflog } from "./reflog.ts";
+import { protectReflog, reflogWork } from "./reflog.ts";
+import { within } from "./paths.ts";
 import { volumeAvailable } from "./volumes.ts";
 export { volumeAvailable } from "./volumes.ts";
 import type { TidyAudit } from "./tidy-audit.ts";
@@ -18,6 +20,8 @@ export interface TidyOptions {
   /** Exact checkout paths, each requiring a new plan approval. */
   allowIgnored?: string[];
   allowUnknown?: string[];
+  /** Plain Git checkouts strictly below these directories. Host-owned checkouts are never covered. */
+  allowUnknownUnder?: string[];
   staleDays?: number;
 }
 export interface RefProof { ref: string; oid: string }
@@ -78,7 +82,7 @@ async function requireFreshRemoteRefs(commonDir: string, refs: RefProof[], maxDa
 export async function freshClone(clone: Clone, config: GoodGhConfig = getConfig()): Promise<Clone> {
   const source = clone.checkouts.find(checkout => existsSync(join(checkout.path, ".git")) || checkout.bare)?.path;
   if (!source) throw new Error("No readable checkout; identity cannot be proved");
-  const discovered = await discoverProjects({ config: { ...config, project_roots: [], project_exclude: [] }, registered: [source] });
+  const discovered = await discoverProjects({ config: { ...config, project_roots: [], project_exclude: [] }, registered: [source], scanHostLocations: false });
   const fresh = discovered.clones.find(candidate => candidate.commonDir === clone.commonDir);
   if (!fresh || realpathSync.native(fresh.commonDir) !== clone.commonDir) throw new Error("Clone identity changed or cannot be proved");
   return fresh;
@@ -132,7 +136,7 @@ export async function remoteOwnership(commonDir: string, branch: string): Promis
   if (/^https?:\/\/[^/]*@/.test(destination) || /[?#]/.test(destination)) return null;
   return { destination, login };
 }
-function missingPath(path: string): boolean {
+export function missingPath(path: string): boolean {
   try { lstatSync(path); return false; }
   catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") return true;
@@ -164,6 +168,24 @@ function protectNested(checkout: string): void {
     }
   }
 }
+const OPERATION_MARKERS = ["MERGE_HEAD", "rebase-merge", "rebase-apply", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_LOG", "sequencer"];
+/** State that lives only in a worktree's own gitdir and disappears with its metadata. */
+async function protectWorktreeMetadata(commonDir: string, checkout: Checkout): Promise<void> {
+  for (const marker of OPERATION_MARKERS) if (existsSync(join(checkout.gitDir, marker))) throw new Error(`Git operation in progress: ${marker}`);
+  const pending = [join(checkout.gitDir, "refs")];
+  while (pending.length) {
+    const directory = pending.pop();
+    if (!directory || !existsSync(directory)) continue;
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.isDirectory()) pending.push(join(directory, entry.name));
+      else throw new Error("Per-worktree refs present");
+    }
+  }
+  if (!checkout.head || !existsSync(join(checkout.gitDir, "index"))) return;
+  const staged = await run("git", ["--git-dir", checkout.gitDir, "diff-index", "--cached", "--quiet", checkout.head, "--"], { ...inventoryGitOptions, cwd: commonDir, reject: false });
+  if (staged.exitCode === 1) throw new Error("Staged changes in the missing checkout's index");
+  if (staged.exitCode !== 0) throw new Error("Cannot inspect the missing checkout's index");
+}
 export async function checkoutFileState(checkout: Checkout, allowIgnored: boolean): Promise<string> {
   directoryIdentity(checkout.path);
   const reverse = readFileSync(join(checkout.gitDir, "gitdir"), "utf8");
@@ -172,7 +194,7 @@ export async function checkoutFileState(checkout: Checkout, allowIgnored: boolea
   if (actualHead !== checkout.head) throw new Error("Checkout HEAD changed");
   const flags = (await projectGit(checkout.path, ["ls-files", "-v", "-z"])).stdout;
   if (flags.split("\0").some(record => /^[a-zS] /.test(record))) throw new Error("Assume-unchanged or skip-worktree index entries hide file state");
-  for (const marker of ["MERGE_HEAD", "rebase-merge", "rebase-apply", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_LOG", "sequencer"]) {
+  for (const marker of OPERATION_MARKERS) {
     if (existsSync(join(checkout.gitDir, marker))) throw new Error(`Git operation in progress: ${marker}`);
   }
   // Disable ignore-submodules configuration: submodule and nested work never disappear behind it.
@@ -220,20 +242,37 @@ export async function classifyTidyClone(input: Clone, options: TidyOptions = {},
     let publication: Promise<void> | undefined;
     const freshPublication = () => publication ??= requireFreshRemoteRefs(commonDir, remoteRefs, config.tidy_max_fetch_age_days ?? 30);
     const proof = (specific: RefProof[]): TidyProof => ({ commonDir, cloneIdentity, refs: specific, remoteRefs, stash });
+    // One proof for every local branch deletion, whether or not a checkout is removed first.
+    const branchAction = async (ref: RefProof): Promise<TidyAction> => {
+      const branch = ref.ref.slice(11);
+      if (hasStash) throw new Error("Clone has stashes");
+      const integration = await integrationFor(ref.oid, branch);
+      if (!integration) throw new Error("Exact tip is not proven merged by ancestry");
+      if (await unpublishedCount(commonDir, ref.oid)) throw new Error("Commits unreachable from every remote ref");
+      await freshPublication();
+      await protectReflog(commonDir, { branch });
+      if (defaults.some(target => target.ref.replace(/^refs\/remotes\/[^/]+\//, "") === branch)) throw new Error("Default branch");
+      return action({ kind: "delete-local-branch", branch, tip: ref.oid, integration, proof: proof([ref, integration]) });
+    };
+    // Branches held by a checkout wait for that checkout's removal in this same plan.
+    const checkedOut = new Map<string, RefProof>();
     for (const ref of refs.filter(ref => ref.ref.startsWith("refs/heads/"))) {
       const branch = ref.ref.slice(11);
       try {
-        if (trees.some(tree => tree.branch === branch)) throw new Error("Checked out in a worktree");
-        if (hasStash) throw new Error("Clone has stashes");
-        const integration = await integrationFor(ref.oid, branch);
-        if (!integration) throw new Error("Exact tip is not proven merged by ancestry");
-        if (await unpublishedCount(commonDir, ref.oid)) throw new Error("Commits unreachable from every remote ref");
-        await freshPublication();
-        await protectReflog(commonDir, { branch });
-        if (defaults.some(target => target.ref.replace(/^refs\/remotes\/[^/]+\//, "") === branch)) throw new Error("Default branch");
-        result.actions.push(action({ kind: "delete-local-branch", branch, tip: ref.oid, integration, proof: proof([ref, integration]) }));
+        if (trees.some(tree => tree.branch === branch)) { checkedOut.set(branch, ref); continue; }
+        result.actions.push(await branchAction(ref));
       } catch (error) { result.kept.push({ target: branch, reason: reason(error) }); }
     }
+    const releaseBranch = async (checkout: Checkout): Promise<void> => {
+      const ref = checkout.branch ? checkedOut.get(checkout.branch) : undefined;
+      if (!checkout.branch || !ref) return;
+      checkedOut.delete(checkout.branch);
+      try {
+        if (trees.filter(tree => tree.branch === checkout.branch).length !== 1) throw new Error("Checked out in a worktree");
+        if (ref.oid !== checkout.head) throw new Error("Checked out in a worktree whose HEAD differs from the branch tip");
+        result.actions.push(await branchAction(ref));
+      } catch (error) { result.kept.push({ target: checkout.branch, reason: reason(error) }); }
+    };
     for (const checkout of clone.checkouts) {
       try {
         const claims = await hostClaims(checkout, commonDir, config);
@@ -250,8 +289,9 @@ export async function classifyTidyClone(input: Clone, options: TidyOptions = {},
         if (checkout.prunable) throw new Error("Broken checkout gitdir");
         if (!checkout.head) throw new Error("HEAD is unknown");
         if (hasStash) throw new Error("Clone has stashes");
-        const allowUnknown = (options.allowUnknown ?? []).map(projectPath).includes(checkout.path);
-        if (checkout.createdBy !== "ggh" && !allowUnknown) throw new Error("Unknown provenance; keep unless this path is approved with --allow-unknown");
+        const allowUnknown = (options.allowUnknown ?? []).map(projectPath).includes(checkout.path)
+          || (options.allowUnknownUnder ?? []).some(directory => directory !== checkout.path && within(projectPath(directory), checkout.path));
+        if (checkout.createdBy !== "ggh" && !allowUnknown) throw new Error("Unknown provenance; keep unless this path is approved with --allow-unknown or --allow-unknown-under");
         if (await unpublishedCount(commonDir, checkout.head)) throw new Error("Unpublished commits in checkout HEAD");
         const integration = await integrationFor(checkout.head, checkout.branch);
         if (checkout.branch && !integration) throw new Error("Exact branch tip is not proven merged by ancestry");
@@ -263,6 +303,7 @@ export async function classifyTidyClone(input: Clone, options: TidyOptions = {},
         const actual = realpathSync.native(gitLine((await projectGit(checkout.path, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).stdout));
         if (actual !== commonDir) throw new Error("Checkout changed clone identity");
         result.actions.push(action({ kind: "remove-checkout", checkout, checkoutIdentity: tidyDigest([directoryIdentity(checkout.path), directoryIdentity(checkout.gitDir)]), fileState, allowIgnored, allowUnknown, integration, proof: proof([{ ref: checkout.branch ? `refs/heads/${checkout.branch}` : "HEAD", oid: checkout.head }, ...integration ? [integration] : []]) }));
+        await releaseBranch(checkout);
       } catch (error) { result.kept.push({ target: checkout.path, reason: reason(error) }); }
     }
     if (options.remoteBranches) for (const ref of refs.filter(ref => ref.ref.startsWith("refs/remotes/origin/") && !ref.ref.endsWith("/HEAD"))) {
@@ -279,32 +320,47 @@ export async function classifyTidyClone(input: Clone, options: TidyOptions = {},
         result.actions.push(action({ kind: "delete-remote-branch", branch, tip: ref.oid, integration, ...owned, proof: proof([ref, integration]) }));
       } catch (error) { result.kept.push({ target: ref.ref, reason: reason(error) }); }
     }
+    // Each missing entry is pruned on its own proof, so one unsafe entry never blocks the rest.
     const prunable = clone.checkouts.filter(checkout => checkout.prunable);
     if (prunable.length) {
+      let expire = "3.months.ago";
+      let listing: string[] | Error;
       try {
-        if (hasStash) throw new Error("Clone has stashes");
-        const metadata = join(commonDir, "worktrees");
-        for (const name of readdirSync(metadata)) {
-          if (!clone.checkouts.some(checkout => checkout.gitDir === join(metadata, name))) throw new Error("Unknown worktree metadata; clone-wide prune is unsafe");
-        }
-        for (const checkout of prunable) {
+        expire = await configValue(commonDir, "gc.worktreePruneExpire") ?? expire;
+        const dryRun = await projectGit(commonDir, ["worktree", "prune", "--dry-run", "--verbose", `--expire=${expire}`]);
+        listing = (dryRun.stdout + dryRun.stderr).split(/\r?\n/).filter(Boolean);
+      } catch (error) { listing = error instanceof Error ? error : new Error("Cannot list prunable worktree metadata"); }
+      for (const checkout of prunable) {
+        try {
+          if (listing instanceof Error) throw listing;
+          if (hasStash) throw new Error("Clone has stashes");
           if (!missingPath(checkout.path)) throw new Error(`Existing checkout: ${checkout.path}`);
-          if (!checkout.head || await unpublishedCount(commonDir, checkout.head)) throw new Error(`Unpublished or unknown HEAD in missing checkout: ${checkout.path}`);
-          await freshPublication();
-          await protectReflog(commonDir, { checkout });
-          if (checkout.branch) await protectReflog(commonDir, { branch: checkout.branch });
           if (checkout.locked) throw new Error(`Locked entry: ${checkout.path}`);
           if (!await volumeAvailable(checkout.path)) throw new Error(`Volume looks unmounted: ${checkout.path}`);
           if ((await hostClaims(checkout, commonDir, config)).length) throw new Error(`Host-owned metadata: ${checkout.path}`);
-        }
-        const expire = await configValue(commonDir, "gc.worktreePruneExpire") ?? "3.months.ago";
-        const dryRun = (await projectGit(commonDir, ["worktree", "prune", "--dry-run", "--verbose", `--expire=${expire}`]));
-        const output = dryRun.stdout + dryRun.stderr;
-        if (!output) throw new Error("Prunable metadata is still protected by Git's expiry");
-        // Git prune is clone-wide. Pin the entire registry and refuse if any entry is unsafe.
-        result.actions.push(action({ kind: "prune-worktree-metadata", entries: prunable, registry: tidyDigest([trees, prunable.map(checkout => [directoryIdentity(checkout.gitDir), statSync(join(checkout.gitDir, "gitdir")).mtimeMs])]), expire, dryRun: output, proof: proof([]) }));
-      } catch (error) { result.kept.push({ target: "worktree metadata", reason: reason(error) }); }
+          if (dirname(checkout.gitDir) !== join(commonDir, "worktrees")) throw new Error("Worktree metadata outside the clone registry");
+          const line = listing.find(entry => entry.startsWith(`Removing worktrees/${basename(checkout.gitDir)}:`));
+          if (!line) throw new Error("Prunable metadata is still protected by Git's expiry");
+          if (!checkout.head) throw new Error(`Unpublished or unknown HEAD in missing checkout: ${checkout.path}`);
+          if (checkout.branch) {
+            // The branch ref keeps its commits; only history unique to this entry's reflog would go.
+            const ref = refs.find(item => item.ref === `refs/heads/${checkout.branch}`);
+            if (!ref || ref.oid !== checkout.head) throw new Error(`Branch tip differs from the missing checkout's HEAD: ${checkout.path}`);
+            const orphaned = await reflogWork(commonDir, { checkout }, true);
+            if (orphaned.commits.length) throw new Error(`reflog holds ${orphaned.commits.length} commits no ref keeps: ${checkout.path}`);
+            if (orphaned.truncated) throw new Error(`reflog scan limit reached; unique history unknown: ${checkout.path}`);
+          } else {
+            if (await unpublishedCount(commonDir, checkout.head)) throw new Error(`Unpublished or unknown HEAD in missing checkout: ${checkout.path}`);
+            await freshPublication();
+            await protectReflog(commonDir, { checkout });
+          }
+          await protectWorktreeMetadata(commonDir, checkout);
+          result.actions.push(action({ kind: "prune-worktree-metadata", entries: [checkout], registry: tidyDigest([directoryIdentity(checkout.gitDir), statSync(join(checkout.gitDir, "gitdir")).mtimeMs]), expire, dryRun: line, proof: proof([{ ref: checkout.branch ? `refs/heads/${checkout.branch}` : "HEAD", oid: checkout.head }]) }));
+          await releaseBranch(checkout);
+        } catch (error) { result.kept.push({ target: checkout.path, reason: reason(error) }); }
+      }
     }
+    for (const branch of checkedOut.keys()) result.kept.push({ target: branch, reason: "Checked out in a worktree" });
     const newest = (await projectGit(commonDir, ["for-each-ref", "--sort=-committerdate", "--format=%(committerdate:unix)", "refs/heads/", "refs/remotes/"])).stdout.trim().split("\n").map(Number).filter(Number.isFinite);
     for (const checkout of clone.checkouts.filter(checkout => !checkout.branch && checkout.head)) {
       const date = Number((await projectGit(commonDir, ["log", "-1", "--format=%ct", checkout.head ?? "HEAD", "--"])).stdout.trim());
@@ -317,11 +373,28 @@ export async function classifyTidyClone(input: Clone, options: TidyOptions = {},
   } catch (error) { result.actions = []; result.kept.push({ target: input.commonDir, reason: reason(error) }); }
   return result;
 }
+/**
+ * Binds the decisions and their exact ref/OID proofs. Fetch timestamps and
+ * report-only hints are left out: a fresh `--fetch` must reproduce the same
+ * snapshot when it observed the same refs, or approval could never match.
+ */
 export function tidySnapshot(plan: Pick<TidyPlan, "schemaVersion" | "options" | "clones" | "audit">): string {
-  return tidyDigest({ schemaVersion: plan.schemaVersion, options: plan.options, clones: plan.clones, ...(plan.audit ? { audit: plan.audit } : {}) });
+  const clones = plan.clones.map(clone => ({ commonDir: clone.commonDir, name: clone.name, actions: clone.actions, kept: clone.kept, hostManual: clone.hostManual }));
+  return tidyDigest({ schemaVersion: plan.schemaVersion, options: plan.options, clones, ...(plan.audit ? { audit: plan.audit } : {}) });
+}
+/** A broad directory approval must name one agent area, never a whole volume or home. */
+function unknownDirectory(path: string): string {
+  const resolved = projectPath(path);
+  // Breadth comes first: a volume root or home is too broad whether or not it is mounted.
+  const homes = [homedir(), process.env.HOME].filter((home): home is string => Boolean(home)).map(projectPath);
+  if (resolved === parse(resolved).root || homes.includes(resolved)) throw new Error(`--allow-unknown-under is too broad: ${path}. Name the directory that holds the agent checkouts`);
+  let info;
+  try { info = statSync(resolved); } catch { throw new Error(`--allow-unknown-under directory does not exist: ${path}`); }
+  if (!info.isDirectory()) throw new Error(`--allow-unknown-under must name a directory: ${path}`);
+  return resolved;
 }
 export async function buildTidyPlan(clones: readonly Clone[], options: TidyOptions = {}, config = getConfig()): Promise<TidyPlan> {
-  const normalized: TidyOptions = { remoteBranches: options.remoteBranches ?? false, allowIgnored: [...new Set((options.allowIgnored ?? []).map(projectPath))].sort(), allowUnknown: [...new Set((options.allowUnknown ?? []).map(projectPath))].sort(), staleDays: options.staleDays ?? 120 };
+  const normalized: TidyOptions = { remoteBranches: options.remoteBranches ?? false, allowIgnored: [...new Set((options.allowIgnored ?? []).map(projectPath))].sort(), allowUnknown: [...new Set((options.allowUnknown ?? []).map(projectPath))].sort(), allowUnknownUnder: [...new Set((options.allowUnknownUnder ?? []).map(unknownDirectory))].sort(), staleDays: options.staleDays ?? 120 };
   if (!Number.isSafeInteger(normalized.staleDays) || (normalized.staleDays ?? 0) < 1) throw new Error("--stale-days must be a positive integer");
   const plans: TidyClonePlan[] = [];
   for (const clone of [...new Map(clones.map(clone => [clone.commonDir, clone])).values()].sort((a, b) => a.commonDir.localeCompare(b.commonDir))) plans.push(await classifyTidyClone(clone, normalized, config));

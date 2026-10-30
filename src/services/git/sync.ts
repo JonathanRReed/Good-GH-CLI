@@ -5,9 +5,10 @@
 
 import { safeTrackingFetch } from "../projects/git.ts";
 import { run } from "../../utils/exec.ts";
+import { getFlags } from "../runtime.ts";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
-import { execGitWithRetry } from "./exec.ts";
+import { execGitPush, execGitWithRetry } from "./exec.ts";
 import { getCurrentBranch, getRemoteTrackingBranch, getRemotes, getRepoRoot, hasBranch, isDetachedHead, resolveBranchRef } from "./branch.ts";
 import { branchSettings, pushTarget } from "./push-target.ts";
 import { getBranchMergeBase } from "./stack.ts";
@@ -39,6 +40,8 @@ export async function push(
   const source = (await run("git", ["rev-parse", "--verify", `refs/heads/${branch}^{commit}`], { cwd })).stdout.trim();
   const tracking = await getRemoteTrackingBranch(cwd, branch);
   const args = ["push", "--no-follow-tags", "--no-mirror"];
+  // stderr is piped for classification, so git no longer sees the terminal.
+  if (process.stderr.isTTY && !getFlags().json) args.push("--progress");
   if (options.noVerify) args.push("--no-verify");
   if (options.forceWithLease) {
     const observedRef = target.remote === "." ? `refs/heads/${target.branch}` : `refs/remotes/${target.remote}/${target.branch}`;
@@ -54,7 +57,7 @@ export async function push(
     if (current !== destination) throw new Error("Push destination changed after preflight. Review the destination again.");
   }
 
-  await execGitWithRetry(args, { cwd, stdio: "inherit" });
+  await execGitPush(args, { cwd, stream: true });
   if (options.setUpstream || !tracking) {
     await execGitWithRetry(["config", `branch.${branch}.remote`, target.remote], { cwd });
     await execGitWithRetry(["config", `branch.${branch}.merge`, `refs/heads/${target.branch}`], { cwd });

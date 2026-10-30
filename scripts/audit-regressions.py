@@ -327,6 +327,11 @@ class Audit(unittest.TestCase):
         self.assertTrue(state.exists(),'--dry-run aborted and removed active rebase state')
 
     def test_16_stack_submit_excludes_root_not_immediate_parent(self):
+        # Submit requires a GitHub push remote; Git redirects this one to a local bare repository.
+        bare=self.root/'stack-remote.git';self.ok(self.git('init','--bare','-b','main',str(bare),cwd=self.root))
+        self.ok(self.git('remote','add','origin','https://github.com/audit-user/stack.git'))
+        self.ok(self.git('config','url.'+bare.as_uri()+'.insteadOf','https://github.com/audit-user/stack.git'))
+        self.ok(self.git('push','-u','origin','main'))
         for name in ['one','two','three']:
             self.ok(self.ggh('stack','next',name));(self.repo/(name+'.txt')).write_text(name+'\n')
             self.ok(self.git('add','.'));self.ok(self.git('commit','-m',name))

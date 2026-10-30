@@ -151,6 +151,18 @@ function isSafeRemoteUrl(
   return value.replace(/\/+$/, "").replace(/\.git$/, "") === `git@${host}:${target}`;
 }
 
+/** Push URLs may be local paths or rewrites, but never carry credentials. */
+function isPushUrl(value: unknown): value is string {
+  if (!isBoundedString(value, 2_048)) return false;
+  if (!value.includes("://")) return true;
+  try {
+    const parsed = new URL(value);
+    return parsed.password === "" && (parsed.username === "" || parsed.protocol === "ssh:");
+  } catch {
+    return false;
+  }
+}
+
 function validSteps(value: unknown): value is PublicationStep[] {
   return (
     Array.isArray(value) &&
@@ -173,6 +185,7 @@ function parsePlan(value: unknown): SavedPublicationPlan | null {
       target,
       remote,
       remoteUrl,
+      pushUrl,
       visibility,
       push,
     } = value;
@@ -187,6 +200,7 @@ function parsePlan(value: unknown): SavedPublicationPlan | null {
         "target",
         "remote",
         "remoteUrl",
+        "pushUrl",
         "visibility",
         "push",
         "head",
@@ -202,6 +216,7 @@ function parsePlan(value: unknown): SavedPublicationPlan | null {
       !isTarget(target) ||
       !isRemoteName(remote) ||
       !isSafeRemoteUrl(remoteUrl, host, target) ||
+      !isPushUrl(pushUrl) ||
       !isVisibility(visibility) ||
       (remoteHeadTip !== undefined && !isTip(remoteHeadTip)) ||
       (remoteAtPrepare !== undefined &&
@@ -221,6 +236,7 @@ function parsePlan(value: unknown): SavedPublicationPlan | null {
       target,
       remote,
       remoteUrl,
+      pushUrl,
       visibility,
       push,
       ...(head === undefined ? {} : { head }),
@@ -231,7 +247,7 @@ function parsePlan(value: unknown): SavedPublicationPlan | null {
     };
   }
   if (value.kind === "pr") {
-    const { cwd, root, source, host, target, remote, remoteUrl, visibility } =
+    const { cwd, root, source, host, target, remote, remoteUrl, pushUrl, visibility } =
       value;
     const { remoteAtPrepare, createRepository, head, headTip, remoteHeadTip } =
       value;
@@ -246,6 +262,7 @@ function parsePlan(value: unknown): SavedPublicationPlan | null {
         "target",
         "remote",
         "remoteUrl",
+        "pushUrl",
         "visibility",
         "remoteAtPrepare",
         "createRepository",
@@ -266,6 +283,7 @@ function parsePlan(value: unknown): SavedPublicationPlan | null {
       !isTarget(target) ||
       !isRemoteName(remote) ||
       !isSafeRemoteUrl(remoteUrl, host, target) ||
+      !isPushUrl(pushUrl) ||
       !isVisibility(visibility) ||
       (remoteAtPrepare !== undefined &&
         !isSafeRemoteUrl(remoteAtPrepare, host, target)) ||
@@ -290,6 +308,7 @@ function parsePlan(value: unknown): SavedPublicationPlan | null {
       target,
       remote,
       remoteUrl,
+      pushUrl,
       visibility,
       ...(remoteAtPrepare === undefined ? {} : { remoteAtPrepare }),
       createRepository,
@@ -335,6 +354,7 @@ export function publicationIntent(
           target: plan.target,
           remote: plan.remote,
           remoteUrl: plan.remoteUrl,
+          pushUrl: plan.pushUrl,
           visibility: plan.visibility,
           push: plan.push,
           ...(plan.head === undefined ? {} : { head: plan.head }),
@@ -356,6 +376,7 @@ export function publicationIntent(
           target: plan.target,
           remote: plan.remote,
           remoteUrl: plan.remoteUrl,
+          pushUrl: plan.pushUrl,
           visibility: plan.visibility,
           ...(plan.remoteAtPrepare === undefined
             ? {}

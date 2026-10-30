@@ -4,7 +4,7 @@ import {
   executeSplitCommits,
   validateSplitPlan,
 } from "../services/git/split.ts";
-import { getFlags, isNonInteractive, recordCommandIssue } from "../services/runtime.ts";
+import { getFlags, isNonInteractive } from "../services/runtime.ts";
 import { Command } from "commander";
 import {
   checkLargeFiles,
@@ -48,6 +48,7 @@ import {
   jsonOut,
   confirmPrompt,
   fail,
+  failFromPush,
   formatAIFallback,
   header,
   multiSelectMenu,
@@ -60,6 +61,7 @@ import {
   selectMenu,
 } from "../utils/ui.ts";
 import { openPullRequest } from "./pr-create.ts";
+import { PushProtectionError } from "../services/git/push-protection.ts";
 import { run } from "../utils/exec.ts";
 import { dryRun, isDryRun } from "../utils/flags.ts";
 
@@ -127,7 +129,7 @@ export function registerCommitCommand(program: Command): void {
   program
     .command("commit")
     .alias("c")
-    .description("Stage, write a message with AI, commit, push, and open a PR")
+    .description("Stage, commit, push, and open a pull request")
     .option("-m, --message <message>", "Commit message (skips AI generation)")
     .option(
       "-a, --all",
@@ -271,12 +273,18 @@ export function registerCommitCommand(program: Command): void {
 
       // Guard against unresolved merge conflicts
       if (status.conflicts.length > 0) {
-        fail(`Unresolved merge conflicts detected in ${status.conflicts.length} file(s):`);
+        fail(`Unresolved merge conflicts detected in ${status.conflicts.length} file(s):`, { code: "precondition_failed" });
         for (const c of status.conflicts) {
           p.log.message(`  ${pc.red("✖")} ${pc.bold(c.path)}`);
         }
         p.log.info(`Run ${pc.bold(pc.cyan("ggh resolve"))} to resolve conflicts interactively.`);
         p.cancel("Please resolve all merge conflicts and stage the resolution before committing.");
+        return;
+      }
+
+      // Without a terminal nothing may be staged on the caller's behalf: agents stage reviewed paths themselves.
+      if (isNonInteractive() && !options.all && !options.amend && !options.split && status.staged.length === 0 && status.unstaged.length + status.untracked.length > 0) {
+        fail("Nothing staged. Stage the reviewed changes with git add <paths>, then commit.", { code: "precondition_failed" });
         return;
       }
 
@@ -313,10 +321,8 @@ export function registerCommitCommand(program: Command): void {
       }
 
       if (options.pr && isNonInteractive() && !options.yes) {
-        recordCommandIssue({ status: "needs_input", message: "Publishing needs --yes before staging or committing." });
-        fail(
-          "Publishing needs explicit authorization. Pass --yes with --pr before staging or committing.",
-        ); return;
+        const message = "Publishing needs explicit authorization. Pass --yes with --pr before staging or committing.";
+        fail(message, { code: "confirmation_required", requiredInputs: [{ name: "--yes", description: message }] }); return;
       }
 
       const hasWorkingChanges =
@@ -332,15 +338,13 @@ export function registerCommitCommand(program: Command): void {
         !options.split &&
         !options.fixup
       ) {
-        recordCommandIssue({ status: "needs_input", message: "A commit message is required. Pass -m <message>, or explicitly enable AI." });
-        fail(
-          "A commit message is required without interactive input. Pass -m <message>, or explicitly enable AI.",
-        ); return;
+        const message = "A commit message is required without interactive input. Pass -m <message>, or explicitly enable AI with --ai.";
+        fail(message, { code: "missing_input", requiredInputs: [{ name: "-m", alternatives: ["--message", "--ai"], description: message }] }); return;
       }
 
       if ((hasWorkingChanges || options.amend) && options.push && !options.pr && isNonInteractive() && !options.yes && PROTECTED_PUSH_BRANCHES.has((options.branch ?? status.branch).toLowerCase())) {
-        recordCommandIssue({ status: "needs_input", message: "Pushing from a protected branch requires --yes before staging or committing." });
-        fail("Pass --yes to publish from this protected branch, or omit --push to commit locally.");
+        const message = "Pushing from a protected branch requires --yes before staging or committing. Pass --yes, or omit --push to commit locally.";
+        fail(message, { code: "confirmation_required", requiredInputs: [{ name: "--yes", description: message }] });
         return;
       }
 
@@ -384,7 +388,7 @@ export function registerCommitCommand(program: Command): void {
           }); return;
         }
         jsonOut({
-          status: "succeeded",
+          status: "no_op",
           action: "commit",
           noOp: true,
           branch: status.branch,
@@ -413,7 +417,7 @@ export function registerCommitCommand(program: Command): void {
             }); return;
           }
           jsonOut({
-            status: "succeeded",
+            status: "no_op",
             action: "commit",
             noOp: true,
             branch: status.branch,
@@ -477,7 +481,7 @@ export function registerCommitCommand(program: Command): void {
           }); return;
         }
         jsonOut({
-          status: "succeeded",
+          status: "no_op",
           action: "commit",
           noOp: true,
           branch: status.branch,
@@ -1006,14 +1010,14 @@ export function registerCommitCommand(program: Command): void {
           });
           pushSpinner.stop(pc.green("Pushed to remote successfully!"));
         } catch (err) {
-          pushSpinner.stop(pc.yellow("Push failed or was rejected."));
-          fail(
-            `Push did not complete. The local commit is preserved. Inspect the remote before retrying. ${String(err)}`,
-          );
+          const blocked = err instanceof PushProtectionError;
+          pushSpinner.stop(pc.yellow(blocked ? "Push blocked by GitHub push protection. The local commit is preserved." : "Push failed or was rejected."));
+          failFromPush(err, "Push did not complete. The local commit is preserved. Inspect the remote before retrying. ");
           jsonOut({
             status: "partially_completed",
             completed: ["commit"],
             remaining: ["push"],
+            ...(blocked ? { failed: ["push"], pushProtection: err.details } : {}),
             branch: status.branch,
             revision: (await run("git", ["rev-parse", "HEAD"])).stdout.trim(),
           }); return;

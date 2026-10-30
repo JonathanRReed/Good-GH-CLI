@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { getFlags } from "../services/runtime.ts";
+import { getFlags, isNonInteractive } from "../services/runtime.ts";
 import {
   commentOnIssueWithAttachments,
   createIssue,
@@ -10,10 +10,14 @@ import {
   gh,
   listIssues,
   requireAuth,
+  requireGitHubRepo,
   setIssueState,
+  listIssueArtifacts,
   viewIssue,
   readAttachmentBodyFile,
   prepareAttachmentPlan,
+  type IssueArtifacts,
+  type IssueDetail,
 } from "../services/github.ts";
 import { requireGitRepo, switchBranch } from "../services/git.ts";
 import { getStagedDiff, getStagedDiffStat, getStatus } from "../services/git.ts";
@@ -29,6 +33,7 @@ import { invalidateCache } from "../services/cache.ts";
 import { dryRun, isDryRun } from "../utils/flags.ts";
 import { sanitizeDiffForAI, sanitizeForAI } from "../utils/diff.ts";
 import { parsePositiveSafeInteger } from "../utils/numeric-target.ts";
+import { registerIssuePlanCommand } from "./issue-plan.ts";
 import {
   confirmOrAbort, jsonOut,
   emitJson,
@@ -38,6 +43,7 @@ import {
   header,
   p,
   pc,
+  printListing,
   promptInput,
   reportAIFailure,
   searchablePicker,
@@ -46,6 +52,22 @@ import {
 
 function stateTag(state: string): string {
   return state.toUpperCase() === "OPEN" ? pc.green("open") : pc.magenta("closed");
+}
+
+/** Plain-text issue summary, used when a read-only browse cannot prompt. */
+function issueSummary(detail: IssueDetail, artifacts: IssueArtifacts): string[] {
+  const lines = [
+    `#${detail.number} ${detail.title}`,
+    `  State:  ${detail.state.toLowerCase()}`,
+    `  Author: @${detail.author?.login ?? "unknown"}`,
+  ];
+  if (detail.labels?.length) lines.push(`  Labels: ${detail.labels.map((label) => label.name).join(", ")}`);
+  if (detail.comments?.length) lines.push(`  Comments: ${detail.comments.length}`);
+  if (artifacts.state === "available" && artifacts.items.length) {
+    lines.push(`  Artifacts: ${artifacts.items.map((artifact) => `#${artifact.number} ${artifact.name}`).join(", ")}`);
+  }
+  lines.push(detail.url);
+  return lines;
 }
 
 export function registerIssueCommand(program: Command): void {
@@ -76,12 +98,15 @@ export function registerIssueCommand(program: Command): void {
 
       header("GitHub Issues");
 
+      // Read-only browse: with no checkout, `-R owner/repo` is the explicit
+      // target, and without one we say so instead of leaking gh's raw error.
+      const [isRepo, authed] = await Promise.all([requireGitHubRepo(), requireAuth()]);
+      if (!isRepo || !authed) return;
+
       if (num !== undefined) {
-        if (!(await requireAuth())) return;
         await showIssue(num);
         return;
       }
-      if (!(await requireAuth())) return;
 
       // Read-only: --dry-run does not block listing.
       const s = p.spinner();
@@ -110,6 +135,13 @@ export function registerIssueCommand(program: Command): void {
         return;
       }
 
+      // Read-only browse: with no terminal there is nobody to pick, so print
+      // the listing to stdout and exit 0 instead of cancelling a prompt.
+      if (isNonInteractive()) {
+        printListing(issues.map((issue) => `#${issue.number} ${issue.title}  ${issue.state.toLowerCase()} by @${issue.author?.login ?? "unknown"}${issue.labels?.length ? ` [${issue.labels.map((label) => label.name).join(", ")}]` : ""}`));
+        return;
+      }
+
       const picked = await searchablePicker<number>({
         title: "Select an issue:",
         items: issues.map((i) => ({
@@ -130,18 +162,26 @@ export function registerIssueCommand(program: Command): void {
 
   async function showIssue(num: number): Promise<void> {
     let detail;
+    let artifacts;
     try {
-      detail = await viewIssue(num);
+      [detail, artifacts] = await Promise.all([viewIssue(num), listIssueArtifacts(num)]);
     } catch (err) {
       failFromGitHub(err);
       return;
     }
     if (!detail) {
-      fail(`Issue #${num} not found.`);
+      fail(`Issue #${num} not found.`, { code: "not_found" });
       return;
     }
 
-    if (jsonOut(detail)) return;
+    if (jsonOut({ ...detail, artifacts })) return;
+
+    // Read-only browse: with no terminal there is nobody to act, so print the
+    // summary to stdout and exit 0 instead of cancelling a prompt.
+    if (isNonInteractive()) {
+      printListing(issueSummary(detail, artifacts));
+      return;
+    }
 
     p.log.step(`#${detail.number} ${pc.bold(detail.title)}`);
     p.log.message(`  State:  ${stateTag(detail.state)}`);
@@ -152,6 +192,13 @@ export function registerIssueCommand(program: Command): void {
     const bodyTrimmed = detail.body?.trim();
     if (bodyTrimmed) {
       p.note(bodyTrimmed.slice(0, 2000), "Description");
+    }
+    if (artifacts.state === "available" && artifacts.items.length) {
+      p.log.step(`${artifacts.items.length} artifact(s):`);
+      for (const artifact of artifacts.items) {
+        p.log.message(`  ${pc.dim(`#${artifact.number}`)} ${artifact.name} ${pc.dim(`(${artifact.type})`)}`);
+      }
+      p.log.message(pc.dim(`  Read one with: gh issue artifact view ${detail.number} <number>`));
     }
     if (detail.comments?.length) {
       p.log.step(`${detail.comments.length} comment(s):`);
@@ -615,6 +662,8 @@ export function registerIssueCommand(program: Command): void {
       }
     });
 
+  registerIssuePlanCommand(issue);
+
   issue.command("develop <issueNumber>")
     .description("Create and switch to a branch for an issue, named from its title")
     .option("--base <branch>", "Base branch to branch from")
@@ -637,7 +686,7 @@ export function registerIssueCommand(program: Command): void {
         return;
       }
       if (!detail) {
-        fail(`Issue #${num} not found.`);
+        fail(`Issue #${num} not found.`, { code: "not_found" });
         return;
       }
 

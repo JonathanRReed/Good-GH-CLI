@@ -62,7 +62,7 @@ it("renders the cached table before any refresh probe, then replaces it with fre
       process.stderr.write = (chunk, ...args) => { output += String(chunk); return write(chunk, ...args); };
       const spawn = Bun.spawn.bind(Bun); let probes = 0;
       Bun.spawn = (args, options) => {
-        if (args[0] === 'git') { probes++; if (${tty} && !output.includes('stale')) throw new Error('refresh started before cached rows'); }
+        if (args[0] === 'git') { probes++; if (${tty} && !output.includes('cached ')) throw new Error('refresh started before cached rows'); }
         return spawn(args, options);
       };
       await runCli(['bun','ggh','projects']);
@@ -71,10 +71,13 @@ it("renders the cached table before any refresh probe, then replaces it with fre
     expect(result.exitCode, result.stderr).toBe(0);
     expect(result.stderr).toContain("1 dirty");
     if (tty) {
-      expect(result.stderr).toContain("stale");
-      expect(result.stderr).toContain("\x1b[2A\r\x1b[0J");
-      expect(result.stderr.slice(result.stderr.indexOf("\x1b[2A"))).not.toContain("stale");
-    } else { expect(result.stderr).not.toContain("stale"); expect(result.stderr).not.toContain("\x1b[2A"); }
+      // One "cached <age>" header line marks the warm preview instead of
+      // per-row stale labels, so the preview (header + column header + row)
+      // erases three lines and the fresh render carries no cached marker.
+      expect(result.stderr).toMatch(/cached \d+[smhd] ago/);
+      expect(result.stderr).toContain("\x1b[3A\r\x1b[0J");
+      expect(result.stderr.slice(result.stderr.indexOf("\x1b[3A"))).not.toMatch(/cached \d+[smhd] ago/);
+    } else { expect(result.stderr).not.toMatch(/cached \d+[smhd] ago/); expect(result.stderr).not.toContain("\x1b[3A"); }
     rmSync(join(repo, "new.txt"));
   }
 });

@@ -7,7 +7,7 @@ I hated the GitHub CLI. This makes it bearable. `ggh` is the GitHub CLI it shoul
 
 ## Install
 
-The source candidate is `0.6.0-beta.1`. It has not been published by this preparation step. For released binaries, checksums, PATH setup, and dependencies, follow the [installation guide](docs/INSTALL.md) and the selected version's [release notes](https://github.com/JonathanRReed/Good-GH-CLI/releases).
+The latest release is `0.7.0-beta.1`. For released binaries, checksums, PATH setup, and dependencies, follow the [installation guide](docs/INSTALL.md) and the selected version's [release notes](https://github.com/JonathanRReed/Good-GH-CLI/releases).
 
 Standalone binaries need Git 2.31+, plus `gh` for GitHub operations. They need neither Bun nor Node. Bare macOS binaries are ad-hoc signed; a signed, notarized DMG is a separate artifact. Check that release's receipts.
 
@@ -38,6 +38,7 @@ ggh lost                             # Find work absent from local tracking refs
 ggh tidy --dry-run                    # Preview cleanup in the current clone
 ggh tidy --audit codex --ai --dry-run # Optional provider audit; requires consent
 ggh sync --all                       # Fetch and fast-forward eligible checkouts
+ggh inbox                            # Review requests, PRs to fix, PRs ready to merge
 ggh review 42 --editor                # Prepare a review checkout and open it
 ggh ci why                           # Bounded failure evidence for this branch's PR
 ```
@@ -63,9 +64,11 @@ Remote reads share lookups across clones of the same host/repository. Requests s
 
 The shell hook also supports bash, fish, and PowerShell through `init bash`, `init fish`, and `init pwsh`. Identical project names require a choice or an exact checkout path. A missing name suggests cloning; it never clones automatically. Repository paths travel as data, including spaces and trailing newlines.
 
-`lost` counts unpublished commits once per clone, with shared/exclusive branch counts and fetch age. It also reports stashes, dirty host checkouts, and broken gitdirs. Its suggested recovery commands are never executed. Tracking refs can be stale; the report cannot prove that a host session is abandoned. `lost --fetch` explicitly updates tracking refs first.
+`lost` counts unpublished commits once per clone, with shared/exclusive branch counts and fetch age. It also reports stashes, staged, unstaged, and untracked changes in every checkout, and broken gitdirs. Ignored files do not count as dirty. Its suggested recovery commands are never executed. Tracking refs can be stale; the report cannot prove that a host session is abandoned. `lost --fetch` explicitly updates tracking refs first. Scans use four clone workers and show progress on stderr in a terminal. Recovery branch names include the commit SHA and avoid existing names. Completed restack pre-images are labeled separately when the saved recovery checkpoint matches the current branch.
 
-Bulk sync fetches each remote once per clone and fast-forwards eligible checkouts to their own upstream. It skips dirty, detached, busy, locked, diverged, upstreamless, and host-owned checkouts. It never switches branches, rebases, pushes, or deletes local branches. Select names with `ggh sync api web`. Remote fork updates require `--fork-upstream` and confirmation. Plain `ggh sync` retains single-repository stale-branch cleanup.
+Bulk sync fetches each remote once per clone and fast-forwards eligible checkouts to their own upstream. It skips missing, prunable, dirty, detached, busy, locked, diverged, upstreamless, and host-owned checkouts. It never switches branches, rebases, pushes, or deletes local branches. Select names with `ggh sync api web`. Remote fork updates require `--fork-upstream` and confirmation. `ggh sync --all --dry-run` stays offline. Its outcomes use local tracking refs and report the last fetch timestamp and age, or unknown if no fetch is recorded. Agent and JSON results include `refSnapshot.fetchedAt` for each clone. A real run fetches first and can produce different outcomes. Plain `ggh sync` retains single-repository stale-branch cleanup.
+
+`ggh inbox` brings GitHub's pull request inbox to the terminal: review requests, your PRs with failing checks, requested changes, or conflicts, and your PRs ready to merge or already queued. Each PR names the local checkout from the projects index (for your own PRs, one on the PR branch when it exists) and the next command to run there. It never runs them. One GraphQL request with a 20-second deadline; a failed section reports why while the others still show. Filter with `ggh inbox owner` or `ggh inbox owner/repo`. A PR with no required review counts as ready once checks pass and it is mergeable.
 
 Review prepares a separate checkout without copying `.env` files or initializing submodules. `--editor` requires a supported GUI editor; plain review can fall back to terminal diff tools. `--mark` records inspected base/head SHAs explicitly; `--since last` compares against that mark. Opening an editor does not mark a review complete. Agent mode returns data without launching an editor, but can fetch refs and create the checkout.
 
@@ -76,29 +79,32 @@ Review prepares a separate checkout without copying `.env` files or initializing
 Read the [ggh skill](skills/ggh/SKILL.md) and its [generated command reference](skills/ggh/reference.md). The pack covers Claude Code, Codex, T3 Code, and Cursor.
 
 ```bash
+ggh agent brief --agent
 ggh agent skill
 ggh agent skill --install claude --dry-run --agent
 ggh agent skill --install codex --yes --agent
-ggh agent schema --agent
+ggh agent schema pr create --agent
 ggh status --agent
 ggh projects repo --agent
 ggh pr threads 42 --agent
 ggh ci why 42 --agent --max-bytes 6144 --context 2
 ```
 
+Start a session with `ggh agent brief --agent`. One call returns checkout identity, the branch PR, its CI counts and failing check names, the unresolved thread count, linked issues with their artifacts, and native stack position. Each GitHub section reports `available`, `none`, `unavailable` with a reason, or `skipped`, so one failed read never hides the rest. Remote reads share a 15-second deadline; `--local` makes no GitHub calls.
+
 Skill installation copies both files, requires approval, and refuses differing files unless explicitly forced. `--install t3` explains provider directories; an explicit path names the final skill directory. Dry runs write nothing.
 
-Managed `--agent` commands never prompt and return compact JSON with `contract: "ggh.agent"` and `version: 1`. Read `status`, `error.code`, `error.retryability`, `requiredInputs`, and `effects` before continuing. Inspect completed, pending, and uncertain effects after a partial failure. Read-only status may omit empty effects. Other results remain command-specific; discover their schemas from the installed version.
+Managed `--agent` commands never prompt and return compact JSON with `contract: "ggh.agent"` and `version: 1`. Read `status`, `error.code`, `error.retryability`, `requiredInputs`, and `effects` before continuing. `needs_input` always names the flag or argument to supply. Error codes separate `not_found`, `forbidden`, `rate_limited`, and `network` from `operation_failed`, and `after_delay` marks failures that can be retried unchanged after waiting. A failed read never reports uncertain effects; inspect completed, pending, and uncertain effects after a failed mutation. Read-only status may omit empty effects. Other results remain command-specific; `ggh agent schema <command> --agent` prints one command's flags and result schema from the installed version.
 
 Agent status includes full HEAD identity and XY/path tuples, including rename sources and conflict codes. `--full` adds raw porcelain-v2 records. Omitted counts mean zero, omitted `root` means cwd, and omitted `push` means upstream. `fetchedAt` is local fetch metadata, not proof of current remote state. Status is local unless you request `--remote` or `--providers`.
 
-Inspect the staged patch before committing. `ggh commit` preserves partial staging but has no `--approve-plan`. For PR publication, preview the exact inputs with `--dry-run --agent`, inspect the returned `snapshotId`, then use `--approve-plan` with identical inputs. Tidy requires its own exact approved snapshot in agent mode. `--yes` is not permission from a human.
+Inspect the staged patch before committing. `ggh commit` preserves partial staging but has no `--approve-plan`. For PR publication, preview the exact inputs with `--dry-run --agent`, inspect the returned `snapshotId`, then use `--approve-plan` with identical inputs. The plan names the exact push URL (`git remote get-url --push`), which can differ from the fetch URL; execution refuses if it changed. Tidy and `stack submit` require their own exact approved snapshots in agent mode. `--yes` is not permission from a human.
 
 After PR creation, the calling agent must register the returned URL with its host, such as T3 Code's `link_pull_request`. ggh does not register or monitor PRs on the host's behalf. Review-thread reads preserve full comments and cursors; fixing code does not resolve a thread.
 
 ### What the benchmark proves
 
-The [offline benchmark](bench/agent/README.md) reports both wins and losses with 100% declared evidence recall across eight cases. VS Code CI output falls from 133,470 native bytes to 8,625 ggh bytes. A tuned native Zod CI filter wins at 5,402 versus 7,231 bytes. Clean status costs 181 versus 121 porcelain-v2 bytes; dirty porcelain-v1 and native run-detail output are smaller too.
+The [offline benchmark](bench/agent/README.md) reports both wins and losses with 100% declared evidence recall across nine cases. VS Code CI output falls from 133,470 native bytes to 8,625 ggh bytes. A recorded session-start brief costs 945 bytes in one call versus 1,710 bytes across five tuned native calls. A tuned native Zod CI filter wins at 5,402 versus 7,231 bytes. Clean status costs 181 versus 121 porcelain-v2 bytes; dirty porcelain-v1 and native run-detail output are smaller too.
 
 Use native `git log`, `diff`, and `blame` for ordinary history and patches. ggh earns its place when checkout identity, bounded CI evidence, structured project state, or guarded mutations save work. Benchmark tokens are bytes divided by four. No tokenizer, blind repair trial, or latency comparison supports broader savings claims. Native scripts can combine their commands into one tool call.
 
@@ -149,13 +155,16 @@ ggh discard --all --dry-run
 ggh squash 3 --message "feat: combine changes" --no-input
 ```
 
-Stack parents live in Git config. Restack changes local branches; submit explicitly publishes, using expected-tip leases for rewritten branches. Plain stack list is offline. Named stash restore pops after confirmation; legacy tagged stashes still work. Squash keeps original commits under a recovery ref. Inspect partial failures before retrying.
+Stack parents live in Git config. Restack changes local branches; submit explicitly publishes, using expected-tip leases for rewritten branches. Submit's plan binds the GitHub repository, each push URL, every branch's exact tip and parent, the draft flag, and the GitHub-stack choice into a `snapshotId`. Agents must pass `--approve-plan <snapshotId>` from an identical `--dry-run --agent`; `--yes` only skips a human's prompt. Submit refuses a non-GitHub push remote and branches behind their parent; run `ggh stack restack` first, or pass `--allow-stale`. Plain stack list is offline. When the submitted branches form one chain, submit also links the PRs as a [GitHub stack](https://docs.github.com/en/pull-requests/how-tos/stacked-pull-requests): it creates one or appends to a matching one, never reorders a different one, and reports `nativeStack` (`--no-native-stack` opts out). `ggh pr merge` on a stacked PR lists every unmerged PR below it, rechecks their heads after confirmation, and merges them in one atomic step through the async merge API. Named stash restore pops after confirmation; legacy tagged stashes still work. Squash keeps original commits under a recovery ref. Inspect partial failures before retrying.
 
 ### Issues, CI, and repositories
 
 ```bash
 ggh issue
 ggh issue create
+ggh issue 42                          # Includes plans and other issue artifacts
+ggh issue plan 42 plan.md             # Save a plan on the issue; same name saves a new version
+ggh issue plan 42 --show              # Print the current plan
 ggh issue develop 42
 ggh checks
 ggh checks --watch
@@ -230,13 +239,13 @@ Hosted AI requires explicit consent. Diff generation excludes sensitive file cla
 
 ## Safety model
 
-Tidy is the bulk deletion command. Preview with `--dry-run`; execution requires approval. A branch needs exact-tip ancestry and publication proofs, and cannot be checked out anywhere. A merged badge or gone upstream alone proves nothing. Unknown or incomplete history means keep.
+Tidy is the bulk deletion command. Preview with `--dry-run`; execution requires approval. A branch needs exact-tip ancestry and publication proofs, and cannot be checked out anywhere. When the same plan removes the branch's only checkout, the branch deletion follows that removal with the same proofs, and is refused if the checkout is still there. A merged badge or gone upstream alone proves nothing. Unknown or incomplete history means keep.
 
-Checkout removal requires a clean, unlocked, eligible checkout and guards ignored files, nested repositories, submodules, and clone stashes. Main and current checkouts stay. Unknown provenance stays unless an exact-path override is separately approved. T3, Claude, Cursor, and Codex worktrees are always manual-only, even when clean and merged. Neither `--allow-unknown` nor `--allow-ignored` permits removing them.
+Checkout removal requires a clean, unlocked, eligible checkout and guards ignored files, nested repositories, submodules, and clone stashes. Main and current checkouts stay. Unknown provenance stays unless an exact-path override (`--allow-unknown <path>`) or a directory override (`--allow-unknown-under <dir>`, for plain `git worktree add` checkouts strictly below one agent directory) is separately approved. The directory override refuses your home directory and filesystem roots. T3, Claude, Cursor, and Codex worktrees are always manual-only, even when clean and merged. No override permits removing them.
 
-Every action rechecks identity, refs, OIDs, ancestry, ownership, and relevant file state immediately before its effect. Changed items are refused; ggh never widens an approved batch. Remote deletion requires ownership checks and an exact expected-OID lease. Missing-worktree metadata pruning is separate, honors locks and expiry, and refuses uncertain or apparently unmounted paths. Tidy never deletes repositories or runs GC.
+Every action rechecks identity, refs, OIDs, ancestry, ownership, and relevant file state immediately before its effect. Changed items are refused; ggh never widens an approved batch. Remote deletion requires ownership checks and an exact expected-OID lease. Missing-worktree metadata is pruned one entry at a time with `git worktree remove`, so one unsafe entry no longer blocks the rest. Each entry honors locks and Git's expiry, and refuses uncertain or apparently unmounted paths, staged index content, per-worktree refs, and reflog commits nothing else keeps. A branch-backed entry may be pruned while its branch holds unpushed commits, because the branch is kept. Tidy never deletes repositories or runs GC.
 
-Local previews use existing tracking refs. `--fetch` explicitly updates them, including during a dry run. An optional `--audit` sends at most 32 KB of metadata to the chosen provider after consent, without file contents, diffs, `.env`, transcripts, or remote URLs. The provider can only narrow safe candidates. Invented action IDs or invalid responses fail closed; bypassing a failed audit requires an explicit option. Audited approvals bind the plan and audit result.
+Local previews use existing tracking refs. `--fetch` explicitly updates them, including during a dry run, and reports each fetch as a completed `fetch:<clone>:<remote>` effect. The snapshot binds the exact refs and OIDs the fetch observed, not when it ran, so an identical `--fetch` run can apply it; if the remote moved in between, approval is refused. An optional `--audit` sends at most 32 KB of metadata to the chosen provider after consent, without file contents, diffs, `.env`, transcripts, or remote URLs. The provider can only narrow safe candidates. Invented action IDs or invalid responses fail closed; bypassing a failed audit requires an explicit option. Audited approvals bind the plan and audit result.
 
 Per-clone locks serialize ggh's own cleanup; they cannot stop an unrelated writer. Journals report completed, refused, failed, and uncertain effects. Cancellation leaves completed effects applied. Hooks, plugins, and provider executables remain trusted code.
 

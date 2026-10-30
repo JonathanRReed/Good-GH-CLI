@@ -30,20 +30,20 @@ describe("project views", () => {
     const lines = formatProjects([fixture(3)], { wide: true });
     expect(formatProjects([fixture()], { wide: true })).toMatchInlineSnapshot(`
       [
-        "Name     Branch  State    ↑/↓    Unpublished        Stashes  Worktrees  Age",
-        "project  main    1 dirty  ↑2 ↓1  5 br / 21 commits  2        -          -",
+        "Name     Branch  State             ↑/↓    Unpublished        Stashes  Worktrees  Age",
+        "project  main    1 dirty checkout  ↑2 ↓1  5 br / 21 commits  2        -          -",
       ]
     `);
     expect(lines[0]).toContain("Name");
     expect(lines[1]).toContain("main");
-    expect(lines[1]).toContain("3 dirty");
+    expect(lines[1]).toContain("3 dirty checkouts");
     expect(lines[1]).toContain("↑2 ↓1");
     expect(lines[1]).toContain("5 br / 21 commits");
     expect(lines[1]).toContain("2 t3");
     expect(lines[1]).not.toContain("feature/1");
     expect(lines[1]).not.toContain("/repo");
   });
-  it("shows stale, conflicts, operations and unknown status", () => {
+  it("shows conflicts, operations and unknown status, and dates a cached preview once", () => {
     const row = fixture();
     row.stale = true;
     const checkout = row.status.checkouts[0];
@@ -51,7 +51,13 @@ describe("project views", () => {
     checkout.dirty = ok({ staged: 0, unstaged: 0, untracked: 0, conflicted: 1 });
     checkout.operation = ok("rebase");
     checkout.upstream = { state: "unknown", reason: "no tracking branch" };
-    expect(formatProjects([row], { wide: true })[1]).toContain("stale, 1 dirty, conflicts, rebase, unknown");
+    const state = formatProjects([row], { wide: true })[1] ?? "";
+    expect(state).toContain("1 dirty checkout, conflicts, rebase, unknown");
+    // Staleness is one header line, not a label repeated on every row.
+    expect(state).not.toContain("stale");
+    const cached = formatProjects([row], { wide: true, cachedAt: new Date(Date.now() - 120_000).toISOString() });
+    expect(cached[0]).toMatch(/^cached \d+m ago$/);
+    expect(cached.join("\n")).not.toContain("stale");
     expect(formatProjectCard(row, undefined, false, { wide: true }).join("\n")).toContain("upstream: no tracking branch");
   });
   it("wide output preserves details and separate unpublished refs and history", () => {
@@ -70,6 +76,41 @@ describe("project views", () => {
     expect(lines).toHaveLength(2);
     expect(lines[1]).toContain("safered  name");
     for (const control of ["\u001b", "\r", "\n", "\t"]) expect(lines.join("")).not.toContain(control);
+  });
+  it("falls back to 80 columns when the width reports zero", () => {
+    // A zero measurement used to collapse every row to "…".
+    expect(formatProjects([fixture(11)], { width: 0 })).toEqual(formatProjects([fixture(11)], { width: 80 }));
+    expect(formatProjectCard(fixture(11), undefined, false, { width: 0 })).toEqual(formatProjectCard(fixture(11), undefined, false, { width: 80 }));
+  });
+  it("never shrinks the name below the longest name, up to a cap", () => {
+    const medium = fixture(1);
+    medium.clone.displayName = "scaling-team-api";
+    // Other columns shrink first; the full 16-character name survives at 80.
+    expect(formatProjects([medium], { width: 80 })[1]).toContain("scaling-team-api");
+
+    const long = fixture(1);
+    long.clone.displayName = "scaling-infrastructure-platform";
+    // Past the cap the name truncates at the cap, not to a stub.
+    const truncated = formatProjects([long], { width: 80 })[1] ?? "";
+    expect(truncated).toContain("scaling-infrastructure-plat…");
+    expect(truncated).not.toContain("scaling-infrastructure-platform");
+  });
+  it("drops all-zero columns such as an unused Stashes column", () => {
+    const row = fixture(1);
+    row.status.stashes = ok(0);
+    const lines = formatProjects([row], { wide: true });
+    expect(lines[0]).not.toContain("Stashes");
+    expect(lines[0]).toContain("Worktrees");
+    expect(lines[1]).toContain("1 dirty checkout");
+  });
+  it("truncates checkout paths in the middle so the leaf stays visible", () => {
+    const row = fixture(1);
+    const checkout = row.clone.checkouts[0];
+    if (!checkout) throw new Error("missing fixture checkout");
+    checkout.path = "/very/long/path/to/some/deep/nested/checkout/directory/leaf-branch";
+    const lines = formatProjectCard(row, undefined, false, { width: 80 }).join("\n");
+    expect(lines).toContain("…");
+    expect(lines).toContain("leaf-branch");
   });
 });
 

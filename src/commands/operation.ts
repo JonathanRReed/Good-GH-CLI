@@ -2,13 +2,13 @@ import { publicationSnapshot, assertPublicationApproval, PublicationApprovalErro
 import { Command } from "commander";
 import { addOperationEvidence, claimOperationResume, listOperations, operationLockStatus, previewOperationEvidence, pruneOperations, readOperation, unlockOperation, updateOperation } from "../services/operations.ts";
 import { operationRecoveryGuide, preparePublicationResume } from "../services/publication-recovery.ts";
-import { executePublication } from "../services/publication.ts";
+import { executePublication, publicationRequiredInput } from "../services/publication.ts";
 import { readAttachmentBodyFile } from "../services/github/attachments.ts";
 import { recordCommandIssue, setActiveOperation } from "../services/runtime.ts";
 import { finishCommandOperation } from "../services/command-operations.ts";
 import type { RequiredInput } from "../services/agent-contract.ts";
 import { isDryRun } from "../utils/flags.ts";
-import { confirmOrAbort, fail, header, jsonOut, p, pc } from "../utils/ui.ts";
+import { confirmOrAbort, fail, failPublication, header, jsonOut, p, pc } from "../utils/ui.ts";
 
 export function registerOperationCommand(program: Command): void {
   const operation = program.command("operation").alias("op").description("List and inspect local operation records");
@@ -20,7 +20,7 @@ export function registerOperationCommand(program: Command): void {
         const guide = operationRecoveryGuide(await readOperation(id));
         if (jsonOut(guide)) return;
         header("Operation Recovery");
-        p.log.message(`State: ${guide.state}\nCompleted: ${guide.completed.join(", ") || "none"}\nRemaining: ${guide.remaining.join(", ") || "none"}\nUncertain: ${guide.uncertain.join(", ") || "none"}`);
+        p.log.message(`State: ${guide.state}\nCompleted: ${guide.completed.join(", ") || "none"}\nRemaining: ${guide.remaining.join(", ") || "none"}\nFailed: ${guide.failed.join(", ") || "none"}\nUncertain: ${guide.uncertain.join(", ") || "none"}`);
         for (const command of guide.inspection) p.log.message(command);
         p.log.info(guide.resumable ? `Resume with ggh operation resume ${id}; required content must be supplied again.` : guide.guidance ?? "This operation is already complete.");
       } catch (error) { fail(error instanceof Error ? error.message : String(error)); }
@@ -46,9 +46,8 @@ export function registerOperationCommand(program: Command): void {
           return;
         }
         if (!record.resume) {
-          recordCommandIssue({ status: "needs_input", code: "missing_input", message: guide.guidance ?? "Inspect the operation.", requiredInputs: [{ name: "inspection", description: "Inspect current state before choosing a recovery command." }] });
-          fail(guide.guidance ?? "Inspect the operation.");
-          jsonOut({ status: "needs_input", ...guide });
+          fail(guide.guidance ?? "Inspect the operation.", { code: "precondition_failed" });
+          jsonOut({ status: "failed", ...guide });
           return;
         }
         if (!isDryRun()) {
@@ -67,8 +66,8 @@ export function registerOperationCommand(program: Command): void {
         }
         const prepared = await preparePublicationResume(record);
         if (prepared.status !== "ready") {
-          recordCommandIssue({ status: "needs_input", code: "missing_input", message: prepared.message, requiredInputs: [{ name: prepared.required, description: prepared.message }] });
-          fail(prepared.message);
+          if (prepared.status === "needs_input") recordCommandIssue({ status: "needs_input", code: "missing_input", message: prepared.message, requiredInputs: [publicationRequiredInput(record.command === "repo create" ? "repo" : "pr", prepared.required, prepared.message)] });
+          fail(prepared.message, prepared.status === "failed" ? { code: "precondition_failed" } : {});
           jsonOut({ ...prepared, ...guide });
           return;
         }
@@ -98,13 +97,13 @@ export function registerOperationCommand(program: Command): void {
           jsonOut({ status: "needs_input", requiredInputs, ...guide });
           return;
         }
-        p.note(`${plan.host}/${plan.target} (${plan.visibility})\n${plan.remote}: ${plan.remoteUrl}\n${plan.steps.join(" → ")}${plan.headTip ? `\n${plan.head} ${plan.headTip.slice(0, 12)}` : ""}`, "Recovery publication plan");
+        p.note(`${plan.host}/${plan.target} (${plan.visibility})\n${plan.remote}: ${plan.remoteUrl}${plan.pushUrl !== plan.remoteUrl ? `\npush: ${plan.pushUrl}` : ""}\n${plan.steps.join(" → ")}${plan.headTip ? `\n${plan.head} ${plan.headTip.slice(0, 12)}` : ""}`, "Recovery publication plan");
         if (!(await confirmOrAbort("Resume this publication after inspecting its completed effects?", { assumeYes: options.yes || Boolean(options.approvePlan) }))) return;
         if (snapshotId) assertPublicationApproval(snapshotId, await publicationSnapshot(plan, content));
         await updateOperation(id, { status: { state: "running" } });
         setActiveOperation({ id: record.id, cwd: record.resume.plan.cwd, command: record.command });
         const result = await executePublication(plan, content, { claimHeld: true, priorCompleted: guide.completed, intent: record.resume, approvedSnapshot: snapshotId });
-        if (result.status !== "succeeded") fail(result.error ?? "Publication recovery did not complete.");
+        if (result.status !== "succeeded") failPublication(result, "Publication recovery did not complete.");
         if (!jsonOut({ ...result, completed: [...new Set([...guide.completed, ...result.completed])], operationId: id })) {
           if (result.url) p.log.message(result.url);
           p.outro(result.status === "succeeded" ? "Publication recovered." : "Inspect completed and remaining effects before retrying.");

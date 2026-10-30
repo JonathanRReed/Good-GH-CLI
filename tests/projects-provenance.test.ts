@@ -89,7 +89,7 @@ it("records ggh worktree add provenance in the private gitdir without worktree c
   expect(checkout.gitDir).not.toBe(join(repo, ".git"));
   expect(readFileSync(join(checkout.gitDir, "ggh-created"), "utf8")).toBe("ggh\n");
   expect(await git(repo, "config", "--get-regexp", "extensions.*").catch(() => "")).toBe("");
-  expect((await buildTidyPlan([await inventory()], {}, config())).clones[0]?.actions).toMatchObject([{ kind: "remove-checkout", checkout: { path } }]);
+  expect((await buildTidyPlan([await inventory()], {}, config())).clones[0]?.actions).toMatchObject([{ kind: "remove-checkout", checkout: { path } }, { kind: "delete-local-branch", branch: "owned" }]);
 });
 
 it("marks newly created review checkouts but never adopts a reused foreign checkout", async () => {

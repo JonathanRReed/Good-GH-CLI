@@ -2,7 +2,7 @@ import { assertSupportedGit } from "./dependency-compatibility.ts";
 import { finalizeJsonOutput } from "../utils/output.ts";
 import type { Command } from "commander";
 import { startOperation, updateOperation, readOperation, type OperationRecord, type OperationStep } from "./operations.ts";
-import { getActiveOperation, getCommandIssue, getEmittedJson, getFlags, setActiveOperation, setFinishedOperation } from "./runtime.ts";
+import { getActiveOperation, getCommandIssue, getEmittedJson, getFlags, setActiveOperation, setCommandMutates, setFinishedOperation } from "./runtime.ts";
 import { parseRepoFlag } from "./github/client.ts";
 import { DRY_RUN_CAPABLE } from "../utils/flags.ts";
 import { run } from "../utils/exec.ts";
@@ -33,6 +33,7 @@ function wouldRecord(command: Command, names: string[]): boolean {
   if (!DRY_RUN_CAPABLE.has(domain)) return false;
   const options = command.opts();
   if (domain === "config" && action === "doctor") return options.fix === true;
+  if (domain === "issue" && action === "plan" && options.show === true) return false;
   if (names.length > 1) return !READ_ACTIONS.has(action) || action === "download";
   if (LOCAL_MUTATIONS.has(domain)) return true;
   if (domain === "pr") return options.checkout === true || options.worktree === true;
@@ -43,6 +44,23 @@ function wouldRecord(command: Command, names: string[]): boolean {
   if (domain === "stash") return !getFlags().json;
   if (domain === "api") return (typeof options.method === "string" && options.method.toUpperCase() !== "GET") || command.processedArgs.some(arg => Array.isArray(arg) && arg.some(value => ["-X", "--method", "-f", "-F", "--field", "--raw-field"].includes(value)));
   return false;
+}
+
+/**
+ * Whether this run can change local or remote state. A failed read reports no
+ * uncertain effects, so this errs toward mutating for anything not known to read.
+ */
+export function commandCanMutate(command: Command, names: string[]): boolean {
+  const domain = names[0] ?? "";
+  const action = names.at(-1) ?? "";
+  const options = command.opts();
+  if (getFlags().dryRun) return false;
+  if (domain === "review" || (domain === "operation" && action === "resume")) return true;
+  if (domain === "agent") return action === "skill" && options.install !== undefined;
+  if (domain === "projects") return names.length > 1 && action !== "list";
+  if (domain === "lost") return options.fetch === true;
+  if (domain === "go") return options.editor === true || options.t3 === true;
+  return wouldRecord(command, names);
 }
 
 function object(value: unknown): value is Record<string, unknown> {
@@ -93,9 +111,14 @@ export async function finishCommandOperation(): Promise<void> {
   const workflowResult = /^(?:stack |repo create$|pr create$|commit$)/.test(active.command ?? "");
   const completed = workflowResult && object(result) && Array.isArray(result.completed) ? result.completed.filter((step): step is string => typeof step === "string") : [];
   const remaining = workflowResult && object(result) && Array.isArray(result.remaining) ? result.remaining.filter((step): step is string => typeof step === "string") : [];
+  // Remaining steps that definitively did not happen, such as a push GitHub rejected.
+  const failed = workflowResult && object(result) && Array.isArray(result.failed) ? result.failed.filter((step): step is string => typeof step === "string") : [];
+  // A started effect without a confirmed result stays uncertain; it is never relabeled pending.
+  const uncertain = workflowResult && object(result) && Array.isArray(result.uncertain) ? result.uncertain.filter((step): step is string => typeof step === "string") : [];
   const steps: OperationStep[] = [
     ...completed.map(name => ({ name, state: "completed" as const })),
-    ...remaining.map(name => ({ name, state: "pending" as const })),
+    ...uncertain.map(name => ({ name, state: "unknown" as const })),
+    ...remaining.filter(name => !uncertain.includes(name)).map(name => ({ name, state: failed.includes(name) ? "failed" as const : "pending" as const })),
   ];
   if (!steps.length && issue?.status === "cancelled" && prior?.steps.length) {
     let markedUnknown = false;
@@ -123,6 +146,7 @@ export function registerCommandOperations(program: Command): void {
   program.hook("preAction", async (_program, command) => {
     const names = commandParts(command);
     const domain = names[0] ?? "";
+    setCommandMutates(commandCanMutate(command, names));
     if (wouldRecord(command, names) || MANAGED_GIT_DOMAINS.has(domain)) await assertSupportedGit();
     if (!shouldRecord(command, names)) return;
     const cwd = process.cwd();

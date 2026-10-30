@@ -7,10 +7,12 @@ import {
   type AIAttemptFailure,
   type AIProvider,
 } from "../services/ai/index.ts";
+import type { AgentErrorCode } from "../services/agent-contract.ts";
 import { type CommandIssue, getFlags, isNonInteractive, recordCommandIssue, rememberCommandResult } from "../services/runtime.ts";
-import { cancel, emitJson, intro, log, note, outro, spinner } from "./output.ts";
+import { cancel, data, emitJson, intro, log, note, outro, spinner } from "./output.ts";
 import { confirmPrompt, selectMenu } from "./prompts.ts";
 import { PartialGitHubMutationError, PartialAttachmentOperationError } from "../services/github/attachments.ts";
+import { pushProtectionBypassNote, PushProtectionError, type PushProtectionDetails } from "../services/git/push-protection.ts";
 
 /**
  * Drop-in replacement for the @clack/prompts surface this CLI still used
@@ -66,9 +68,10 @@ export type {
  * Reports a command failure and marks the process as failed, so `ggh` can be
  * used in scripts and CI without every caller remembering to set exitCode.
  */
-export function fail(message: string, metadata: Pick<CommandIssue, "code" | "requiredInputs"> = {}): void {
+export function fail(message: string, metadata: Pick<CommandIssue, "code" | "requiredInputs" | "retryAfterSeconds" | "pushProtection"> = {}): void {
   process.exitCode = 1;
-  recordCommandIssue({ status: "failed", message, ...metadata });
+  const asks = (metadata.code === "missing_input" || metadata.code === "confirmation_required") && Boolean(metadata.requiredInputs?.length);
+  recordCommandIssue({ status: asks ? "needs_input" : "failed", message, ...metadata });
   p.log.error(message);
 }
 
@@ -78,16 +81,45 @@ export function fail(message: string, metadata: Pick<CommandIssue, "code" | "req
  * same ternary across command files.
  */
 export function failFromGitHub(err: unknown): void {
-  const code = err instanceof CapabilityError ? "provider_unavailable" : err instanceof GitHubError
-    ? err.kind === "not_authenticated" ? "authentication_required"
-      : err.kind === "not_installed" ? "provider_unavailable" : undefined
-    : undefined;
-  fail(err instanceof Error ? err.message : String(err), { code });
+  if (err instanceof PushProtectionError) { failFromPush(err); return; }
+  fail(err instanceof Error ? err.message : String(err), {
+    code: err instanceof CapabilityError ? "provider_unavailable" : err instanceof GitHubError ? gitHubErrorCode(err) : undefined,
+    ...(err instanceof GitHubError && err.retryAfterSeconds !== undefined ? { retryAfterSeconds: err.retryAfterSeconds } : {}),
+  });
   if (err instanceof PartialGitHubMutationError) {
     jsonOut({ status: "partially_completed", url: err.resourceUrl, attachments: err.attachments, error: { message: err.message } });
   } else if (err instanceof PartialAttachmentOperationError) {
     jsonOut({ status: "partially_completed", operation: err.operation, phase: err.phase, attachments: { uploaded: err.uploadedAttachments.map(item => ({ file: item.file.path, url: item.url })), remainingFiles: err.remainingFiles.map(file => file.path) }, error: { message: err.message } });
   }
+}
+
+/** Agent error code for a classified gh failure; unknown failures keep the default. */
+export function gitHubErrorCode(err: GitHubError): AgentErrorCode | undefined {
+  const codes: Partial<Record<GitHubError["kind"], AgentErrorCode>> = {
+    not_authenticated: "authentication_required", not_installed: "provider_unavailable",
+    not_found: "not_found", forbidden: "forbidden", rate_limit: "rate_limited", network: "network",
+  };
+  return codes[err.kind];
+}
+
+/**
+ * Reports a failed push. A push-protection rejection keeps its code, findings
+ * and next steps, and offers GitHub's bypass page only as a person's decision.
+ * Anything else is reported as `context` followed by the error.
+ */
+export function failFromPush(err: unknown, context = ""): void {
+  if (err instanceof PushProtectionError) {
+    fail(err.message, { code: "push_protection_blocked", pushProtection: err.details });
+    const note = pushProtectionBypassNote(err.details);
+    if (note) p.log.message(note);
+    return;
+  }
+  fail(`${context}${err instanceof Error ? err.message : String(err)}`);
+}
+
+/** Reports a publication result that did not succeed, keeping push-protection details. */
+export function failPublication(result: { error?: string; pushProtection?: PushProtectionDetails }, fallback: string): void {
+  failFromPush(result.pushProtection ? new PushProtectionError(result.pushProtection) : result.error ?? fallback);
 }
 
 /**
@@ -124,6 +156,15 @@ export async function confirmOrAbort(
     recordCommandIssue({ status: "needs_input", code: "confirmation_required", requiredInputs: [{ name: "--yes", description: message }], message: `Confirmation required: ${message}. Pass --yes to authorize this action.` });
   }
   return confirmed;
+}
+
+/**
+ * Read-only browse output. In a terminal the caller opens a picker; with no
+ * terminal (or --no-input) the same rows are the data, so they go to stdout and
+ * the command exits 0 instead of cancelling a prompt nobody can answer.
+ */
+export function printListing(lines: string[]): void {
+  for (const line of lines) data(line);
 }
 
 /**

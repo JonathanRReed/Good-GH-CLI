@@ -75,6 +75,33 @@ describe("indexed sync", () => {
     expect((await syncProjects([clone])).clones[0]?.checkouts.every(row => row.outcome === "up-to-date")).toBe(true);
   });
 
+  it("skips deleted worktrees as missing and still syncs the clone through --all", async () => {
+    const { local, seed, clone } = await fixture(); const gone = join(root, "gone");
+    await git(local, "worktree", "add", "-b", "agent/gone", gone, "main");
+    rmSync(gone, { recursive: true }); const tip = await advance(seed);
+    const result = await cli([clone], ["sync", "--all", "--agent"]);
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ status: "succeeded", result: { clones: [expect.objectContaining({ outcome: "updated", checkouts: expect.arrayContaining([
+      expect.objectContaining({ path: gone, outcome: "skipped", reason: "missing" }),
+      expect.objectContaining({ path: local, outcome: "updated", new: tip }),
+    ]) })] } });
+    expect(await git(local, "rev-parse", "HEAD")).toBe(tip);
+    expect(await git(local, "rev-parse", "agent/gone")).not.toBe(tip);
+  });
+
+  it("labels dry runs with the fetch timestamp and leaves remote refs and files untouched", async () => {
+    const { local, seed, clone } = await fixture(); const old = await git(local, "rev-parse", "HEAD");
+    await git(local, "fetch", "origin"); const fetchHead = readFileSync(join(local, ".git", "FETCH_HEAD"), "utf8");
+    const tip = await advance(seed);
+    const dry = await cli([clone], ["sync", "--all", "--dry-run", "--agent"]);
+    expect(dry.exitCode, dry.stderr).toBe(0);
+    expect(JSON.parse(dry.stdout).result.clones[0]).toMatchObject({ outcome: "up-to-date", refSnapshot: { fetchedAt: expect.any(String) } });
+    expect(await git(local, "rev-parse", "origin/main")).toBe(old); expect(await git(local, "rev-parse", "HEAD")).toBe(old);
+    expect(readFileSync(join(local, ".git", "FETCH_HEAD"), "utf8")).toBe(fetchHead);
+    const human = await cli([clone], ["sync", "--all", "--dry-run"]); expect(human.stderr).toContain("Dry run uses local refs fetched"); expect(human.stderr).toContain("ago");
+    const real = await cli([clone], ["sync", "--all", "--agent"]); expect(real.exitCode, real.stderr).toBe(0); expect(await git(local, "rev-parse", "HEAD")).toBe(tip);
+  });
+
   it("skips dirty, detached, diverged, busy, locked, and upstreamless checkouts", async () => {
     const { local, seed, clone } = await fixture();
     const paths = Object.fromEntries(["dirty", "detached", "diverged", "busy", "locked", "no-upstream"].map(name => [name, join(root, name)]));
@@ -194,7 +221,7 @@ describe("indexed sync", () => {
     }
     expect(await git(a.local, "rev-parse", "HEAD")).toBe(tip);
     const ambiguous = await cli([{ ...a.clone, displayName: "duplicate" }, { ...b.clone, displayName: "duplicate" }], ["sync", "duplicate", "--agent"]);
-    expect(ambiguous.exitCode).toBe(1); expect(JSON.parse(ambiguous.stdout)).toMatchObject({ status: "failed", error: { code: "missing_input" }, result: { candidates: expect.any(Array) } });
+    expect(ambiguous.exitCode).toBe(1); expect(JSON.parse(ambiguous.stdout)).toMatchObject({ status: "needs_input", error: { code: "missing_input" }, requiredInputs: [{ name: "project" }], result: { candidates: expect.any(Array) } });
     const dry = await cli([a.clone, b.clone], ["sync", "--all", "--dry-run", "--agent"]);
     expect(JSON.parse(dry.stdout)).toMatchObject({ status: "planned", result: { schemaVersion: 1, clones: expect.any(Array) } }); expect(dry.calls).toEqual([]);
   });

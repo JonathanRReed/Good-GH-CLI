@@ -1,9 +1,11 @@
 /**
- * Git execution with lock-file retry. Leaf module: only depends on utils/exec.
+ * Git execution with lock-file retry. Depends only on utils/exec and the
+ * push-protection leaf.
  */
 
-import { run } from "../../utils/exec.ts";
+import { ExecError, run } from "../../utils/exec.ts";
 import { isNonInteractive } from "../runtime.ts";
+import { isPushProtectionRejection, parsePushProtection, PushProtectionError } from "./push-protection.ts";
 
 export const NON_INTERACTIVE_ENV = Object.freeze({
   GCM_INTERACTIVE: "never",
@@ -35,6 +37,8 @@ export async function execGitWithRetry(
     stdio?: "inherit";
     /** Stdin payload (apply). */
     input?: string;
+    /** With inherited stdio, stream stderr live and also capture it. */
+    teeStderr?: boolean;
   } = {},
 ): Promise<{ stdout: string; stderr: string }> {
   const cwd = options.cwd || process.cwd();
@@ -51,10 +55,13 @@ export async function execGitWithRetry(
   let lastErr: unknown;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      return await run("git", args, { cwd, env, stdio: options.stdio, input: options.input });
+      return await run("git", args, { cwd, env, stdio: options.stdio, input: options.input, teeStderr: options.teeStderr });
     } catch (err: unknown) {
       lastErr = err;
-      const errStr = String(err);
+      const stderr = err instanceof ExecError ? err.stderr : "";
+      // A secret in the pushed commits blocks every identical retry.
+      if (isPushProtectionRejection(stderr)) throw err;
+      const errStr = `${String(err)}\n${stderr}`;
       const isLockError =
         errStr.includes("index.lock") ||
         errStr.includes("HEAD.lock") ||
@@ -69,4 +76,23 @@ export async function execGitWithRetry(
     }
   }
   throw lastErr;
+}
+
+
+/**
+ * Runs a git push. With `stream`, progress and remote messages reach the
+ * terminal live while stderr is still captured. A push-protection rejection
+ * becomes a PushProtectionError and is never retried.
+ */
+export async function execGitPush(
+  args: string[],
+  options: { cwd?: string; stream?: boolean } = {},
+): Promise<{ stdout: string; stderr: string }> {
+  try {
+    return await execGitWithRetry(args, { cwd: options.cwd, ...(options.stream ? { stdio: "inherit" as const, teeStderr: true } : {}) });
+  } catch (err: unknown) {
+    const details = err instanceof ExecError ? parsePushProtection(err.stderr) : undefined;
+    if (details) throw new PushProtectionError(details, { cause: err });
+    throw err;
+  }
 }
