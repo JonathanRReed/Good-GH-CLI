@@ -65,14 +65,14 @@ describe("pull request push destination", () => {
     git(["remote", "set-url", "--add", "--push", "origin", join(root, "second.git")], repo);
     const fanout = await runFixture([], { root, cwd: repo, responses, invoke: invoke([...args, "--dry-run", "--json"], fetchBare) });
     expect(fanout.exitCode).toBe(1);
-    expect(JSON.parse(fanout.stdout)).toMatchObject({ status: "needs_input", message: expect.stringContaining("exactly one push URL") });
+    expect(JSON.parse(fanout.stdout)).toMatchObject({ status: "failed", message: expect.stringContaining("exactly one push URL") });
 
     git(["config", "--unset-all", "remote.origin.pushurl"], repo);
     git(["remote", "set-url", "--push", "origin", "https://fixture:not-a-token@example.test/project.git"], repo);
     const credential = await runFixture([], { root, cwd: repo, responses, invoke: invoke([...args, "--dry-run", "--json"], fetchBare) });
     expect(credential.exitCode).toBe(1);
     expect(credential.stdout).not.toContain("not-a-token");
-    expect(JSON.parse(credential.stdout)).toMatchObject({ status: "needs_input", message: expect.stringContaining("embeds credentials") });
+    expect(JSON.parse(credential.stdout)).toMatchObject({ status: "failed", message: expect.stringContaining("embeds credentials") });
   });
 
   test("execution refuses a push URL changed after the plan was prepared, before any push", async () => {

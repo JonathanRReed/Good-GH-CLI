@@ -6,12 +6,14 @@ import {
   getRepositoryReadme,
   gh,
   listUserRepositories,
+  parseRepoFlag,
   requireAuth,
   setDefaultRepository,
   viewRepository,
 } from "../services/github.ts";
 import { preparePublication, executePublication, publicationRequiredInput } from "../services/publication.ts";
 import { getConfig } from "../services/config.ts";
+import { isGitRepo } from "../services/git.ts";
 import { isNonInteractive, recordCommandIssue } from "../services/runtime.ts";
 import { invalidateCache } from "../services/cache.ts";
 import { dryRun } from "../utils/flags.ts";
@@ -22,9 +24,17 @@ export function registerRepoCommand(program: Command): void {
     header("Repository");
     if (!(await requireAuth())) return;
 
+    // Outside a checkout there is nothing to infer; say so before asking GitHub.
+    if (!nameWithOwner && !parseRepoFlag() && !(await isGitRepo())) {
+      fail("Not inside a GitHub repository. Pass -R owner/repo.", { code: "invalid_arguments" });
+      return;
+    }
+
     const s = p.spinner();
     s.start(`Fetching ${nameWithOwner || "this repository"}...`);
-    const detail = await viewRepository(nameWithOwner);
+    let detail;
+    try { detail = await viewRepository(nameWithOwner); }
+    catch (err) { s.stop(pc.red("Failed.")); failFromGitHub(err); return; }
     s.stop(detail ? "Loaded." : pc.yellow("Not found."));
 
     if (!detail) {

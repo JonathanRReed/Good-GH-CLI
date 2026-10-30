@@ -5,11 +5,12 @@ import { assertWindowsPrivateDirectory } from "../private-storage.ts";
 
 import { run } from "../../utils/exec.ts";
 import { existsSync, readFileSync } from "node:fs";
-import { link, lstat, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
+import { link, lstat, mkdir, open, readFile, unlink } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { execGitWithRetry } from "./exec.ts";
 import { getCurrentBranch, listBranches, resolveBranchRef } from "./branch.ts";
+import { replaceFile } from "../../utils/replace-file.ts";
 
 export interface StackNode {
   branch: string;
@@ -232,7 +233,7 @@ export async function writeStackRecovery(checkpoint: StackRecoveryCheckpoint, cw
   const handle = await open(temp, "wx", 0o600);
   try { await handle.writeFile(json, "utf8"); await handle.sync(); }
   finally { await handle.close(); }
-  try { await rename(temp, path); }
+  try { await replaceFile(temp, path); }
   catch (error) { await unlink(temp).catch(() => undefined); throw error; }
 }
 

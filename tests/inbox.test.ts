@@ -318,7 +318,7 @@ describe("inbox suggestions work from any directory", () => {
     expect(receipt.exitCode, receipt.stderr).toBe(0);
     // Answered from the explicit repo: the PR head was read through --repo.
     expect(receipt.stdout).toContain(`PR #7 · ${sha}`);
-    expect(receipt.calls).toContainEqual(["pr", "view", "7", "--json", "number,url,headRefOid", "--repo", "fixture/example"]);
+    expect(receipt.calls).toContainEqual(["pr", "view", "7", "--json", "number,url,headRefOid,statusCheckRollup", "--repo", "fixture/example"]);
     expect(receipt.calls).toContainEqual(["api", `repos/{owner}/{repo}/actions/runs?head_sha=${sha}&per_page=100&page=1`]);
   });
 

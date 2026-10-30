@@ -385,11 +385,12 @@ export function tidySnapshot(plan: Pick<TidyPlan, "schemaVersion" | "options" | 
 /** A broad directory approval must name one agent area, never a whole volume or home. */
 function unknownDirectory(path: string): string {
   const resolved = projectPath(path);
+  // Breadth comes first: a volume root or home is too broad whether or not it is mounted.
+  const homes = [homedir(), process.env.HOME].filter((home): home is string => Boolean(home)).map(projectPath);
+  if (resolved === parse(resolved).root || homes.includes(resolved)) throw new Error(`--allow-unknown-under is too broad: ${path}. Name the directory that holds the agent checkouts`);
   let info;
   try { info = statSync(resolved); } catch { throw new Error(`--allow-unknown-under directory does not exist: ${path}`); }
   if (!info.isDirectory()) throw new Error(`--allow-unknown-under must name a directory: ${path}`);
-  const homes = [homedir(), process.env.HOME].filter((home): home is string => Boolean(home)).map(projectPath);
-  if (resolved === parse(resolved).root || homes.includes(resolved)) throw new Error(`--allow-unknown-under is too broad: ${path}. Name the directory that holds the agent checkouts`);
   return resolved;
 }
 export async function buildTidyPlan(clones: readonly Clone[], options: TidyOptions = {}, config = getConfig()): Promise<TidyPlan> {

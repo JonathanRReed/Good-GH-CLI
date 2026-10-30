@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync } from "node:fs";
-import { open, rename, unlink } from "node:fs/promises";
+import { open, unlink } from "node:fs/promises";
+import { replaceFile } from "../../utils/replace-file.ts";
 import { isAbsolute, join } from "node:path";
 import { getConfig, getConfigDir, type GoodGhConfig } from "../config.ts";
 import { assertWindowsPrivateDirectory } from "../private-storage.ts";
@@ -98,7 +99,7 @@ export async function updateProjectIndex(update: (current: ProjectIndexFile) => 
     const next = update(current);
     const handle = await open(temporary, "wx", 0o600);
     try { await handle.writeFile(`${JSON.stringify(next)}\n`, "utf8"); await handle.sync(); } finally { await handle.close(); }
-    await rename(temporary, projectIndexPath(configDir));
+    await replaceFile(temporary, projectIndexPath(configDir));
     // A rescan that only refreshes scan timestamps is bookkeeping, not an effect worth reporting.
     if (!existed || !sameContent(next, current)) recordCompletedEffect("projects_index_updated");
     return next;

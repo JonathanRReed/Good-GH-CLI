@@ -310,7 +310,7 @@
         },
         {
           "label": "zero drift, clean checkout",
-          "pattern": "# branch\\.ab \\+0 -0\\n\\{|\"ahead\":0,\"behind\":0,\"staged\":0,\"unstaged\":0,\"untracked\":0,\"conflicts\":0"
+          "pattern": "# branch\\.ab \\+0 -0\\n\\{|\"ahead\":0,\"behind\":0,(?:\"[A-Za-z]+\":(?:\\d+|null),)*\"staged\":0,\"unstaged\":0,\"untracked\":0,\"conflicts\":0"
         },
         {
           "label": "PR number and state",
@@ -363,12 +363,12 @@
       "ggh": {
         "recall": 1,
         "missing": [],
-        "bytes": 945,
-        "tokens": 236.25,
+        "bytes": 964,
+        "tokens": 241,
         "toolCalls": 1,
-        "byteRatio": 0.5526315789473685,
+        "byteRatio": 0.5637426900584795,
         "maxByteRatio": 1.5,
-        "subprocessCalls": 8,
+        "subprocessCalls": 13,
         "exitCode": 0,
         "unexpected": [],
         "stderr": ""
