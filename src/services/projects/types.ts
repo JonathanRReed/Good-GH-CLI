@@ -50,6 +50,8 @@ export interface IndexedClone extends Clone {
 }
 
 export interface DiscoveryCoverage {
+  /** Broken checkouts outside the selected projects. */
+  brokenElsewhere?: number;
   roots: string[];
   /** Paths that could not be read, with a short reason. */
   skipped: { path: string; reason: string }[];

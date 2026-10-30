@@ -272,12 +272,30 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.lost.items[] [oneOf 3].stashes[].date` | string | yes |  |  |
 | `result.lost.items[] [oneOf 3].stashes[].message` | string | yes |  |  |
 | `result.lost.items[] [oneOf 4]` | varies | no |  |  |
-| `result.lost.items[] [oneOf 4].kind` | `"dirty-host-checkout"` | no |  |  |
-| `result.lost.items[] [oneOf 4].reason` | string | yes |  |  |
-| `result.lost.items[] [oneOf 4].host` | string | yes |  |  |
+| `result.lost.items[] [oneOf 4].kind` | `"restack-preimage"` | no |  |  |
+| `result.lost.items[] [oneOf 4].branch` | string | yes |  |  |
+| `result.lost.items[] [oneOf 4].head` | string | yes |  |  |
+| `result.lost.items[] [oneOf 4].operationId` | string | yes |  |  |
 | `result.lost.items[] [oneOf 5]` | varies | no |  |  |
-| `result.lost.items[] [oneOf 5].kind` | `"broken-gitdir"` | no |  |  |
+| `result.lost.items[] [oneOf 5].kind` | `"dirty-checkout"` | no |  |  |
 | `result.lost.items[] [oneOf 5].reason` | string | yes |  |  |
+| `result.lost.items[] [oneOf 5].dirty` | object | yes |  |  |
+| `result.lost.items[] [oneOf 5].dirty.staged` | integer | yes |  |  |
+| `result.lost.items[] [oneOf 5].dirty.unstaged` | integer | yes |  |  |
+| `result.lost.items[] [oneOf 5].dirty.untracked` | integer | yes |  |  |
+| `result.lost.items[] [oneOf 5].dirty.conflicted` | integer | yes |  |  |
+| `result.lost.items[] [oneOf 6]` | varies | no |  |  |
+| `result.lost.items[] [oneOf 6].kind` | `"dirty-host-checkout"` | no |  |  |
+| `result.lost.items[] [oneOf 6].reason` | string | yes |  |  |
+| `result.lost.items[] [oneOf 6].host` | string | yes |  |  |
+| `result.lost.items[] [oneOf 6].dirty` | object | no |  |  |
+| `result.lost.items[] [oneOf 6].dirty.staged` | integer | yes |  |  |
+| `result.lost.items[] [oneOf 6].dirty.unstaged` | integer | yes |  |  |
+| `result.lost.items[] [oneOf 6].dirty.untracked` | integer | yes |  |  |
+| `result.lost.items[] [oneOf 6].dirty.conflicted` | integer | yes |  |  |
+| `result.lost.items[] [oneOf 7]` | varies | no |  |  |
+| `result.lost.items[] [oneOf 7].kind` | `"broken-gitdir"` | no |  |  |
+| `result.lost.items[] [oneOf 7].reason` | string | yes |  |  |
 | `result.plan` | object | yes |  |  |
 | `result.plan.audit` | object | no |  |  |
 | `result.plan.audit.state` | `"completed"` | yes |  |  |
@@ -459,12 +477,30 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.items[] [oneOf 3].stashes[].date` | string | yes |  |  |
 | `result.items[] [oneOf 3].stashes[].message` | string | yes |  |  |
 | `result.items[] [oneOf 4]` | varies | no |  |  |
-| `result.items[] [oneOf 4].kind` | `"dirty-host-checkout"` | no |  |  |
-| `result.items[] [oneOf 4].reason` | string | yes |  |  |
-| `result.items[] [oneOf 4].host` | string | yes |  |  |
+| `result.items[] [oneOf 4].kind` | `"restack-preimage"` | no |  |  |
+| `result.items[] [oneOf 4].branch` | string | yes |  |  |
+| `result.items[] [oneOf 4].head` | string | yes |  |  |
+| `result.items[] [oneOf 4].operationId` | string | yes |  |  |
 | `result.items[] [oneOf 5]` | varies | no |  |  |
-| `result.items[] [oneOf 5].kind` | `"broken-gitdir"` | no |  |  |
+| `result.items[] [oneOf 5].kind` | `"dirty-checkout"` | no |  |  |
 | `result.items[] [oneOf 5].reason` | string | yes |  |  |
+| `result.items[] [oneOf 5].dirty` | object | yes |  |  |
+| `result.items[] [oneOf 5].dirty.staged` | integer | yes |  |  |
+| `result.items[] [oneOf 5].dirty.unstaged` | integer | yes |  |  |
+| `result.items[] [oneOf 5].dirty.untracked` | integer | yes |  |  |
+| `result.items[] [oneOf 5].dirty.conflicted` | integer | yes |  |  |
+| `result.items[] [oneOf 6]` | varies | no |  |  |
+| `result.items[] [oneOf 6].kind` | `"dirty-host-checkout"` | no |  |  |
+| `result.items[] [oneOf 6].reason` | string | yes |  |  |
+| `result.items[] [oneOf 6].host` | string | yes |  |  |
+| `result.items[] [oneOf 6].dirty` | object | no |  |  |
+| `result.items[] [oneOf 6].dirty.staged` | integer | yes |  |  |
+| `result.items[] [oneOf 6].dirty.unstaged` | integer | yes |  |  |
+| `result.items[] [oneOf 6].dirty.untracked` | integer | yes |  |  |
+| `result.items[] [oneOf 6].dirty.conflicted` | integer | yes |  |  |
+| `result.items[] [oneOf 7]` | varies | no |  |  |
+| `result.items[] [oneOf 7].kind` | `"broken-gitdir"` | no |  |  |
+| `result.items[] [oneOf 7].reason` | string | yes |  |  |
 
 ## review
 
@@ -547,6 +583,8 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result [anyOf 1].clones[].outcome` | `["updated","up-to-date","skipped","failed","uncertain"]` | yes |  |  |
 | `result [anyOf 1].clones[].reason` | string | no |  |  |
 | `result [anyOf 1].clones[].message` | string | no |  |  |
+| `result [anyOf 1].clones[].refSnapshot` | object | no |  |  |
+| `result [anyOf 1].clones[].refSnapshot.fetchedAt` | string / null | yes |  |  |
 | `result [anyOf 1].clones[].fetches` | array | yes |  |  |
 | `result [anyOf 1].clones[].fetches[]` | object | no |  |  |
 | `result [anyOf 1].clones[].fetches[].remote` | string | yes |  |  |
@@ -1293,6 +1331,7 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.coverage` | object | no |  |  |
 | `result.coverage.roots` | array | yes |  |  |
 | `result.coverage.roots[]` | string | no |  |  |
+| `result.coverage.brokenElsewhere` | integer | no |  |  |
 | `result.coverage.truncated` | boolean | yes |  |  |
 | `result.coverage.skipped` | array | yes |  |  |
 | `result.coverage.skipped[]` | object | no |  |  |

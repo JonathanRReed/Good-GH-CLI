@@ -19,6 +19,7 @@ import { dryRun, isDryRun } from "../utils/flags.ts";
 import { classifyBranchDeletion, deleteGoneBranch, type BranchDeletionProof } from "../services/git/branch-safety.ts";
 import { readProjectIndex } from "../services/projects/index-store.ts";
 import { syncProjects, type ProjectSyncResult } from "../services/projects/sync.ts";
+import { fetchAge } from "../services/projects/cleanup-view.ts";
 import { selectProject } from "./projects.ts";
 
 interface SyncOptions { yes?: boolean; force?: boolean; all?: boolean; includeHostWorktrees?: boolean; forkUpstream?: boolean; concurrency?: string; timeout?: string }
@@ -27,6 +28,7 @@ function renderSync(result: ProjectSyncResult): void {
   const rows = [["Project / checkout", "Result", "Detail"]];
   for (const clone of result.clones) {
     rows.push([clone.name, clone.outcome, "reason" in clone ? clone.reason : ""]);
+    if (clone.refSnapshot) p.log.info(`${clone.name}: Dry run uses local refs fetched ${fetchAge(clone.refSnapshot.fetchedAt)}${clone.refSnapshot.fetchedAt ? ` (${clone.refSnapshot.fetchedAt})` : ""}; remote state may have changed.`);
     for (const row of clone.checkouts) rows.push([`  ${row.path} [${row.branch ?? "HEAD"}]`, row.outcome, row.outcome === "skipped" ? row.reason : row.outcome === "updated" ? `${row.old.slice(0, 12)}..${row.new.slice(0, 12)}` : ""]);
     if (clone.forkUpstream.outcome !== "skipped") rows.push([`  fork ${clone.forkUpstream.target}`, clone.forkUpstream.outcome, ""]);
     else if (clone.forkUpstream.reason !== "not-requested") rows.push(["  fork", "skipped", clone.forkUpstream.reason]);

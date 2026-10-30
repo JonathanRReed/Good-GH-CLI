@@ -165,7 +165,7 @@ describe("lost", () => {
     await run("git", ["commit", "--allow-empty", "-m", "only here"], { cwd: path });
     const snapshot = await plan(); expect(snapshot.clones[0]?.actions).toEqual([]);
     const result = await findLost(await clones(), config());
-    expect(result.items).toContainEqual(expect.objectContaining({ kind: "unpublished", path, branch: null, commits: 1, newestSubject: "only here", nextSteps: [expect.arrayContaining(["branch", "rescue-work"])] }));
+    expect(result.items).toContainEqual(expect.objectContaining({ kind: "unpublished", path, branch: null, commits: 1, newestSubject: "only here", nextSteps: [expect.arrayContaining(["branch", `rescue-work-${(await run("git", ["rev-parse", "HEAD"], { cwd: path })).stdout.trim().slice(0, 12)}`])] }));
   });
   it("sorts by commit count then oldest unpublished date, and reports dirty hosts and broken gitdirs", async () => {
     const a = await tree("a"); const b = await tree("b"); const c = await tree("c");

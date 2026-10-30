@@ -4,6 +4,7 @@ import { getConfig, saveConfig } from "../services/config.ts";
 import { isNonInteractive, getFlags, recordCompletedEffect } from "../services/runtime.ts";
 import { discoverProjects, projectPath } from "../services/projects/discovery.ts";
 import { forgetProject, readProjectIndex, refreshProjectIndex, registerProject } from "../services/projects/index-store.ts";
+import { selectedCoverage } from "../services/projects/coverage.ts";
 import { resolveProjects } from "../services/projects/query.ts";
 import { projectHistory, readCloneStatus, readProjectStatuses } from "../services/projects/status.ts";
 import { formatProjects, formatProjectCard, formatUncloned, renderProjectCard, renderProjects, shortPath, sortProjects, type ProjectRow, type ProjectViewOptions } from "../services/projects/view.ts";
@@ -77,6 +78,7 @@ export async function showProjects(query?: string, options: ProjectViewOptions =
   const index = await refreshProjectIndex();
   if (query !== undefined) {
     const clone = await selectProject(index.clones, query); if (!clone) return;
+    if (index.coverage) index.coverage = selectedCoverage(index.coverage, [clone]);
     const status = await readCloneStatus(clone);
     const history = await projectHistory(clone, status);
     const row: ProjectRow = { clone, status };
@@ -110,6 +112,7 @@ export async function showProjects(query?: string, options: ProjectViewOptions =
   }
   if (index.coverage) {
     for (const skipped of index.coverage.skipped) p.log.warn(`${shortPath(skipped.path)}: ${skipped.reason}`);
+    if (index.coverage.brokenElsewhere) p.log.warn(`${index.coverage.brokenElsewhere} broken checkouts elsewhere: ggh lost`);
     if (index.coverage.truncated) p.log.warn("Scan depth reached. Register a nested repository or increase project_scan_depth.");
   }
 }

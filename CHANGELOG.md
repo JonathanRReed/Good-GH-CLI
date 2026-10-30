@@ -107,6 +107,16 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   report omitted evidence. Keep `--max-bytes` as the per-job evidence limit.
 - Name the repository and PR in CI evidence, and omit annotation truncation
   metadata when all annotations fit.
+- Report uncommitted changes in every checkout in `lost`, including plain Git
+  and ggh worktrees. Exclude ignored files from dirty state.
+- Skip missing and prunable worktrees during bulk sync so other checkouts can
+  still update. Label offline dry-run outcomes with their last fetch timestamp.
+- Scope project warnings and broken-checkout items to the selected projects;
+  summarize broken checkouts elsewhere without assigning them to another clone.
+- Batch `lost` commit and reflog walks, inspect clones with bounded workers,
+  and show terminal progress on stderr. Sort discovery gaps and lost items.
+- Suggest distinct, unused recovery branch names. Label completed restack
+  pre-images separately when the saved checkpoint matches the branch tip.
 
 - Merge stacked PRs through GitHub's async merge API; the legacy merge path
   refuses them. Disclose every PR the merge lands, recheck their heads after

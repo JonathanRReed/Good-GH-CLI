@@ -78,7 +78,7 @@ async function requireFreshRemoteRefs(commonDir: string, refs: RefProof[], maxDa
 export async function freshClone(clone: Clone, config: GoodGhConfig = getConfig()): Promise<Clone> {
   const source = clone.checkouts.find(checkout => existsSync(join(checkout.path, ".git")) || checkout.bare)?.path;
   if (!source) throw new Error("No readable checkout; identity cannot be proved");
-  const discovered = await discoverProjects({ config: { ...config, project_roots: [], project_exclude: [] }, registered: [source] });
+  const discovered = await discoverProjects({ config: { ...config, project_roots: [], project_exclude: [] }, registered: [source], scanHostLocations: false });
   const fresh = discovered.clones.find(candidate => candidate.commonDir === clone.commonDir);
   if (!fresh || realpathSync.native(fresh.commonDir) !== clone.commonDir) throw new Error("Clone identity changed or cannot be proved");
   return fresh;
