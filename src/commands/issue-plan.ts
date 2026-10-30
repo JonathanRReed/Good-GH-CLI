@@ -49,7 +49,7 @@ async function showIssuePlan(issue: number, name: string): Promise<void> {
   if (matches.length > 1) { refuseAmbiguous(issue, name, matches); return; }
   const match = matches[0];
   if (!match) {
-    fail(`Issue #${issue} has no plan named "${name}". Save one with: ggh issue plan ${issue} <file>${name === DEFAULT_PLAN_NAME ? "" : ` --name '${name}'`}`);
+    fail(`Issue #${issue} has no plan named "${name}". Save one with: ggh issue plan ${issue} <file>${name === DEFAULT_PLAN_NAME ? "" : ` --name '${name}'`}`, { code: "not_found" });
     return;
   }
   const plan = await readIssuePlan(issue, match.number);
