@@ -3,6 +3,22 @@
 All notable changes to this project are documented here.
 This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Added
+
+- Link `stack submit` PRs as a native GitHub stack when the branches form one
+  chain. Extend a matching stack, report conflicts without changing them, and
+  opt out with `--no-native-stack`.
+- Show issue artifacts (plans, documents, links) in `issue <number>` and its
+  JSON. Older GitHub CLI versions report them as unavailable.
+
+### Fixed
+
+- Merge stacked PRs through GitHub's async merge API; the legacy merge path
+  refuses them. Disclose every PR the merge lands, recheck their heads after
+  confirmation, refuse `--auto`, and report merged, queued, or unknown.
+
 ## 0.6.0-beta.1 - 2026-10-22
 
 

@@ -87,6 +87,35 @@ export async function viewIssue(issueNumber: number, cwd = process.cwd()): Promi
 }
 
 
+export interface IssueArtifact {
+  number: number;
+  name: string;
+  type: string;
+  url: string;
+  updatedAt?: string;
+}
+
+export type IssueArtifacts =
+  | { state: "available"; items: IssueArtifact[] }
+  | { state: "unavailable"; reason: string };
+
+/** Lists plans, documents, and links attached to an issue. Never throws. */
+export async function listIssueArtifacts(issueNumber: number, cwd = process.cwd()): Promise<IssueArtifacts> {
+  try {
+    const { stdout } = await gh(["issue", "artifact", "list", String(issueNumber), "--json", "number,name,type,url,updatedAt"], { cwd });
+    const items = JSON.parse(stdout || "[]");
+    if (!Array.isArray(items)) return { state: "unavailable", reason: "GitHub CLI returned an unexpected artifact list." };
+    return { state: "available", items };
+  } catch (err) {
+    const text = [(err as { stderr?: string })?.stderr, err instanceof Error ? err.message : String(err)].join("\n");
+    if (/unknown command "artifact"|unknown command artifact/i.test(text)) {
+      return { state: "unavailable", reason: "Issue artifacts need GitHub CLI 2.103 or later." };
+    }
+    return { state: "unavailable", reason: classifyGitHubError(err, "issue artifacts").message };
+  }
+}
+
+
 export interface IssueDetail extends IssueItem {
   body: string;
   comments?: Array<{ author: { login: string }; body: string; createdAt: string }>;

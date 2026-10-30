@@ -11,6 +11,7 @@ import {
   listIssues,
   requireAuth,
   setIssueState,
+  listIssueArtifacts,
   viewIssue,
   readAttachmentBodyFile,
   prepareAttachmentPlan,
@@ -130,8 +131,9 @@ export function registerIssueCommand(program: Command): void {
 
   async function showIssue(num: number): Promise<void> {
     let detail;
+    let artifacts;
     try {
-      detail = await viewIssue(num);
+      [detail, artifacts] = await Promise.all([viewIssue(num), listIssueArtifacts(num)]);
     } catch (err) {
       failFromGitHub(err);
       return;
@@ -141,7 +143,7 @@ export function registerIssueCommand(program: Command): void {
       return;
     }
 
-    if (jsonOut(detail)) return;
+    if (jsonOut({ ...detail, artifacts })) return;
 
     p.log.step(`#${detail.number} ${pc.bold(detail.title)}`);
     p.log.message(`  State:  ${stateTag(detail.state)}`);
@@ -152,6 +154,13 @@ export function registerIssueCommand(program: Command): void {
     const bodyTrimmed = detail.body?.trim();
     if (bodyTrimmed) {
       p.note(bodyTrimmed.slice(0, 2000), "Description");
+    }
+    if (artifacts.state === "available" && artifacts.items.length) {
+      p.log.step(`${artifacts.items.length} artifact(s):`);
+      for (const artifact of artifacts.items) {
+        p.log.message(`  ${pc.dim(`#${artifact.number}`)} ${artifact.name} ${pc.dim(`(${artifact.type})`)}`);
+      }
+      p.log.message(pc.dim(`  Read one with: gh issue artifact view ${detail.number} <number>`));
     }
     if (detail.comments?.length) {
       p.log.step(`${detail.comments.length} comment(s):`);

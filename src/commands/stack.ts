@@ -40,8 +40,12 @@ import {
   getActivePullRequest,
   ghGlobal,
   parseGitHubRepositoryNameWithOwnerFromRemoteUrl,
+  parsePullRequestUrl,
   parseRepoFlag,
+  registerNativeStack,
   requireAuth,
+  type NativeStackRegistration,
+  type PullRequestTarget,
 } from "../services/github.ts";
 import { getActiveOperation, getFlags, setActiveOperation } from "../services/runtime.ts";
 import { readOperation, startOperation, updateOperation, type OperationRecord, type OperationStatus } from "../services/operations.ts";
@@ -444,6 +448,17 @@ function renderTree(
   return lines;
 }
 
+/** GitHub stacks are a single chain: each branch's parent is the branch below it. */
+function isLinearStack(plan: Array<{ branch: string; parent: string }>): boolean {
+  return plan.every((item, index) => index === 0 || item.parent === plan[index - 1]?.branch);
+}
+
+async function linkNativeStack(opened: Array<{ url: string }>): Promise<NativeStackRegistration> {
+  const targets = opened.map((item) => parsePullRequestUrl(item.url));
+  if (targets.some((target) => !target)) return { state: "skipped", reason: "A Pull Request URL could not be read." };
+  return registerNativeStack(targets as PullRequestTarget[]);
+}
+
 export function registerStackCommand(program: Command): void {
   const stack = program
     .command("stack")
@@ -699,8 +714,9 @@ export function registerStackCommand(program: Command): void {
     .command("submit [branch]")
     .description("Push the selected stack and open a Pull Request for each branch against its parent")
     .option("-d, --draft", "Open every Pull Request as a draft")
+    .option("--no-native-stack", "Do not link the Pull Requests as a GitHub stack")
     .option("-y, --yes", "Skip the confirmation prompt")
-    .action(async (branch?: string, options?: { draft?: boolean; yes?: boolean }) => {
+    .action(async (branch?: string, options?: { draft?: boolean; yes?: boolean; nativeStack?: boolean }) => {
       header("Submit Stack");
       if (!(await requireGitRepo())) return;
       const cwd = process.cwd();
@@ -737,11 +753,13 @@ export function registerStackCommand(program: Command): void {
         catch (error) { fail(String(error)); return; }
         p.log.step("Stack from the bottom up:");
         for (const item of plan) p.log.message("  " + pc.cyan(item.branch) + " " + pc.dim("→") + " " + pc.cyan(item.parent));
-        if (dryRun("push and open " + plan.length + " Pull Request(s)")) {
-          jsonOut({ status: "planned", operation: "submit", selected: start, branches: plan });
+        const linkNative = options?.nativeStack !== false && plan.length > 1 && isLinearStack(plan);
+        const linkText = linkNative ? " and link them as a GitHub stack" : "";
+        if (dryRun("push and open " + plan.length + " Pull Request(s)" + linkText)) {
+          jsonOut({ status: "planned", operation: "submit", selected: start, branches: plan, nativeStack: linkNative });
           return;
         }
-        if (!(await confirmOrAbort("Push and open Pull Requests for " + plan.length + " branch(es)?", { assumeYes: options?.yes }))) return;
+        if (!(await confirmOrAbort("Push and open Pull Requests for " + plan.length + " branch(es)" + linkText + "?", { assumeYes: options?.yes }))) return;
 
         let checkpoint: StackRecoveryCheckpoint;
         try {
@@ -888,8 +906,17 @@ export function registerStackCommand(program: Command): void {
         await switchBranch(original, false, cwd).catch(() => undefined);
         await saveStackProgress(checkpoint, { state: "succeeded" }, cwd);
         await discardRecovery(checkpoint, cwd);
-        if (jsonOut(opened)) return;
+        const nativeStack: NativeStackRegistration = linkNative ? await linkNativeStack(opened) : {
+          state: "skipped",
+          reason: options?.nativeStack === false ? "Disabled with --no-native-stack."
+            : plan.length < 2 ? "A GitHub stack needs at least two pull requests."
+              : "GitHub stacks are linear; this selection is not a single chain.",
+        };
+        if (jsonOut({ status: "succeeded", opened, nativeStack })) return;
         for (const entry of opened) p.log.message("  " + pc.cyan(entry.branch) + " → " + pc.cyan(entry.base) + "  " + pc.dim(entry.url));
+        if (nativeStack.state === "created" || nativeStack.state === "extended") p.log.info("Linked as GitHub stack #" + nativeStack.number + ".");
+        else if (nativeStack.state === "unchanged") p.log.info("GitHub stack #" + nativeStack.number + " already matches.");
+        else if (linkNative && "reason" in nativeStack) p.log.warn("Not linked as a GitHub stack: " + nativeStack.reason);
         p.outro(pc.green(opened.length + " Pull Request(s) in the stack."));
       } finally {
         await releaseLock?.();

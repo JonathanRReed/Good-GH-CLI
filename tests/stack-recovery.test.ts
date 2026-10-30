@@ -24,6 +24,8 @@ interface RemoteViewBranch {
   };
 }
 
+const stackApi = ["api", "--hostname", "github.com", "-H", "X-GitHub-Api-Version: 2026-03-10"];
+
 function git(...args: string[]): string {
   return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }).trim();
 }
@@ -301,14 +303,19 @@ describe("stack recovery", () => {
         { prefix: ["pr", "create", "--title", "child"], stdout: "https://github.com/test/repo/pull/11" },
         { prefix: ["pr", "view"], stdout: "" },
         { prefix: ["pr", "create", "--title", "grandchild"], stdout: "https://github.com/test/repo/pull/12" },
+        ...[10, 11, 12].map(number => ({ prefix: [...stackApi, `repos/test/repo/stacks?pull_request=${number}`], stdout: "[]" })),
+        { prefix: [...stackApi, "-X", "POST", "repos/test/repo/stacks"], stdout: JSON.stringify({ number: 3, open: true, base: { ref: "main" }, pull_requests: [10, 11, 12].map(number => ({ number, state: "open", head: { ref: "b", sha: "c".repeat(40) } })) }) },
       ],
     });
-    expect(retry.exitCode).toBe(0);
-    expect(JSON.parse(retry.stdout).map((item: { url: string }) => item.url)).toEqual([
+    expect(retry.exitCode, retry.stderr).toBe(0);
+    const submitted = JSON.parse(retry.stdout);
+    expect(submitted.opened.map((item: { url: string }) => item.url)).toEqual([
       "https://github.com/test/repo/pull/10",
       "https://github.com/test/repo/pull/11",
       "https://github.com/test/repo/pull/12",
     ]);
+    expect(submitted.nativeStack).toEqual({ state: "created", number: 3, pullRequests: [10, 11, 12] });
+    expect(retry.inputs.find(input => input.args.includes("repos/test/repo/stacks"))?.text).toBe(JSON.stringify({ pull_requests: [10, 11, 12] }));
     expect(git("branch", "--show-current")).toBe("main");
     expect(git("show-ref", "--verify", "refs/remotes/origin/grandchild")).toBeTruthy();
     expect(git("show-ref", "--verify", "refs/heads/side")).toBeTruthy();

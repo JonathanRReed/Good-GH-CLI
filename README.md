@@ -149,13 +149,14 @@ ggh discard --all --dry-run
 ggh squash 3 --message "feat: combine changes" --no-input
 ```
 
-Stack parents live in Git config. Restack changes local branches; submit explicitly publishes, using expected-tip leases for rewritten branches. Plain stack list is offline. Named stash restore pops after confirmation; legacy tagged stashes still work. Squash keeps original commits under a recovery ref. Inspect partial failures before retrying.
+Stack parents live in Git config. Restack changes local branches; submit explicitly publishes, using expected-tip leases for rewritten branches. Plain stack list is offline. When the submitted branches form one chain, submit also links the PRs as a [GitHub stack](https://docs.github.com/en/pull-requests/how-tos/stacked-pull-requests): it creates one or appends to a matching one, never reorders a different one, and reports `nativeStack` (`--no-native-stack` opts out). `ggh pr merge` on a stacked PR lists every unmerged PR below it, rechecks their heads after confirmation, and merges them in one atomic step through the async merge API. Named stash restore pops after confirmation; legacy tagged stashes still work. Squash keeps original commits under a recovery ref. Inspect partial failures before retrying.
 
 ### Issues, CI, and repositories
 
 ```bash
 ggh issue
 ggh issue create
+ggh issue 42                          # Includes plans and other issue artifacts
 ggh issue develop 42
 ggh checks
 ggh checks --watch

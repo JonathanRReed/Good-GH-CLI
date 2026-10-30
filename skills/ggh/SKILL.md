@@ -13,6 +13,7 @@ Use this in Claude Code, Codex, T3 Code, and Cursor when calling ggh.
 - Use `ggh ci why`, `ggh pr threads`, and `ggh review` for structured evidence.
 - Use ggh for exact staged-snapshot commits and snapshot-approved publication.
 - Use `ggh projects` and `ggh lost` to inspect local projects and unpublished work. Projects may refresh local index/cache files; lost is read-only. Do not run configuration subcommands unless requested.
+- Use `ggh issue <number> --agent` to read an issue with its attached plans and other artifacts; read one with `gh issue artifact view`.
 - Use native `git --no-pager log`, `diff`, and `blame` for plain history and patches.
   For a quick dirty check, `git status --porcelain=v1 -b` is smaller than ggh.
 - Native `gh` field projections and tuned CI filters can be smaller too. The benchmark's Zod CI and run-detail cases favor native output; its VS Code CI case favors ggh. These are output-byte measurements, not proof of faster repairs or universal token savings.
@@ -37,9 +38,10 @@ Use `ggh agent schema --agent` to check the installed version's contract.
 2. Inspect the staged patch with `git --no-pager diff --cached`. Never infer scope from a clean-looking summary. Never use `git add -A` or `ggh commit --all` to sweep up untracked work.
 3. For commands supporting `--approve-plan`, run identical inputs with `--dry-run --agent`, inspect the plan and its `snapshotId`, then apply with `--approve-plan` and that ID. Changed inputs or state require a fresh plan.
 4. This version's `commit` has no `--approve-plan`. Commit only the reviewed index with an explicit message. It preserves unstaged hunks. For an approved push and PR, use `pr create` after committing; do not invent a standalone managed `ggh push` approval flow.
-5. Never pass `--yes` for destructive actions without explicit user approval. An error requesting `--yes` does not grant approval. Never execute `tidy` without a human-approved snapshot, even with `--yes`.
-6. After creating each PR, call the host's PR registration tool with the returned URL and head SHA where accepted. In T3 Code, call `link_pull_request` with the full URL for every layer. ggh does not register PRs. If the result lacks the SHA, read it with `gh pr view --json url,headRefOid` before reporting identity.
-7. When asked to monitor in T3, call `watch_pull_request` after registration. Use its events instead of tight CI polling. Do not claim registration or monitoring without a host receipt.
+5. Merging a PR in a GitHub stack also merges every unmerged PR below it. Run `ggh pr merge <n> --dry-run --agent` first and report `result.stack.pullRequests` to the user before merging.
+6. Never pass `--yes` for destructive actions without explicit user approval. An error requesting `--yes` does not grant approval. Never execute `tidy` without a human-approved snapshot, even with `--yes`.
+7. After creating each PR, call the host's PR registration tool with the returned URL and head SHA where accepted. In T3 Code, call `link_pull_request` with the full URL for every layer. ggh does not register PRs. If the result lacks the SHA, read it with `gh pr view --json url,headRefOid` before reporting identity.
+8. When asked to monitor in T3, call `watch_pull_request` after registration. Use its events instead of tight CI polling. Do not claim registration or monitoring without a host receipt.
 
 ## Recipes
 

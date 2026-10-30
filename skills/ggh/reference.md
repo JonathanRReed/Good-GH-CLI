@@ -60,7 +60,7 @@ Every managed command accepts `--agent`. It wraps this payload in `result` and d
 | `ggh stack list` |  | --all, --remote, --agent, --quiet, --no-input, --json, --dry-run, --repo value | [stack](#stack) |
 | `ggh stack on` | `<parent>` | --agent, --quiet, --no-input, --json, --dry-run, --repo value | [stack](#stack) |
 | `ggh stack restack` | `[branch]` | --yes, --continue, --abort, --agent, --quiet, --no-input, --json, --dry-run, --repo value | [stack](#stack) |
-| `ggh stack submit` | `[branch]` | --draft, --yes, --agent, --quiet, --no-input, --json, --dry-run, --repo value | [stack](#stack) |
+| `ggh stack submit` | `[branch]` | --draft, --no-native-stack, --yes, --agent, --quiet, --no-input, --json, --dry-run, --repo value | [stack](#stack) |
 | `ggh stack next` | `[name]` | --agent, --quiet, --no-input, --json, --dry-run, --repo value | [stack](#stack) |
 | `ggh stack checkout` |  | --agent, --quiet, --no-input, --json, --dry-run, --repo value | [stack](#stack) |
 | `ggh worktree` |  | --agent, --quiet, --no-input, --ai, --no-ai, --json, --dry-run | Unspecified |

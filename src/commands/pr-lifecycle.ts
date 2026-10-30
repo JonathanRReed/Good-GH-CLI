@@ -4,16 +4,22 @@ import {
   commentOnPullRequest,
   describeAttachmentPlan,
   editPullRequest,
+  findNativeStack,
   getActivePullRequest,
   getCurrentRepositoryNameWithOwner,
   getPullRequestUrl,
+  GitHubError,
   mergePullRequest,
+  mergeStackedPullRequest,
+  parsePullRequestUrl,
   parseRepoFlag,
   readAttachmentBodyFile,
   prepareAttachmentPlan,
   setPullRequestState,
+  stackMergeSet,
   viewPullRequest,
   type MergeOptions,
+  type NativeStack,
 } from "../services/github.ts";
 import { dryRun } from "../utils/flags.ts";
 import { parsePositiveSafeInteger } from "../utils/numeric-target.ts";
@@ -149,6 +155,32 @@ export function registerPrLifecycleCommands(pr: Command): void {
         return;
       }
 
+      // A stacked merge lands every unmerged PR below this one, so show the whole set first.
+      const target = detail?.url ? parsePullRequestUrl(detail.url) : null;
+      let stack: NativeStack | null = null;
+      if (target) {
+        try {
+          stack = await findNativeStack(target);
+        } catch (err) {
+          // GitHub refuses single-PR merges of stacked PRs, so this fallback cannot widen the merge.
+          if (!(err instanceof GitHubError && err.kind === "not_found")) {
+            p.log.warn(`Could not check GitHub stack membership (${err instanceof Error ? err.message : String(err)}). Merging as a single PR.`);
+          }
+        }
+      }
+      const mergeSet = stack ? stackMergeSet(stack, num) : [];
+      if (stack && target) {
+        if (options?.auto) {
+          fail(`#${num} is in GitHub stack #${stack.number}. ggh cannot enable auto-merge on a stacked PR; merge it once checks pass.`);
+          return;
+        }
+        const below = mergeSet.filter((pr) => pr.number !== num);
+        p.log.warn(below.length
+          ? `#${num} is in GitHub stack #${stack.number}. Merging it also merges ${below.map((pr) => `#${pr.number}`).join(", ")} in one atomic step:`
+          : `#${num} is in GitHub stack #${stack.number}; every PR below it is already merged.`);
+        for (const pr of mergeSet) p.log.message(`  #${pr.number} ${pc.cyan(pr.headRef)} ${pc.dim(pr.headSha.slice(0, 12))}`);
+      }
+
       let method: MergeOptions["method"] | null = options?.squash
         ? "squash"
         : options?.rebase
@@ -173,12 +205,49 @@ export function registerPrLifecycleCommands(pr: Command): void {
         }
       }
 
+      const verb = method === "squash" ? "Squash" : method === "rebase" ? "Rebase" : "Merge";
+      const stackSummary = stack
+        ? { number: stack.number, pullRequests: mergeSet.map((pr) => ({ number: pr.number, headRef: pr.headRef, headSha: pr.headSha })) }
+        : undefined;
+      if (stack && target) {
+        if (dryRun(`${method}-merge ${mergeSet.map((pr) => `#${pr.number}`).join(", ")} from GitHub stack #${stack.number}`)) {
+          jsonOut({ status: "planned", number: num, action: "merge", method, stack: stackSummary });
+          return;
+        }
+        if (!(await confirmOrAbort(`${verb} ${mergeSet.length} Pull Request(s) from stack #${stack.number}, up to #${num}?`, { assumeYes: options?.yes, cancelText: "Merge cancelled." }))) return;
+
+        // GitHub pins only the target's head; recheck the PRs below it after confirmation.
+        let fresh: NativeStack | null;
+        try { fresh = await findNativeStack(target); } catch (err) { failFromGitHub(err); return; }
+        const identity = (set: typeof mergeSet) => set.map((pr) => `${pr.number}:${pr.headSha}`).join(",");
+        if (!fresh || fresh.number !== stack.number || identity(stackMergeSet(fresh, num)) !== identity(mergeSet)) {
+          fail(`GitHub stack #${stack.number} changed after the preview. Nothing was merged. Review the stack and retry.`);
+          return;
+        }
+
+        const s = p.spinner();
+        s.start(`Merging stack #${stack.number} up to #${num}...`);
+        try {
+          const result = await mergeStackedPullRequest(target, { method, matchHeadCommit });
+          s.stop(`Stack #${stack.number} up to #${num}: ${result.outcome}.`);
+          if (result.outcome === "unknown" && result.mergeRequestId) p.log.warn(`GitHub is still processing merge request ${result.mergeRequestId}. Check the PR before retrying.`);
+          const cleanup = "Branch cleanup is skipped for stacked merges. Run ggh sync to prune merged branches.";
+          if (options?.deleteBranch !== false && result.outcome === "merged") p.log.info(cleanup);
+          if (jsonOut({ number: num, action: "merge", url: detail?.url, ...result, stack: stackSummary, ...(options?.deleteBranch !== false ? { cleanupSkipped: cleanup } : {}) })) return;
+          p.outro("Done.");
+        } catch (err) {
+          s.stop(pc.red("Merge failed."));
+          failFromGitHub(err);
+        }
+        return;
+      }
+
       if (dryRun(
         `${method}-merge #${num}` +
           (options?.deleteBranch === false ? "" : " and delete the head branch"),
       )) return;
 
-      if (!(await confirmOrAbort(`${method === "squash" ? "Squash" : method === "rebase" ? "Rebase" : "Merge"} Pull Request #${num}?`, { assumeYes: options?.yes, cancelText: "Merge cancelled." }))) return;
+      if (!(await confirmOrAbort(`${verb} Pull Request #${num}?`, { assumeYes: options?.yes, cancelText: "Merge cancelled." }))) return;
 
       const s = p.spinner();
       s.start(`Merging #${num}...`);
