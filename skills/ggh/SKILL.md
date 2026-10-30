@@ -90,8 +90,10 @@ Expect `result.schemaVersion`, `items`, `warnings`, and `coverage`. Suggested `n
 
 ### 6. Review a PR as data
 
+Run it inside a clone of the PR's repository; `review` takes no `-R`.
+
 ```sh
-ggh review 42 -R owner/repo --agent
+ggh review 42 --agent
 ```
 
 Expect `result.pr`, `headSha`, `baseSha`, `checkoutPath`, `surface: "data"`, and `effects`. This can fetch refs and create a local review checkout. It does not submit a GitHub approval.
