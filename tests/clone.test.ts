@@ -244,9 +244,35 @@ test("clone reports creation once and no effects for reuse or dry run", async ()
     const out = await runFixture(["clone", url, "--to", destination, "--agent", ...(dry ? ["--dry-run"] : [])], { root });
     expect(out.exitCode, out.stderr).toBe(0);
     const value = JSON.parse(out.stdout);
-    expect(value.effects.completed).toEqual(!dry && !value.result.alreadyCloned ? ["repository_cloned"] : []);
+    // A fresh clone is also indexed, so `ggh go` finds it immediately.
+    expect(value.effects.completed).toEqual(!dry && !value.result.alreadyCloned ? ["repository_cloned", "projects_index_updated"] : []);
     if (dry) expect(existsSync(destination)).toBe(false);
   }
+});
+
+test("a fresh clone is indexed, so the inbox clone-and-review suggestion works end to end", async () => {
+  const head = git(["-C", seed, "rev-parse", "HEAD"]);
+  const base = git(["-C", seed, "rev-parse", "HEAD~1"]);
+  const destination = join(root, "suggest-example");
+  const result = await runFixture([], { root, responses: [
+    { prefix: ["pr", "view", "5"], stdout: JSON.stringify({ number: 5, url: "https://github.com/fixture/example/pull/5", headRefOid: head, baseRefOid: base }) },
+  ], invoke: `
+    const { writeFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    // Clone the wire URL, but resolve it to the local fixture repository.
+    writeFileSync(join(process.env.HOME ?? '', '.gitconfig'), '[url "${url}"]\\n\\tinsteadOf = https://github.com/fixture/example.git\\n');
+    const { runCli } = await import(${JSON.stringify(new URL("../src/index.ts", import.meta.url).href)});
+    await runCli(['bun', 'ggh', 'clone', 'fixture/example', '--to', ${JSON.stringify(destination)}]);
+    await runCli(['bun', 'ggh', 'go', 'fixture/example', '--print']);
+    // The suggestion's cd: review runs from the checkout go printed.
+    process.chdir(${JSON.stringify(destination)});
+    await runCli(['bun', 'ggh', 'review', '5', '--json']);
+  ` });
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(result.stdout).toContain(destination);
+  // The review result is the pretty-printed JSON at the end of stdout.
+  const review = JSON.parse(result.stdout.slice(result.stdout.indexOf('{\n  "schemaVersion"')));
+  expect(review).toMatchObject({ schemaVersion: 1, pr: { number: 5, repo: "example" }, headSha: head, checkoutPath: join(destination, ".worktrees", "review-5") });
 });
 
 describe("clone process lifecycle", () => {

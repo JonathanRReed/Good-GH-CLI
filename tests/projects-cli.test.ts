@@ -86,6 +86,60 @@ describe("go resolution and output", () => {
   it("never clones on a miss and returns an explicit clone suggestion", async () => {
     const result = await cli(["go", "owner/missing", "--json"]); expect(result.exitCode).toBe(1); expect(JSON.parse(result.stdout)).toMatchObject({ candidates: [], suggestion: ["ggh", "clone", "owner/missing"] }); expect(result.calls).toEqual([]); expect(existsSync(join(repos, "missing"))).toBe(false);
   });
+  it("never jumps on a typo: a fuzzy miss is a nonzero miss with a suggestion", async () => {
+    const path = await repo("Good-GH");
+    const typo = await cli(["go", "nope", "--print"]);
+    expect(typo.exitCode).toBe(1);
+    expect(JSON.parse(typo.stdout)).toMatchObject({ query: "nope", candidates: [], suggestion: ["ggh", "clone", "nope"] });
+    expect(typo.stderr).toContain("No local project matches nope");
+    expect(typo.stdout).not.toContain(path);
+  });
+  it("never matches letters that merely appear in order inside a checkout path", async () => {
+    const path = await repo("Simple-md");
+    // "epos" is a run inside "<root>/repos/simple-md" but inside no project name.
+    const pathy = await cli(["go", "epos", "--print"]);
+    expect(pathy.exitCode).toBe(1);
+    expect(JSON.parse(pathy.stdout)).toMatchObject({ query: "epos", candidates: [] });
+    expect(pathy.stdout).not.toContain(path);
+    // A run that genuinely sits inside the project name still resolves.
+    const named = await cli(["go", "simple", "--print"]);
+    expect(named.exitCode).toBe(0); expect(named.stdout).toBe(`${path}\n`);
+  });
+  it("resolves from the saved index without rescanning, and rescans only on a miss or a vanished checkout", async () => {
+    const path = await repo("Good-GH");
+    const later = join(repos, "Fresh");
+    const indexStore = new URL("../src/services/projects/index-store.ts", import.meta.url).href;
+    const result = await runFixture([], { root, config: { project_roots: [repos], host_worktree_dirs: {} }, invoke: `
+      const { readFileSync, rmSync } = await import('node:fs');
+      const { getConfigDir } = await import(${JSON.stringify(new URL("../src/services/config.ts", import.meta.url).href)});
+      const { refreshProjectIndex, projectIndexPath } = await import(${JSON.stringify(indexStore)});
+      const { runCli } = await import(${JSON.stringify(new URL("../src/index.ts", import.meta.url).href)});
+      const index = () => readFileSync(projectIndexPath(getConfigDir()), 'utf8');
+      const git = (args) => { const r = Bun.spawnSync(['git', ...args], { cwd: ${JSON.stringify(repos)} }); if (r.exitCode !== 0) throw new Error(String(r.stderr)); };
+      const report = {};
+      await runCli(['bun', 'ggh', 'projects', '--json']);
+      const built = index();
+      await runCli(['bun', 'ggh', 'go', 'Good-GH', '--print']);
+      report.hitWithoutRescan = built === index();
+      git(['init', '-b', 'main', ${JSON.stringify(later)}]);
+      git(['-C', ${JSON.stringify(later)}, 'config', 'user.name', 'Fixture']);
+      git(['-C', ${JSON.stringify(later)}, 'config', 'user.email', 'fixture@example.invalid']);
+      git(['-C', ${JSON.stringify(later)}, 'commit', '--allow-empty', '-m', 'initial']);
+      await runCli(['bun', 'ggh', 'go', 'Fresh', '--print']);
+      report.missRescanned = built !== index();
+      const afterMiss = index();
+      rmSync(${JSON.stringify(later)}, { recursive: true, force: true });
+      await runCli(['bun', 'ggh', 'go', 'Fresh', '--print']);
+      report.vanishedRescanned = afterMiss !== index();
+      console.log(JSON.stringify(report));
+    ` });
+    expect(result.exitCode, result.stderr).toBe(1);
+    expect(result.stdout).toContain(path);
+    expect(result.stdout).toContain(later);
+    expect(result.stderr).toContain("No local project matches Fresh");
+    // The last logged line is the report; earlier lines are command data.
+    expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "{}")).toEqual({ hitWithoutRescan: true, missRescanned: true, vanishedRescanned: true });
+  });
   it("preserves spaces, shell syntax and trailing newlines in its shell path protocol", async () => {
     if (process.platform === "win32") return;
     const path = await repo("-space ' $(touch PWN)\n\n");

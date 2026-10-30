@@ -1,5 +1,5 @@
 import type { Command } from "commander";
-import { clampLimit, requireAuth } from "../services/github.ts";
+import { requireAuth } from "../services/github.ts";
 import { INBOX_SECTIONS, readInbox, validInboxFilter, type InboxPullRequest, type InboxResult, type InboxSectionName } from "../services/inbox.ts";
 import { readProjectIndex } from "../services/projects/index-store.ts";
 import type { ProjectIndexFile } from "../services/projects/types.ts";
@@ -12,24 +12,25 @@ const REASONS: Record<string, string> = {
   requested_directly: "requested directly", requested_via_team: "via team",
   checks_failing: "checks failing", changes_requested: "changes requested", conflicts: "merge conflicts",
   merge_queue: "in merge queue", approved: "approved", no_review_required: "no review required",
-  checks_passing: "checks pass", no_checks: "no checks", mergeable: "mergeable",
+  checks_passing: "checks pass", mergeable: "mergeable",
 };
-
-// Home paths shorten only when the result needs no quoting, so ~ still expands.
-function shellWord(arg: string): string {
-  const short = arg.startsWith("/") ? shortPath(arg) : arg;
-  return /^[\w@%+=:,./~-]+$/.test(short) ? short : `'${arg.replaceAll("'", "'\\''")}'`;
-}
 
 function formatInbox(result: InboxResult): string[] {
   const lines: string[] = [];
   const row = (pr: InboxPullRequest) => {
-    const reasons = pr.reasons.map(reason => reason === "requested_via_team" && pr.request?.teams.length ? `via ${pr.request.teams.join(", ")}` : REASONS[reason] ?? reason);
+    const reasons = pr.reasons.map(reason => {
+      if (reason === "requested_via_team" && pr.request?.teams.length) return `via ${pr.request.teams.join(", ")}`;
+      // A stacked or unverified PR is not plainly green, so it never renders like one.
+      if (reason === "stacked") return pc.yellow(`stacked on #${pr.stackedOn ?? "?"}`);
+      if (reason === "no_checks") return pc.yellow("no checks (unverified)");
+      return REASONS[reason] ?? reason;
+    });
+    if (pr.defaultBranch !== null && pr.baseRefName.toLowerCase() !== pr.defaultBranch.toLowerCase()) reasons.push(`base ${pr.baseRefName}`);
     lines.push(fitProjectLine(`  ${pc.bold(`#${pr.number}`)} ${pc.cyan(pr.repo)} ${safeHumanText(pr.title).replace(/[\r\n\t]/g, " ")}${pr.draft ? ` ${pc.dim("[draft]")}` : ""}`));
     const where = pr.local ? `${pr.local.branchCheckedOut ? `on ${pr.headRefName} · ` : ""}${shortPath(pr.local.path)}` : "no local clone";
     lines.push(fitProjectLine(`      ${pc.dim(`${reasons.join(" · ")} · ${where}`)}`));
-    // Never truncate a command someone may paste.
-    if (pr.next.length) lines.push(`      ${pc.green("→")} ${pr.next.map(step => step.map(shellWord).join(" ")).join(" && ")}`);
+    // Never truncate or re-quote a command someone may paste.
+    for (const command of pr.next) lines.push(`      ${pc.green("→")} ${command}`);
   };
   for (const name of INBOX_SECTIONS) {
     const section = result.sections[name];
@@ -57,13 +58,20 @@ export function registerInboxCommand(program: Command): void {
     .addHelpText("after", "\nFilter by owner or owner/repo. Read-only: the next commands are suggestions and never run.\nLocal clones come from the projects index; run ggh projects to refresh it.")
     .action(async (filter: string | undefined, options: { limit?: string }) => {
       if (filter !== undefined && !validInboxFilter(filter)) { fail("Filter by an owner or owner/repo, such as acme or acme/demo.", { code: "invalid_arguments" }); return; }
+      // Reject nonsense instead of silently falling back to the default, and say when a value is clamped.
+      const requested = options.limit ?? "10";
+      if (!/^\d+$/.test(requested) || Number(requested) < 1) { fail(`Invalid --limit ${JSON.stringify(requested)}. Use a whole number from 1 to 50.`, { code: "invalid_arguments" }); return; }
+      let limit = Number(requested);
+      if (limit > 50) { p.log.warn(`--limit ${limit} is above the maximum of 50; showing 50 per section.`); limit = 50; }
       if (!(await requireAuth())) return;
       // A broken index costs the cross-reference, not the inbox.
       let index: Pick<ProjectIndexFile, "clones" | "updatedAt"> = { clones: [], updatedAt: new Date(0).toISOString() };
       try { index = readProjectIndex(); } catch (error) { p.log.warn(error instanceof Error ? error.message : String(error)); }
       const s = p.spinner();
       s.start("Reading your pull request inbox...");
-      const result = await readInbox({ limit: clampLimit(Number.parseInt(options.limit ?? "10", 10), 50, 10), filter, clones: index.clones, indexedAt: index.updatedAt });
+      const result = await readInbox({ limit, filter, clones: index.clones, indexedAt: index.updatedAt });
+      // JSON output suppresses the warning, so the payload says it too.
+      if (limit < Number(requested)) result.requestedLimit = Number(requested);
       const failures = INBOX_SECTIONS.flatMap(name => { const section = result.sections[name]; return section.state === "unavailable" ? [section.reason] : []; });
       s.stop(failures.length === INBOX_SECTIONS.length ? pc.red("Inbox unavailable.") : `Inbox for ${result.login ?? result.host}.`);
       const json = jsonOut(result);

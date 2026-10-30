@@ -23,6 +23,25 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `go` never jumps on a typo. Fuzzy matching runs against the project name and
+  owner/repo only, never filesystem paths, and a match must be a run of adjacent
+  characters or an in-order match that skips at most as many name characters as
+  the query types. A miss exits nonzero with a clone suggestion; exact paths
+  still resolve.
+- `go` resolves from the saved project index instead of rescanning every root on
+  every call. It refreshes only when the index cannot answer (a miss, or every
+  indexed checkout has vanished) and retries once before reporting.
+- Every `inbox` suggestion is now one self-contained command that works from any
+  directory: remote commands carry `-R owner/repo` (`ci why`, `pr threads`,
+  `pr view`, `pr merge`), and local ones start with `cd "$(ggh go ... --print)"`.
+  `clone` registers each checkout it creates, so `go` finds it immediately even
+  outside every scan root.
+- `inbox` shows the base branch when it is not the default branch, warns when a
+  PR is stacked on another open PR (`stacked on #N`), and no longer renders
+  PRs without checks as plainly green ("no checks (unverified)").
+- `inbox --limit` rejects invalid values (`0`, `abc`, negatives) with a clear
+  error instead of silently defaulting, and says when a value is clamped to 50,
+  in the warning and in the JSON payload (`requestedLimit`).
 - Merge stacked PRs through GitHub's async merge API; the legacy merge path
   refuses them. Disclose every PR the merge lands, recheck their heads after
   confirmation, refuse `--auto`, and report merged, queued, or unknown.

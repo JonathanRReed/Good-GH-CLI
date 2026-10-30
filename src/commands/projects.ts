@@ -23,19 +23,28 @@ export function projectPayload({ clone, status, remote }: ProjectRow) {
   };
 }
 
-export async function selectProject(clones: IndexedClone[], query: string): Promise<IndexedClone | null> {
+export interface SelectProjectOptions {
+  /** Only consider clones with a checkout that still exists, so a resolution never lands on a vanished path. */
+  requireCheckout?: boolean;
+}
+
+export async function selectProject(clones: IndexedClone[], query: string, options: SelectProjectOptions = {}): Promise<IndexedClone | null> {
   const candidates = resolveProjects(clones, query);
-  if (candidates.length === 1) return candidates[0] ?? null;
-  const message = candidates.length ? `Several projects match ${query}. Use an exact checkout path.` : `No local project matches ${query}. Run ggh clone ${JSON.stringify(query)} to clone it.`;
-  if (candidates.length && !isNonInteractive()) {
-    return selectMenu({ message: "Choose a project", options: candidates.map(clone => ({ value: clone, label: `${clone.displayName}  ${shortPath(clone.checkouts[0]?.path ?? clone.commonDir)}` })) });
+  const usable = options.requireCheckout ? candidates.filter(clone => clone.checkouts.some(checkout => existsSync(checkout.path))) : candidates;
+  if (usable.length === 1) return usable[0] ?? null;
+  const message = usable.length ? `Several projects match ${query}. Use an exact checkout path.`
+    : options.requireCheckout && candidates.length ? `A project matches ${query}, but none of its checkouts exist on disk. Restore the checkout, then run ggh projects.`
+    : `No local project matches ${query}. Run ggh clone ${JSON.stringify(query)} to clone it.`;
+  if (usable.length && !isNonInteractive()) {
+    return selectMenu({ message: "Choose a project", options: usable.map(clone => ({ value: clone, label: `${clone.displayName}  ${shortPath(clone.checkouts[0]?.path ?? clone.commonDir)}` })) });
   }
+  // Alternatives name every matched path, even a vanished one, so the report says what to restore or clone.
   fail(message, { code: "missing_input", requiredInputs: [{ name: "query", description: "An exact local name or path", alternatives: candidates.flatMap(clone => clone.checkouts.map(checkout => checkout.path)) }] });
   // Even plain noninteractive go reports candidates as data rather than guessing.
-  if (getFlags().json) jsonOut({ schemaVersion: 1, query, candidates: candidates.map(clone => ({ name: clone.displayName, paths: clone.checkouts.map(checkout => checkout.path), primary: clone.primary })), ...(!candidates.length ? { suggestion: ["ggh", "clone", query] } : {}) });
+  if (getFlags().json) jsonOut({ schemaVersion: 1, query, candidates: usable.map(clone => ({ name: clone.displayName, paths: clone.checkouts.map(checkout => checkout.path), primary: clone.primary })), ...(!usable.length ? { suggestion: ["ggh", "clone", query] } : {}) });
   else if (isNonInteractive()) {
     const { data } = await import("../utils/output.ts");
-    data(JSON.stringify({ schemaVersion: 1, query, candidates: candidates.map(clone => ({ name: clone.displayName, paths: clone.checkouts.map(checkout => checkout.path) })), ...(!candidates.length ? { suggestion: ["ggh", "clone", query] } : {}) }));
+    data(JSON.stringify({ schemaVersion: 1, query, candidates: usable.map(clone => ({ name: clone.displayName, paths: clone.checkouts.map(checkout => checkout.path) })), ...(!usable.length ? { suggestion: ["ggh", "clone", query] } : {}) }));
   }
   return null;
 }

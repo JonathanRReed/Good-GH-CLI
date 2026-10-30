@@ -4,6 +4,7 @@ import { clone } from "../services/git.ts";
 import { alreadyCloned, CloneCancelledError, cloneDestination, cloneTransport, redactCloneCredentials } from "../services/git/clone.ts";
 import { getGitHubAuthStatus, searchRepositories, type RepositoryItem } from "../services/github.ts";
 import { listCloneRepositories, matchCloneRepositories } from "../services/github/clone-repos.ts";
+import { registerProject } from "../services/projects/index-store.ts";
 import { getConfig, type CloneMode } from "../services/config.ts";
 import { getFlags, isNonInteractive, recordCommandIssue } from "../services/runtime.ts";
 import { fail, failFromGitHub, header, jsonOut, p, promptInput, searchablePicker, selectMenu } from "../utils/ui.ts";
@@ -121,6 +122,10 @@ export function registerCloneCommand(program: Command): void {
           });
           jsonOut({ ...result, ...outcome });
           progress.stop(`Cloned at ${destination}`);
+          // Index the checkout ggh just created, so `ggh go` and `ggh projects`
+          // find it immediately, even outside every scan root. The clone itself
+          // already succeeded, so an index problem must not fail the command.
+          try { await registerProject(destination); } catch (error) { p.log.warn(`Cloned, but could not add it to the project index: ${error instanceof Error ? error.message : String(error)}`); }
         } catch (error) {
           progress.stop("Clone failed.");
           jsonOut({ ...result, status: error instanceof CloneCancelledError ? "cancelled" : "failed", error: { message: redactCloneCredentials(error instanceof Error ? error.message : String(error)) } });
