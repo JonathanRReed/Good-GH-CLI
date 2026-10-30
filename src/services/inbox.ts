@@ -152,15 +152,17 @@ export function nextSteps(section: InboxSectionName, host: string, pr: InboxPull
   const number = String(pr.number);
   const repo = host === "github.com" ? pr.repo : `${host}/${pr.repo}`;
   const remote = (argv: string[]) => [...argv, "-R", shellWord(repo)].join(" ");
+  // clone takes OWNER/REPO for github.com and a repository URL for other hosts.
+  const cloneTarget = shellWord(host === "github.com" ? pr.repo : `https://${host}/${pr.repo}`);
   if (section === "reviewRequested") {
     // review fetches Git objects through a local remote and has no -R.
     const enter = enterClone(local ? local.name : pr.repo);
-    return local ? [`${enter} && ggh review ${number}`] : [`ggh clone ${shellWord(repo)} && ${enter} && ggh review ${number}`];
+    return local ? [`${enter} && ggh review ${number}`] : [`ggh clone ${cloneTarget} && ${enter} && ggh review ${number}`];
   }
   if (section === "readyToMerge") return [reasons.includes("merge_queue") ? remote(["ggh", "pr", "view", number]) : remote(["ggh", "pr", "merge", number])];
   if (reasons.includes("checks_failing")) return [remote(["ggh", "ci", "why", number])];
   if (reasons.includes("changes_requested")) return [remote(["ggh", "pr", "threads", number])];
-  if (!local) return [`ggh clone ${shellWord(repo)}`];
+  if (!local) return [`ggh clone ${cloneTarget}`];
   const enter = enterClone(local.name);
   return [local.branchCheckedOut ? enter : `${enter} && ggh switch ${shellWord(pr.headRefName)}`];
 }

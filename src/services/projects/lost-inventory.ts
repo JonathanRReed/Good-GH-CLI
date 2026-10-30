@@ -41,14 +41,26 @@ export function reachableLostCommits(tips: readonly string[][], graph: readonly 
 }
 
 /** Git includes main and linked HEAD logs, even for missing worktree paths. */
-export async function lostReflogs(clone: Clone, refs: readonly LostRef[]): Promise<LostReflog[]> {
+export async function lostReflogs(clone: Clone, refs: readonly LostRef[], read: typeof projectGit = projectGit): Promise<LostReflog[]> {
   const targets = new Map<string, LostReflog>(refs.filter(ref => ref.ref.startsWith("refs/heads/")).map(ref => [ref.ref, { branch: ref.ref.slice(11), path: null, tips: [], truncated: false }]));
   for (const checkout of clone.checkouts.filter(checkout => !checkout.bare)) {
     const ref = checkout.gitDir === clone.commonDir ? "HEAD" : `${relative(clone.commonDir, checkout.gitDir).split(sep).join("/")}/HEAD`;
     targets.set(ref, { branch: checkout.branch, path: checkout.path, tips: [], truncated: false });
   }
   // Keep each log's limit independently. A global -n would let one busy log hide others.
-  const text = (await projectGit(clone.commonDir, ["reflog", "show", "--all", "--format=%gD%x00%H"], Date.now() + 10000)).stdout;
+  let text: string;
+  try {
+    text = (await read(clone.commonDir, ["reflog", "show", "--all", "--format=%gD%x00%H"], Date.now() + 10000)).stdout;
+  } catch {
+    // A very large reflog can exceed the batched read's output cap or deadline.
+    // Read each log with its own bound; one that still fails is reported truncated.
+    const parts: string[] = [];
+    for (const [ref, target] of targets) {
+      try { parts.push((await read(clone.commonDir, ["reflog", "show", `-n${REFLOG_LIMIT + 1}`, "--format=%gD%x00%H", ref, "--"], Date.now() + 10000)).stdout); }
+      catch { target.truncated = true; }
+    }
+    text = parts.join("\n");
+  }
   for (const line of text.split("\n").filter(Boolean)) {
     const [selector = "", oid = ""] = line.split("\0");
     const match = /^(.*)@\{(\d+)\}$/.exec(selector);

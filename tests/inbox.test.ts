@@ -79,6 +79,9 @@ describe("inbox local cross-reference", () => {
     expect(nextSteps("needsFix", "github.com", pr(), ["conflicts"], null)).toEqual(["ggh clone fixture/example"]);
     expect(nextSteps("readyToMerge", "github.com", pr(), ["approved", "checks_passing", "mergeable"], local)).toEqual(["ggh pr merge 7 -R fixture/example"]);
     expect(nextSteps("readyToMerge", "ghe.example.com", pr(), ["merge_queue"], null)).toEqual(["ggh pr view 7 -R ghe.example.com/fixture/example"]);
+    // clone accepts OWNER/REPO or a URL, so enterprise suggestions use the repository URL.
+    expect(nextSteps("needsFix", "ghe.example.com", pr(), ["conflicts"], null)).toEqual(["ggh clone https://ghe.example.com/fixture/example"]);
+    expect(nextSteps("reviewRequested", "ghe.example.com", pr(), [], null)[0]).toStartWith("ggh clone https://ghe.example.com/fixture/example && ");
     // Quoting: safe words stay readable, hostile ones are single-quoted for pasting.
     expect(nextSteps("needsFix", "github.com", pr({ repo: "acme/we ird" }), ["changes_requested"], null)).toEqual(["ggh pr threads 7 -R 'acme/we ird'"]);
     expect(nextSteps("needsFix", "github.com", pr({ repo: "acme/it's" }), ["changes_requested"], null)).toEqual([`ggh pr threads 7 -R 'acme/it'"'"'s'`]);
