@@ -25,13 +25,20 @@ Always pass `--agent` to managed ggh commands. It prevents prompts and pagers.
 Raw `git`/`gh` escapes retain native behavior; disable their pagers and prompts separately.
 
 Read `status`, `error.code`, `error.retryability`, `requiredInputs`, and `effects` before continuing.
-`needs_input` requires the named input, not a retry loop. Inspect `partially_completed` and
-`effects.completed`, `pending`, and `uncertain` before retrying a mutation.
+`needs_input` always names a flag or argument in `requiredInputs`; supply it, do not retry unchanged.
+`no_op` means nothing needed doing. Act on `error.retryability`: `after_input` needs changed input,
+`after_delay` (`rate_limited`, `network`) can retry unchanged after waiting `retryAfterSeconds` when
+given, `after_inspection` needs a look at state first, and `never` means report to the user.
+`not_found` and `forbidden` are GitHub answers, not outages. A failed read never has uncertain
+effects; inspect `partially_completed` and `effects.completed`, `pending`, and `uncertain` before
+retrying a mutation.
 Read-only status may omit empty effects. Omitted counts mean zero, `root` means cwd,
 `push` means upstream, and `fetchedAt` is local fetch metadata, not remote freshness.
 
 Read [reference.md](reference.md) for per-command result fields, defaults and input flags.
-Use `ggh agent schema --agent` to check the installed version's contract.
+Use `ggh agent schema <command> --agent`, such as `ggh agent schema pr create --agent`, to check one
+command's flags and result schema in the installed version. Without a command it prints the whole
+contract, which is large.
 
 ## Mutation rules
 
@@ -49,13 +56,14 @@ Use `ggh agent schema --agent` to check the installed version's contract.
 Replace the sample PR, repository, message and base with the inspected target.
 All managed responses have `contract: "ggh.agent"`, `version: 1`, and `status`.
 
-### 1. Inspect checkout state
+### 1. Start with a brief, then inspect checkout state
 
 ```sh
+ggh agent brief --agent
 ggh status --agent
 ```
 
-Expect `result.branch`, `result.head`; optional `changes` contains `[xy, path, origPath?]` tuples. Conflicts must be resolved before committing.
+Make the brief your first call. Expect `result.checkout` with `ahead`/`behind` (null without an upstream), `unpublished` (commits on no remote ref, including a detached HEAD's), `aheadOfDefault`, and `stackOperation` when a restack stopped mid-conflict; follow `result.next`. Status adds `result.branch`, `result.head`, and optional `changes` with `[xy, path, origPath?]` tuples. Both fail with `invalid_arguments` outside a repository. Conflicts must be resolved before committing.
 
 ### 2. Fetch bounded CI evidence
 
@@ -71,7 +79,7 @@ Expect `result.headSha`, `runs[].stale`, `failures[].evidence`, `failures[].trun
 ggh pr threads 42 -R owner/repo --agent
 ```
 
-Expect `result.headSha`, `threads[].id`, `isResolved`, `isOutdated`, `comments[].body`, `cursor`, and `pagination.complete`. Advance `--since` only after complete pagination. Fixing code does not authorize resolving discussions.
+Expect `result.headSha`, `threads[].id`, `isResolved`, `isOutdated`, `comments[].body`, `cursor`, and `pagination.complete`. `--agent` returns only unresolved threads; `--json` returns all of them unless you pass `--unresolved`. Pass `--all` with `--agent` to include resolved threads. Advance `--since` only after complete pagination. Fixing code does not authorize resolving discussions.
 
 ### 4. Inspect projects
 
@@ -79,7 +87,7 @@ Expect `result.headSha`, `threads[].id`, `isResolved`, `isOutdated`, `comments[]
 ggh projects --agent
 ```
 
-Expect `result.schemaVersion`, `clones`, `coverage`, and `effects`. Inspect coverage gaps and each checkout's state before selecting a path.
+Expect `result.schemaVersion`, `updatedAt`, `projects`, `coverage`, and `effects`. `effects.completed` lists `projects_index_updated` only when the scan changed the index. Inspect coverage gaps and each project's checkouts before selecting a path.
 
 ### 5. Find unpublished work
 
@@ -95,7 +103,7 @@ Expect `result.schemaVersion`, `items`, `warnings`, and `coverage`. Suggested `n
 ggh review 42 -R owner/repo --agent
 ```
 
-Expect `result.pr`, `headSha`, `baseSha`, `checkoutPath`, `surface: "data"`, and `effects`. This can fetch refs and create a local review checkout. It does not submit a GitHub approval.
+Expect `result.pr`, `headSha`, `baseSha`, `checkoutPath`, `checkout`, `surface: "data"`, and `effects`. This can fetch refs and create a local review checkout under the main clone's `.worktrees`, even when run from a linked worktree. Rerunning it at the same head reuses the checkout and returns `no_op`. It does not submit a GitHub approval.
 
 ### 7. Commit the reviewed index
 
@@ -104,7 +112,7 @@ git --no-pager diff --cached
 ggh commit -m 'fix: handle empty input' --agent
 ```
 
-Expect `status`, command-specific `result`, and `effects`. Confirm the actual committed tree and remaining work with `ggh status --agent`; inspect partial effects on failure.
+Expect `status`, command-specific `result`, and `effects`. With nothing staged it fails with `precondition_failed`; stage the reviewed paths with `git add <paths>` rather than `--all`. A clean tree returns `no_op`. Confirm the committed tree with `git --no-pager show --stat HEAD` and the remaining work with `ggh status --agent`; inspect partial effects on failure.
 
 ### 8. Preview and approve publication
 
@@ -117,4 +125,4 @@ snapshot=$(jq -er 'select(.status == "planned") | .result.snapshotId' "$plan")
 ggh pr create --base main --title 'Fix empty input' --body 'Handle empty input.' --approve-plan "$snapshot" --agent
 ```
 
-Expect preview `status: "planned"`, `result.snapshotId`, `result.plan`, and `effects.pending`; execution returns workflow `result.status`, `url` when created, and completed/pending/uncertain effects. Register the returned PR with the host immediately.
+Expect preview `status: "planned"`, `result.snapshotId`, `result.plan`, and `effects.pending`; execution returns workflow `result.status`, `url` when created, and completed/pending/uncertain effects. A stale or unfetched base fails with `precondition_failed` and names the `git fetch` to run. Register the returned PR with the host immediately. `tidy --dry-run --agent` puts its ID at `result.snapshotId` the same way.

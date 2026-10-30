@@ -355,7 +355,7 @@ describe("commit publication", () => {
 
     expect(result.exitCode).toBe(0);
     expect(JSON.parse(result.stdout)).toMatchObject({
-      status: "succeeded",
+      status: "no_op",
       action: "commit",
       noOp: true,
       branch: "main",

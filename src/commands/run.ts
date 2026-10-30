@@ -136,7 +136,7 @@ export function registerRunCommand(program: Command): void {
       return;
     }
     if (!detail) {
-      fail(`Run ${id} not found.`);
+      fail(`Run ${id} not found.`, { code: "not_found" });
       return;
     }
 

@@ -1,7 +1,7 @@
 import { captureStagedSnapshot } from "../services/git/split.ts";
 import { executeSnapshotCommit } from "../services/git/scoped-commit.ts";
 import { Command } from "commander";
-import { getFlags, isNonInteractive, recordCommandIssue } from "../services/runtime.ts";
+import { getFlags, isNonInteractive } from "../services/runtime.ts";
 import {
   getCommitCount,
   getSquashPreview,
@@ -103,8 +103,7 @@ export function registerSquashCommand(program: Command): void {
 
       if (!options?.message && isNonInteractive() && !options?.yes) {
         const message = "Squashing rewrites local history. Pass -m <message> or --yes to authorize it without input.";
-        recordCommandIssue({ status: "needs_input", message });
-        fail(message);
+        fail(message, { code: "missing_input", requiredInputs: [{ name: "-m", alternatives: ["--yes"], description: message }] });
         return;
       }
 

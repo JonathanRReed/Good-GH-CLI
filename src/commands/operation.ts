@@ -2,7 +2,7 @@ import { publicationSnapshot, assertPublicationApproval, PublicationApprovalErro
 import { Command } from "commander";
 import { addOperationEvidence, claimOperationResume, listOperations, operationLockStatus, previewOperationEvidence, pruneOperations, readOperation, unlockOperation, updateOperation } from "../services/operations.ts";
 import { operationRecoveryGuide, preparePublicationResume } from "../services/publication-recovery.ts";
-import { executePublication } from "../services/publication.ts";
+import { executePublication, publicationRequiredInput } from "../services/publication.ts";
 import { readAttachmentBodyFile } from "../services/github/attachments.ts";
 import { recordCommandIssue, setActiveOperation } from "../services/runtime.ts";
 import { finishCommandOperation } from "../services/command-operations.ts";
@@ -46,9 +46,8 @@ export function registerOperationCommand(program: Command): void {
           return;
         }
         if (!record.resume) {
-          recordCommandIssue({ status: "needs_input", code: "missing_input", message: guide.guidance ?? "Inspect the operation.", requiredInputs: [{ name: "inspection", description: "Inspect current state before choosing a recovery command." }] });
-          fail(guide.guidance ?? "Inspect the operation.");
-          jsonOut({ status: "needs_input", ...guide });
+          fail(guide.guidance ?? "Inspect the operation.", { code: "precondition_failed" });
+          jsonOut({ status: "failed", ...guide });
           return;
         }
         if (!isDryRun()) {
@@ -67,8 +66,8 @@ export function registerOperationCommand(program: Command): void {
         }
         const prepared = await preparePublicationResume(record);
         if (prepared.status !== "ready") {
-          recordCommandIssue({ status: "needs_input", code: "missing_input", message: prepared.message, requiredInputs: [{ name: prepared.required, description: prepared.message }] });
-          fail(prepared.message);
+          if (prepared.status === "needs_input") recordCommandIssue({ status: "needs_input", code: "missing_input", message: prepared.message, requiredInputs: [publicationRequiredInput(record.command === "repo create" ? "repo" : "pr", prepared.required, prepared.message)] });
+          fail(prepared.message, prepared.status === "failed" ? { code: "precondition_failed" } : {});
           jsonOut({ ...prepared, ...guide });
           return;
         }

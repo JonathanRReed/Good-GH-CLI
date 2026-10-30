@@ -16,12 +16,69 @@ This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   PR, CI counts with failing check names, the unresolved thread count, linked
   issues with artifacts, and native stack position. Each GitHub section reports
   its own availability under one 15-second deadline; `--local` skips GitHub.
+- Add `agent schema <command>`, which returns one command's flags and result
+  schema instead of the whole 160 KB contract. Aliases such as `st` resolve.
+- Report `unpublished` (commits on no remote ref, including a detached HEAD's
+  own), `aheadOfDefault`, and an unfinished `stackOperation` in `agent brief`.
+  Suggest `pr create --dry-run` for unpublished work, `git switch -c` for
+  detached commits, and `stack restack --continue`/`--abort` for a stopped
+  restack, including with `--local`.
+
+### Changed
+
+- **Breaking (agent contract):** add error codes `not_found`, `forbidden`,
+  `rate_limited` (with `retryAfterSeconds` when GitHub reports it), `network`,
+  and `precondition_failed`, and the retryability `after_delay`. `not_found` is
+  `after_input`, `forbidden` is `never`, and `rate_limited` and `network` are
+  `after_delay` for reads and `after_inspection` when a mutation's outcome is
+  uncertain. `precondition_failed` means local or remote state blocked the
+  command before any effect; it is `after_inspection` with no uncertain effects.
+- **Breaking (agent contract):** a failed read no longer reports
+  `effects.uncertain: ["command_effects"]`. Only commands that can mutate do.
+- **Breaking (agent contract):** `needs_input` always has code `missing_input`
+  or `confirmation_required` and names real flags or arguments in
+  `requiredInputs`. Prompts without a single flag fail with `invalid_arguments`
+  instead of naming `explicit_options`. `commit` without `-m` names `-m`, and
+  its `--yes` gates name `--yes`.
+- **Breaking (agent and JSON):** publication preflight reports state problems,
+  such as a stale base, a diverged remote branch, or an unavailable repository,
+  as `status: "failed"` with `precondition_failed` instead of `needs_input`.
+  Real inputs report `required: "name"`, `"base"`, or `"remote"`.
+- **Breaking:** `commit` with nothing staged and no terminal fails with
+  `precondition_failed` and asks for `git add <paths>`, instead of a staging
+  prompt that suggested `--all`. A clean tree reports `status: "no_op"` in its
+  result instead of `succeeded` with `noOp: true`.
+- **Breaking:** `status --agent` outside a repository fails with
+  `invalid_arguments` instead of succeeding with `result: null`. Every command
+  that needs a checkout uses the same code and message.
+- **Breaking (agent contract):** `agent brief` reports `ahead` and `behind` as
+  null without an upstream.
+- `tidy` results carry `snapshotId` at the top level, like `pr create`.
+- `review` resolves its checkout under the main clone, so a rerun from inside a
+  review checkout reuses it instead of nesting another. A rerun at the same
+  head reports `no_op` and `result.checkout: "reused"`, and revisions already
+  present locally are not fetched again.
+- `stack on` reports `no_op` when the parent is already recorded and keeps the
+  recorded fork point.
+- `projects` reports `projects_index_updated` only when a scan changed the
+  index, not when only scan timestamps moved.
 
 ### Fixed
 
 - Merge stacked PRs through GitHub's async merge API; the legacy merge path
   refuses them. Disclose every PR the merge lands, recheck their heads after
   confirmation, refuse `--auto`, and report merged, queued, or unknown.
+- Report an unreachable GitHub (offline, dead proxy) as `network` with gh's own
+  error, instead of "GitHub CLI is not authenticated".
+- `pr view <n>`, `issue <n>`, `run <id>`, and `repo view` report a missing
+  target as `not_found` and network or permission failures as such, instead of
+  treating every failure as missing. `pr view <n>` says the PR was not found
+  rather than "No PR found for the current branch".
+- Strip raw GraphQL response bodies from error messages.
+- `go`, `projects`, and `sync` report a query with no matching project as
+  `not_found`; an ambiguous one names the real argument (`query` or `project`).
+- `stack restack` during a stopped restack names it and points at `--continue`
+  or `--abort` instead of "Cannot restack from a detached HEAD".
 
 ## 0.6.0-beta.1 - 2026-10-22
 

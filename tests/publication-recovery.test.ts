@@ -154,7 +154,7 @@ describe("publication recovery", () => {
     git(["add", "later"], repo); git(["commit", "-m", "later work"], repo);
     const head = git(["rev-parse", "HEAD"], repo);
     const retry = await runFixture([], { root, cwd: repo, responses: responses(true, true), invoke: invoke(["operation", "resume", id, "--title", "title", "--body", "body", "--yes", "--agent"], bare) });
-    expect(JSON.parse(retry.stdout)).toMatchObject({ status: "needs_input", error: { code: "missing_input" } });
+    expect(JSON.parse(retry.stdout)).toMatchObject({ status: "failed", error: { code: "precondition_failed", retryability: "after_inspection" } });
     expect(retry.calls.some(call => ["create", "edit"].includes(call[1] ?? ""))).toBe(false);
     expect(git(["rev-parse", "HEAD"], repo)).toBe(head);
     expect(readFileSync(recordPath, "utf8")).toBe(before);

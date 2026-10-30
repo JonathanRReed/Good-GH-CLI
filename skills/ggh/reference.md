@@ -14,16 +14,17 @@ All fields below come from the installed command tree and result schemas. Requir
 | `status` | `["succeeded","planned","no_op","needs_input","cancelled","failed","partially_completed"]` | yes |  |  |
 | `result` | varies | no |  | Command-specific payload. Detailed result schemas are not yet guaranteed. |
 | `error` | object | no |  |  |
-| `error.code` | `["invalid_arguments","missing_input","confirmation_required","authentication_required","provider_unavailable","cancelled","partial_completion","operation_failed","outcome_uncertain"]` | yes |  |  |
-| `error.message` | string | yes |  |  |
-| `error.retryability` | `["after_input","after_inspection","never"]` | yes |  |  |
-| `requiredInputs` | array | no |  |  |
+| `error.code` | `["invalid_arguments","missing_input","confirmation_required","authentication_required","not_found","forbidden","rate_limited","network","precondition_failed","provider_unavailable","cancelled","partial_completion","operation_failed","outcome_uncertain"]` | yes |  | not_found: the named PR, issue, repository or plan does not exist or is hidden. forbidden: the account lacks permission; a person must grant access. rate_limited: GitHub throttled the request. network: GitHub or the proxy was unreachable. precondition_failed: local or remote state blocks the command before any effect, such as nothing staged or a stale base; fix the state the message names, then retry. invalid_arguments also covers running a checkout command outside a Git repository. |
+| `error.message` | string | yes |  | Human-readable cause and next step. Never contains raw GraphQL response bodies. |
+| `error.retryability` | `["after_input","after_delay","after_inspection","never"]` | yes |  | after_input: retry only with changed or added input. after_delay: nothing changed; retry the same command after waiting (retryAfterSeconds when known). after_inspection: inspect effects and state before any retry. never: retrying the same inputs cannot succeed; report to the user. |
+| `error.retryAfterSeconds` | integer | no |  | Present only with rate_limited when GitHub reported a reset time. |
+| `requiredInputs` | array | no |  | Present exactly when status is needs_input, whose code is then missing_input or confirmation_required. Names are flags (--yes, -m) or positional arguments (file). |
 | `requiredInputs[]` | object | no |  |  |
 | `requiredInputs[].name` | string | yes |  |  |
 | `requiredInputs[].description` | string | yes |  |  |
 | `requiredInputs[].alternatives` | array | no |  |  |
 | `requiredInputs[].alternatives[]` | string | no |  |  |
-| `effects` | object | no |  | Completed effects include explicit local mutations and launches, even when a later step fails. Review uses review_checkout_created/updated, review_objects_fetched, review_refs_updated and review_ledger_marked. Clone uses repository_cloned. Projects use projects_index_updated and projects_roots_updated/projects_exclusions_updated. Go launches use editor_opened/t3_opened. Single-repo sync uses refs_fetched_pruned and branch_deleted:<name>. Omitted only for read-only status and agent brief when all arrays are empty; defaults to completed: [], pending: [], uncertain: []. |
+| `effects` | object | no |  | Completed effects include explicit local mutations and launches, even when a later step fails. Review uses review_checkout_created/updated, review_objects_fetched, review_refs_updated and review_ledger_marked. Clone uses repository_cloned. Projects use projects_index_updated and projects_roots_updated/projects_exclusions_updated. Go launches use editor_opened/t3_opened. Single-repo sync uses refs_fetched_pruned and branch_deleted:<name>. A failed read never reports uncertain effects; command_effects in uncertain means a mutating command stopped without proof of what changed. Omitted only for read-only status and agent brief when all arrays are empty; defaults to completed: [], pending: [], uncertain: []. |
 | `effects.completed` | array | yes |  |  |
 | `effects.completed[]` | string | no |  |  |
 | `effects.pending` | array | yes |  |  |
@@ -165,7 +166,7 @@ Every managed command accepts `--agent`. It wraps this payload in `result` and d
 | `ggh agent` |  | --agent, --quiet, --no-input | Unspecified |
 | `ggh agent skill` |  | --install value, --force, --yes, --dry-run, --agent, --quiet, --no-input | [agentSkill](#agentskill) |
 | `ggh agent brief` |  | --local, --agent, --quiet, --no-input | [agentBrief](#agentbrief) |
-| `ggh agent schema` |  | --agent, --quiet, --no-input | Unspecified |
+| `ggh agent schema` | `[command...]` | --agent, --quiet, --no-input | Unspecified |
 
 Coverage: Partial field schemas. Optional fields vary by outcome. Other command result payloads are not yet specified.
 
@@ -190,18 +191,24 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | --- | --- | --- | --- | --- |
 | `result` | object | no |  |  |
 | `result.schemaVersion` | `1` | yes |  |  |
-| `result.checkout` | object | yes |  | Local and always read. Same porcelain-v2 parse as status --agent, with explicit counts. |
+| `result.checkout` | object | yes |  | Local and always read. Same porcelain-v2 parse as status --agent, with explicit counts. No network. |
 | `result.checkout.root` | string | yes |  |  |
 | `result.checkout.branch` | string / null | yes |  | Null means detached HEAD. |
 | `result.checkout.head` | string / null | yes |  | Full HEAD object ID; null for an unborn branch. |
 | `result.checkout.upstream` | string / null | yes |  |  |
-| `result.checkout.ahead` | integer | yes |  |  |
-| `result.checkout.behind` | integer | yes |  |  |
+| `result.checkout.ahead` | integer / null | yes |  | Null without an upstream; use unpublished then. |
+| `result.checkout.behind` | integer / null | yes |  | Null without an upstream. |
+| `result.checkout.unpublished` | integer / null | yes |  | Commits on HEAD that no remote-tracking ref contains, including a detached HEAD's own commits. Counts stop at 1000. Local refs only; fetch for freshness. |
+| `result.checkout.aheadOfDefault` | integer / null | yes |  | Commits on HEAD not on the remote default branch (refs/remotes/<remote>/HEAD). Counts stop at 1000. Null when no remote HEAD is recorded. |
 | `result.checkout.staged` | integer | yes |  |  |
 | `result.checkout.unstaged` | integer | yes |  |  |
 | `result.checkout.untracked` | integer | yes |  |  |
 | `result.checkout.conflicts` | integer | yes |  |  |
 | `result.checkout.operation` | `["rebase","merge","cherry-pick","revert","sequencer","bisect"]` | no |  | Omitted when no operation is in progress. |
+| `result.checkout.stackOperation` | object | no |  | An unfinished ggh stack restack or submit. A restack stopped on a conflict resumes with ggh stack restack --continue or rolls back with --abort. |
+| `result.checkout.stackOperation.mode` | `["restack","submit"]` | yes |  |  |
+| `result.checkout.stackOperation.selected` | string | yes |  |  |
+| `result.checkout.stackOperation.operationId` | string | yes |  |  |
 | `result.pullRequest` | varies | yes |  |  |
 | `result.pullRequest [anyOf 1]` | object | yes |  |  |
 | `result.pullRequest [anyOf 1].state` | `"available"` | yes |  |  |
@@ -274,7 +281,7 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.stack [anyOf 3]` | object | yes |  | unavailable: the read failed or missed the deadline. skipped: not attempted because of --local, a detached HEAD, or no readable branch PR. |
 | `result.stack [anyOf 3].state` | `["unavailable","skipped"]` | yes |  |  |
 | `result.stack [anyOf 3].reason` | string | yes |  |  |
-| `result.next` | array | no |  | Suggested follow-up reads, such as ggh ci why or ggh pr threads. Data, not permission to mutate. |
+| `result.next` | array | no |  | Suggested follow-up commands, such as ggh ci why, ggh pr threads, ggh pr create --dry-run for unpublished work, or ggh stack restack --continue/--abort for a stopped restack. Data, not permission to mutate. |
 | `result.next[]` | string | no |  |  |
 
 ## tidy
@@ -282,6 +289,7 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | Field | Type / values | Required in parent | Default | Meaning |
 | --- | --- | --- | --- | --- |
 | `result` | object | no |  |  |
+| `result.snapshotId` | string | yes |  | Pass to --approve-plan. Same value as plan.snapshotId. |
 | `result.audit` | varies | no |  |  |
 | `result.audit [anyOf 1]` | object | no |  |  |
 | `result.audit [anyOf 1].state` | `"completed"` | yes |  |  |
@@ -563,7 +571,8 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | `result.pr.repo` | string | yes |  |  |
 | `result.headSha` | string | yes |  |  |
 | `result.baseSha` | string | yes |  |  |
-| `result.checkoutPath` | string | yes |  |  |
+| `result.checkoutPath` | string | yes |  | Always under the main clone's .worktrees, even when run from a linked worktree. |
+| `result.checkout` | `["created","updated","reused"]` | no |  | reused: the checkout was already at headSha; with no other effect the envelope status is no_op. |
 | `result.surface` | `["editor","tuicr","delta","renderer","data"]` | yes |  |  |
 | `result.marked` | `true` | no |  |  |
 | `result.since` | object | no |  |  |
@@ -744,7 +753,7 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 | --- | --- | --- | --- | --- |
 | `result` | object | no |  |  |
 | `result.schemaVersion` | `1` | yes |  |  |
-| `result.updatedAt` | string | no |  |  |
+| `result.updatedAt` | string | no |  | When the index was last scanned. A rescan that changes nothing but scan timestamps reports no projects_index_updated effect. |
 | `result.remote` | object | no |  |  |
 | `result.remote.requests` | integer | yes |  |  |
 | `result.remote.cost` | integer | yes |  |  |
@@ -1406,7 +1415,7 @@ Coverage: Partial field schemas. Optional fields vary by outcome. Other command 
 
 | Field | Type / values | Required in parent | Default | Meaning |
 | --- | --- | --- | --- | --- |
-| `result` | object / null | no |  | Agent result only. Null outside a repository. Legacy --json retains result.repository with explicit counts. |
+| `result` | object | no |  | Agent result only. Outside a repository, status --agent fails with invalid_arguments. Legacy --json retains result.repository with explicit counts, null outside a repository. |
 | `result.root` | string | no |  | Absolute checkout root. Omitted only when equal to the invocation cwd. |
 | `result.branch` | string / null | yes |  | Null means detached HEAD. |
 | `result.head` | string / null | yes |  | Full HEAD object ID; null for an unborn branch. |

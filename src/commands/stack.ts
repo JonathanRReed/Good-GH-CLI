@@ -537,9 +537,16 @@ export function registerStackCommand(program: Command): void {
         const invalidName = validateBranchName(parent);
         if (invalidName || !graph.has(parent)) { fail(invalidName || `Parent branch "${parent}" does not exist locally.`); return; }
         if (getStackAncestors(graph, parent).includes(current)) { fail("Recording this parent would create a stack cycle."); return; }
+        // Already recorded: rewriting the parent tip would move the fork point restack relies on.
+        const recordedTip = await run("git", ["config", `branch.${current}.gh-merge-base-sha`], { reject: false });
+        if (graph.get(current)?.recordedParent === parent && recordedTip.stdout.trim()) {
+          if (jsonOut({ status: "no_op", branch: current, parent })) return;
+          p.log.info(`${pc.bold(current)} is already stacked on ${pc.bold(parent)}.`);
+          return;
+        }
         if (dryRun(`record ${current} as stacked on ${parent}`)) return;
         await setBranchMergeBase(current, parent);
-        if (jsonOut({ branch: current, parent })) return;
+        if (jsonOut({ status: "succeeded", branch: current, parent, completed: ["stack_parent_recorded"] })) return;
         p.log.success(pc.green(`${pc.bold(current)} is now stacked on ${pc.bold(parent)}.`));
         p.outro("Done.");
       });
@@ -644,11 +651,15 @@ export function registerStackCommand(program: Command): void {
           return;
         }
 
-        if (await isDetachedHead(cwd)) { fail("Cannot restack from a detached HEAD. Checkout a named branch first."); return; }
-        if (inRebase) {
-          fail("A rebase is already in progress. Finish it with ggh stack restack --continue or ggh stack restack --abort.");
+        // A stopped restack leaves HEAD detached mid-rebase; name the unfinished work, not the symptom.
+        const unfinished = await readStackRecovery(cwd).catch(() => null);
+        if (unfinished?.mode === "restack" || inRebase) {
+          fail(unfinished?.mode === "restack"
+            ? `A stack restack of ${unfinished.selected} stopped before finishing. Resolve any conflicts, then run ggh stack restack --continue, or run ggh stack restack --abort to restore the original tips.`
+            : "A rebase is already in progress. Finish it with ggh stack restack --continue or ggh stack restack --abort.", { code: "precondition_failed" });
           return;
         }
+        if (await isDetachedHead(cwd)) { fail("Cannot restack from a detached HEAD. Checkout a named branch first.", { code: "precondition_failed" }); return; }
         const status = await getStatus(cwd);
         if (status.staged.length || status.unstaged.length || status.conflicts.length) {
           fail("Working tree has uncommitted changes. Commit or stash them before restacking.");

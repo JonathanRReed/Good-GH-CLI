@@ -40,7 +40,8 @@ export function registerTidyCommand(program: Command): void {
         const audited = options.audit ? await auditTidyPlan(originalPlan, { provider: options.audit, approvePlan: options.approvePlan }) : undefined;
         const plan = audited?.plan ?? originalPlan;
         const lost = await findLost(clones);
-        const payload = { schemaVersion: 1, plan, lost, coverage, ...(audited ? { audit: audited.audit } : {}) };
+        // snapshotId sits at the top level, like pr create and repo create plans.
+        const payload = { schemaVersion: 1, snapshotId: plan.snapshotId, plan, lost, coverage, ...(audited ? { audit: audited.audit } : {}) };
         const count = plan.clones.reduce((n, clone) => n + clone.actions.length, 0);
         if (!getFlags().json) {
           if (audited) for (const line of renderTidyAudit(originalPlan, audited.audit)) p.log.message(fitProjectLine(line, options));

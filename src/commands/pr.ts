@@ -259,7 +259,7 @@ export function registerPrCommand(program: Command): void {
     }
     if (!detail) {
       s.stop(pc.yellow("PR not found."));
-      fail(`PR #${num} not found.`);
+      fail(`PR #${num} not found.`, { code: "not_found" });
       return;
     }
     s.stop("Pull Request loaded.");

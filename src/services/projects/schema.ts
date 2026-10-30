@@ -54,7 +54,7 @@ const project = {
 };
 export const projectsResultSchema = {
   type: "object", required: ["schemaVersion"], properties: {
-    schemaVersion: { const: 1 }, updatedAt: { type: "string" },
+    schemaVersion: { const: 1 }, updatedAt: { type: "string", description: "When the index was last scanned. A rescan that changes nothing but scan timestamps reports no projects_index_updated effect." },
     remote: { type: "object", required: ["requests", "cost", "uncloned"], properties: { requests: count, cost: count, uncloned: { type: "array", items: uncloned } } },
     projects: { type: "array", items: project }, project,
     history: { type: "object", required: ["recent", "unpublished"], properties: { recent: field({ type: "array", items: commit }), unpublished: field({ type: "array", items: commit }) } },

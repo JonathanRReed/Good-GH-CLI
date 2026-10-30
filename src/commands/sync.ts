@@ -47,7 +47,7 @@ async function syncSelected(queries: string[], options: SyncOptions): Promise<vo
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 64 || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 2_147_483_647) { fail("Concurrency must be 1..64 and timeout must be 1..2147483647 milliseconds.", { code: "invalid_arguments" }); return; }
   const index = readProjectIndex();
   const selected = options.all ? index.clones : [];
-  for (const query of queries) { const clone = await selectProject(index.clones, query); if (!clone) return; selected.push(clone); }
+  for (const query of queries) { const clone = await selectProject(index.clones, query, "project"); if (!clone) return; selected.push(clone); }
   if (options.forkUpstream && !isDryRun()) {
     const targets = [...new Set(selected.flatMap(clone => clone.primary ? [`${clone.primary.host}/${clone.primary.owner}/${clone.primary.name}`] : []))];
     if (!(await confirmOrAbort(`Sync remote fork default branches from upstream: ${targets.join(", ") || "no recognized targets"}?`, { assumeYes: options.yes, initialValue: false }))) return;

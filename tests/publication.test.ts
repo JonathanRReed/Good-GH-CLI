@@ -206,7 +206,7 @@ describe("publication service", () => {
     for (const remote of ["https://sensitive-token@github.com/fixture/project.git", "https://github.com/fixture/project.git?token=sensitive-token"]) {
       const { repo } = makeRepository(tempRoot(), remote);
       const result = await runFixture([], { root: repo, cwd: repo, invoke: serviceInvoke("const result=await preparePublication({kind:'repo'});process.stdout.write(JSON.stringify(result));") });
-      expect(JSON.parse(result.stdout)).toMatchObject({ status: "needs_input", required: "repository" });
+      expect(JSON.parse(result.stdout)).toMatchObject({ status: "failed", message: expect.stringContaining("not a supported GitHub repository URL") });
       expect(result.stdout + result.stderr).not.toContain("sensitive-token");
       expect(result.calls).toHaveLength(0);
       expect(git(["remote", "get-url", "origin"], repo)).toBe(remote);
@@ -224,8 +224,8 @@ describe("publication service", () => {
       ),
     });
     expect(JSON.parse(result.stdout)).toMatchObject({
-      status: "needs_input",
-      required: "repository",
+      status: "failed",
+      message: expect.any(String),
     });
     expect(git(["remote", "get-url", "origin"], repo)).toBe(before);
     expect(result.calls).toHaveLength(0);
@@ -255,8 +255,8 @@ describe("publication service", () => {
       "add_remote",
     ]);
     expect(value.invalid).toMatchObject({
-      status: "needs_input",
-      required: "repository",
+      status: "failed",
+      message: expect.any(String),
     });
   });
 
@@ -270,8 +270,8 @@ describe("publication service", () => {
       invoke: `${setupRewrite(bare)} ${serviceInvoke(`const prepared = await preparePublication({kind:'pr',base:'main'}); process.stdout.write(JSON.stringify(prepared));`)}`,
     });
     expect(JSON.parse(result.stdout)).toMatchObject({
-      status: "needs_input",
-      required: "branch",
+      status: "failed",
+      message: expect.any(String),
     });
     expect(result.calls).toHaveLength(1);
     expect(gitOptional(["--git-dir", bare, "show-ref"], rootOf(bare))).toBe("");
@@ -297,7 +297,7 @@ describe("publication service", () => {
     });
     expect(JSON.parse(ambiguous.stdout)).toMatchObject({
       status: "needs_input",
-      required: "repository",
+      required: "remote",
     });
 
     const explicit = await runFixture([], {
@@ -323,8 +323,8 @@ describe("publication service", () => {
       ),
     });
     expect(JSON.parse(result.stdout)).toMatchObject({
-      status: "needs_input",
-      required: "repository",
+      status: "failed",
+      message: expect.any(String),
     });
     expect(result.calls).toHaveLength(1);
   });
@@ -340,8 +340,8 @@ describe("publication service", () => {
       ),
     });
     const value = JSON.parse(result.stdout);
-    expect(value.optionLike).toMatchObject({ status: "needs_input", required: "repository" });
-    expect(value.invalidRef).toMatchObject({ status: "needs_input", required: "repository" });
+    expect(value.optionLike).toMatchObject({ status: "needs_input", required: "remote" });
+    expect(value.invalidRef).toMatchObject({ status: "needs_input", required: "remote" });
     expect(result.calls).toHaveLength(1);
     expect(git(["remote"], repo)).toBe("");
   });
@@ -431,8 +431,8 @@ describe("publication service", () => {
       responses: [enterpriseAuth],
     });
     expect(JSON.parse(hostMismatch.stdout)).toMatchObject({
-      status: "needs_input",
-      required: "repository",
+      status: "failed",
+      message: expect.any(String),
     });
 
     const repoMismatch = await runFixture([], {
@@ -442,8 +442,8 @@ describe("publication service", () => {
       responses: [enterpriseAuth],
     });
     expect(JSON.parse(repoMismatch.stdout)).toMatchObject({
-      status: "needs_input",
-      required: "repository",
+      status: "failed",
+      message: expect.any(String),
     });
   });
 

@@ -31,7 +31,8 @@ export const tidyAuditSchema = { type: "object", required: ["state", "originalSn
   ...Object.fromEntries(["sentActions", "commitSubjects", "promptBytes", "omittedActions", "rejectedRecommendations"].map(key => [key, { type: "integer", minimum: 0 }])),
   decisions: { type: "array", items: { type: "object", required: ["id", "verdict", "reason"], properties: { id: text, verdict: { enum: ["prune", "keep", "keep-unaudited"] }, reason: text } } },
 } };
-export const tidyResultSchema = { type: "object", required: ["schemaVersion", "plan", "lost", "status"], properties: {
+export const tidyResultSchema = { type: "object", required: ["schemaVersion", "snapshotId", "plan", "lost", "status"], properties: {
+  snapshotId: { type: "string", pattern: "^[a-f0-9]{64}$", description: "Pass to --approve-plan. Same value as plan.snapshotId." },
   audit: { anyOf: [tidyAuditSchema, { type: "object", required: ["state", "reason"], properties: { state: { const: "failed" }, reason: text } }] },
   schemaVersion: { const: 1 }, status: { enum: ["planned", "needs_input", "no_op", "succeeded", "failed", "partially_completed", "cancelled"] }, lost: lostResultSchema,
   plan: { type: "object", required: ["schemaVersion", "snapshotId", "options", "clones"], properties: {

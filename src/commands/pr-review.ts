@@ -111,7 +111,8 @@ export function registerPrReviewCommand(pr: Command): void {
         num = active.number;
       }
 
-      const [detail, rawDiff] = await Promise.all([viewPullRequest(num), getPullRequestDiff(num)]);
+      // The title only labels the review; the diff read decides whether it can run.
+      const [detail, rawDiff] = await Promise.all([viewPullRequest(num).catch(() => null), getPullRequestDiff(num)]);
       if (!rawDiff.trim()) {
         fail(`Pull Request #${num} has no diff to review.`);
         return;

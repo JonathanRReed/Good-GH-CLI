@@ -194,7 +194,7 @@ describe("indexed sync", () => {
     }
     expect(await git(a.local, "rev-parse", "HEAD")).toBe(tip);
     const ambiguous = await cli([{ ...a.clone, displayName: "duplicate" }, { ...b.clone, displayName: "duplicate" }], ["sync", "duplicate", "--agent"]);
-    expect(ambiguous.exitCode).toBe(1); expect(JSON.parse(ambiguous.stdout)).toMatchObject({ status: "failed", error: { code: "missing_input" }, result: { candidates: expect.any(Array) } });
+    expect(ambiguous.exitCode).toBe(1); expect(JSON.parse(ambiguous.stdout)).toMatchObject({ status: "needs_input", error: { code: "missing_input" }, requiredInputs: [{ name: "project" }], result: { candidates: expect.any(Array) } });
     const dry = await cli([a.clone, b.clone], ["sync", "--all", "--dry-run", "--agent"]);
     expect(JSON.parse(dry.stdout)).toMatchObject({ status: "planned", result: { schemaVersion: 1, clones: expect.any(Array) } }); expect(dry.calls).toEqual([]);
   });
